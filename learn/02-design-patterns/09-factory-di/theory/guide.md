@@ -1,30 +1,89 @@
-# 工厂与依赖注入 详解
+# 工厂模式与依赖注入详解
 
-> 本指南通过 OpenClaw 的真实代码示例，深入讲解工厂与依赖注入。
+> 学习如何使用工厂模式和依赖注入创建灵活的对象创建机制。
 
-## 目录
+## 工厂模式
 
-TODO: 添加目录
+### 简单工厂
 
-## 1. 基础概念
+```typescript
+class UserFactory {
+  static create(type: "admin" | "user"): User {
+    if (type === "admin") {
+      return new AdminUser();
+    }
+    return new RegularUser();
+  }
+}
+```
 
-TODO: 添加基础概念讲解
+### 抽象工厂（OpenClaw 风格）
 
-## 2. OpenClaw 实战
+```typescript
+// src/context-engine/registry.ts
+export const contextEngineRegistry = new Map<string, ContextEngineFactory>();
 
-TODO: 添加 OpenClaw 代码分析
+export function registerContextEngine(
+  name: string,
+  factory: ContextEngineFactory
+): void {
+  contextEngineRegistry.set(name, factory);
+}
 
-## 3. 最佳实践
+export function createContextEngine(
+  type: string,
+  config: unknown
+): ContextEngine {
+  const factory = contextEngineRegistry.get(type);
+  if (!factory) {
+    throw new Error(`Unknown context engine: ${type}`);
+  }
+  return factory(config);
+}
+```
 
-TODO: 添加最佳实践
+## 依赖注入
 
-## 4. 常见陷阱
+### 构造函数注入
 
-TODO: 添加常见错误和解决方案
+```typescript
+class UserService {
+  constructor(
+    private database: Database,
+    private logger: Logger
+  ) {}
+  
+  async getUser(id: string): Promise<User> {
+    this.logger.info(`Getting user ${id}`);
+    return this.database.findUser(id);
+  }
+}
+```
 
----
+### OpenClaw 的依赖注入
 
-**参考资源：**
+```typescript
+// src/plugins/runtime/index.ts
+export function createPluginRuntime(
+  plugin: PluginDefinition,
+  deps: PluginDependencies
+): PluginRuntime {
+  return {
+    config: deps.config,
+    logger: deps.logger,
+    hooks: deps.hookExecutor,
+    // ... 注入其他依赖
+  };
+}
+```
 
+## 设计要点
+
+1. **单一职责**：工厂只负责创建对象
+2. **依赖倒置**：依赖抽象而非具体实现
+3. **控制反转**：由容器管理依赖关系
+4. **生命周期管理**：单例 vs 瞬态
+
+参考：
 - `src/context-engine/registry.ts`
 - `src/plugins/runtime/index.ts`

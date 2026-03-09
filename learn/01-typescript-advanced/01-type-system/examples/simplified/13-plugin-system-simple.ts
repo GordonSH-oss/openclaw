@@ -1,0 +1,9 @@
+/**
+ * 13 - Plugin System Simple
+ * 学习目标：TODO
+ */
+
+// TODO: 添加示例代码
+
+console.log('✅ plugin-system-simple 完成');
+
