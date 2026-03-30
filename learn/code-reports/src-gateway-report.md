@@ -258,6 +258,34 @@ Gateway 启动的主链路可以概括为：
 4. 方法路由到 `src/gateway/server-methods/agent.ts`
 5. `agent.ts` 做参数校验、session reset 处理、run id 去重
 6. 委托到 agents 子系统，例如 `agentCommandFromIngress(...)`
+
+## 9. 与 `learn/gateway-design` 的映射
+
+为了把这些概念变成可动手的学习工程，`learn/gateway-design` 现在刻意映射了 `src/gateway` 的几条主线，但做了范围收缩：
+
+- `src/gateway/protocol/*`
+  - 对应 `learn/gateway-design/src/protocol/index.ts`
+  - 学习版保留 request / response / event 合同、`agent.wait`、`sessions.messages.subscribe` 等关键 surface，不引入 Ajv 和大规模 schema 集合。
+- `src/gateway/server-runtime-state.ts`
+  - 对应 `learn/gateway-design/src/server-runtime-state.ts`
+  - 学习版保留 broadcaster、dedupe、chat run 状态容器，让你先理解“Gateway 为什么必须持有活体状态”。
+- `src/gateway/server-chat.ts`
+  - 对应 `learn/gateway-design/src/server-chat.ts`
+  - 学习版聚焦 active run、terminal run、message subscribers 三件事。
+- `src/gateway/server-methods.ts` + `src/gateway/server-methods/*`
+  - 对应 `learn/gateway-design/src/server-methods.ts` + `learn/gateway-design/src/methods/*`
+  - 学习版保留按 domain 拆 handler 的结构，并增加 `agent.wait`、`sessions.messages.subscribe` 来体现长任务和消息面订阅。
+- `src/gateway/server-ws-runtime.ts`
+  - 对应 `learn/gateway-design/src/server-ws-runtime.ts`
+  - 学习版把 ws handler 装配从 `server.ts` 拆出，让 `server.ts` 更像真正的 assembly root。
+- `src/gateway/server-plugin-bootstrap.ts`
+  - 对应 `learn/gateway-design/src/server-plugin-bootstrap.ts`
+  - 学习版只注册 `MockChannel`，用来讲清“插件启动插在什么位置”。
+- `src/gateway/session-utils.ts` 一类的 session / transcript 读写面
+  - 对应 `learn/gateway-design/src/session-store.ts` 和 `learn/gateway-design/src/transcript-store.ts`
+  - 学习版把“轻量 metadata”和“完整 transcript”显式分成两个模块。
+
+学习版最重要的设计选择是：Gateway 不再自己实现一个内联 `agent-runner`，而是通过 public API 调 `learn/agent-design`。这一步正好把 OpenClaw 里 `src/gateway` 和 `src/agents` 的边界具象化了。
 7. 运行中的事件通过 broadcaster / tool event recipient / session 更新机制继续向外传播
 8. 客户端可通过 `poll`、`agent.wait`、session 订阅等方式继续观察执行结果
 

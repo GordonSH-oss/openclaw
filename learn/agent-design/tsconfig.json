@@ -6,7 +6,7 @@
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "typeRoots": ["./node_modules/@types"],
+    "typeRoots": ["../gateway-design/node_modules/@types"],
     "types": ["node"],
     "outDir": "dist"
   },

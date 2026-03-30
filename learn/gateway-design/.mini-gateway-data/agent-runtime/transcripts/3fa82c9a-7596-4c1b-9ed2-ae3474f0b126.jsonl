@@ -1,0 +1,4 @@
+{"id":"f036fb34-b02d-4a85-8712-338bbd86b6d8","role":"user","content":"请帮我计算: 10 + 5","timestamp":1774838314680}
+{"id":"423b4403-5efe-4aca-8b26-0770c2e19d1c","parentId":"f036fb34-b02d-4a85-8712-338bbd86b6d8","role":"assistant","content":[{"type":"tool_use","toolUseId":"gw-run-1:math","toolName":"math","input":{"expression":"10 + 5"}}],"timestamp":1774838314681,"model":"learning-primary"}
+{"id":"85978306-c6d8-479d-be37-ea871671d835","parentId":"423b4403-5efe-4aca-8b26-0770c2e19d1c","role":"tool","content":[{"type":"tool_result","toolUseId":"gw-run-1:math","content":"10 + 5 = 15"}],"timestamp":1774838314683,"toolName":"math"}
+{"id":"708f1d7f-5a44-4466-901a-ac976c9b7f66","parentId":"85978306-c6d8-479d-be37-ea871671d835","role":"assistant","content":[{"type":"text","text":"已通过 mock/learning-primary 完成这次 learning run。\n\n你刚才说的是：请帮我计算: 10 + 5\n\n工具结果：10 + 5 = 15"}],"timestamp":1774838314764,"model":"learning-primary","usage":{"inputTokens":4,"outputTokens":21}}

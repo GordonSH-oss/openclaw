@@ -323,3 +323,46 @@
 ## 10. 一句话总结
 
 `src/agents` 可以理解为 OpenClaw 的 agent 执行中枢：顶层做请求收束与执行编排，中层做 CLI / embedded 后端分发，底层由 auth、skills、sandbox、tools 和 runtime 机制支撑。其中真正的复杂度核心是 `pi-embedded-runner/`，而不是表面上的入口文件。
+
+## 11. 与 `learn/agent-design` 的映射
+
+为了把这些理解变成可以反复推演和调试的学习工程，`learn/agent-design` 现在按“中高保真”方式映射了 `src/agents` 的关键骨架：
+
+- `src/agents/agent-command.ts`
+  - 对应 `learn/agent-design/src/agent-command.ts`
+  - 学习版保留入口收束职责：参数校验、session 解析、skill snapshot、auth profile 顺序、model candidate、attempt 调度。
+- `src/agents/command/session.ts`
+  - 对应 `learn/agent-design/src/command/session.ts`
+  - 学习版把 session 元数据和 transcript 文件路径的解析单独拆出来。
+- `src/agents/command/run-context.ts`
+  - 对应 `learn/agent-design/src/command/run-context.ts`
+  - 学习版保留“执行上下文先统一归一化，再向下传”的模式。
+- `src/agents/command/attempt-execution.ts`
+  - 对应 `learn/agent-design/src/command/attempt-execution.ts`
+  - 学习版在这里分派 `embedded` 和 `cli` 两类后端。
+- `src/agents/pi-embedded-runner/run.ts`
+  - 对应 `learn/agent-design/src/embedded-runner/run.ts`
+  - 学习版保留 prompt 组装、历史读取、tool loop、delta、终态 transcript 写入这些核心行为。
+- `src/agents/cli-runner/*`
+  - 对应 `learn/agent-design/src/cli-runner/execute.ts`
+  - 学习版不接真实子进程，只保留“外部执行通道”和“与 embedded 共享结果合同”的结构意义。
+- `src/agents/model-fallback.ts`
+  - 对应 `learn/agent-design/src/model-fallback.ts`
+  - 学习版保留 candidate、fallback loop、summary error 三个关键概念。
+- `src/agents/auth-profiles/*`
+  - 对应 `learn/agent-design/src/auth-profiles/store.ts`、`order.ts`、`session-override.ts`
+  - 学习版保留 profile store、cooldown、preferred profile 和 session override。
+- `src/agents/skills/workspace.ts`
+  - 对应 `learn/agent-design/src/skills/workspace.ts`
+  - 学习版保留 skill root 扫描、路径 containment、snapshot prompt。
+- `src/agents/tools/*`
+  - 对应 `learn/agent-design/src/tools/runtime.ts`
+  - 学习版提供 `math`、`transcript_lookup`、`gateway_stub`、`memory_search`、`memory_get`、`memory_write`，把 tool roundtrip 和长期记忆入口放在一起讲清楚。
+- transcript/session 持久化
+  - 对应 `learn/agent-design/src/transcript/store.ts`
+  - 学习版明确使用 append-only DAG 风格 JSONL，承担 session 内的短期记忆。
+- OpenClaw 的 memory host / memory search 主线
+  - 对应 `learn/agent-design/src/workspace-memory/files.ts`、`index.ts`、`flush.ts`
+  - 学习版把长期记忆拆成 memory files、search index、pre-compaction flush 三层，方便理解“记忆文件是 source of truth，索引只是检索视图”。
+
+学习版刻意不实现真实 provider SDK、复杂 queue/lane、远端 sandbox、ACP、runtime plugins 和完整 compaction，因为那会把“理解设计”淹没在实现噪音里。它保留的是你真正需要掌握的骨架：入口编排、attempt dispatch、runtime execution、fallback、auth、skills、tools 和 transcript。

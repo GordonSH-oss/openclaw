@@ -28,6 +28,7 @@ import {
 } from "./protocol.js";
 import type { GatewayRuntimeState } from "./runtime-state.js";
 import type { MethodRouter } from "./method-router.js";
+import { removeConnFromChatSubscriptions } from "./server-chat.js";
 
 // ─── 连接上下文 ────────────────────────────────────────────────────────────────
 
@@ -181,15 +182,7 @@ export function handleConnection(
 
     // 从 session 订阅者列表移除
     state.sessionSubscribers.delete(connId);
-
-    // 清理正在进行的 run（如果有）
-    // 真实实现里：取消该连接发起的所有未完成 run
-    for (const [runId, run] of state.activeRuns) {
-      // 只取消该连接发起的 run（本示例简化：不区分）
-      // 生产实现里需要在 activeRuns 里记录 connId
-      void runId;
-      void run;
-    }
+    removeConnFromChatSubscriptions(state.chat, connId);
   });
 
   // ── 错误处理 ────────────────────────────────────────────────────

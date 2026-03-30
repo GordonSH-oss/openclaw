@@ -5,8 +5,9 @@
   "type": "module",
   "main": "src/index.ts",
   "scripts": {
-    "dev": "npx tsx src/index.ts",
-    "typecheck": "tsc --noEmit"
+    "dev": "node --import ./node_modules/tsx/dist/loader.mjs src/index.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "node --import ./node_modules/tsx/dist/loader.mjs --test src/**/*.test.ts"
   },
   "dependencies": {
     "ws": "^8.18.0"

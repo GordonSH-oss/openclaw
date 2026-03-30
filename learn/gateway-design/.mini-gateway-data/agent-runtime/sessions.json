@@ -1,0 +1,26 @@
+{
+  "default/main": {
+    "sessionId": "3fa82c9a-7596-4c1b-9ed2-ae3474f0b126",
+    "sessionKey": "default/main",
+    "transcriptPath": "/Users/admin/Workspace@RongCloud/For-learning/openclaw/learn/gateway-design/.mini-gateway-data/agent-runtime/transcripts/3fa82c9a-7596-4c1b-9ed2-ae3474f0b126.jsonl",
+    "createdAt": 1774838314675,
+    "updatedAt": 1774838314787,
+    "status": "idle",
+    "inputTokens": 4,
+    "outputTokens": 21,
+    "model": "learning-primary",
+    "provider": "mock"
+  },
+  "default/transcript": {
+    "sessionId": "bf87b0e4-3b67-42ff-8cc3-fd55ed2ecef0",
+    "sessionKey": "default/transcript",
+    "transcriptPath": "/Users/admin/Workspace@RongCloud/For-learning/openclaw/learn/gateway-design/.mini-gateway-data/agent-runtime/transcripts/bf87b0e4-3b67-42ff-8cc3-fd55ed2ecef0.jsonl",
+    "createdAt": 1774838314800,
+    "updatedAt": 1774838314902,
+    "status": "idle",
+    "inputTokens": 1,
+    "outputTokens": 29,
+    "model": "learning-primary",
+    "provider": "mock"
+  }
+}

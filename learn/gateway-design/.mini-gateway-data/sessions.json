@@ -1,0 +1,20 @@
+{
+  "default/main": {
+    "sessionId": "3fa82c9a-7596-4c1b-9ed2-ae3474f0b126",
+    "createdAt": 1774838314670,
+    "updatedAt": 1774838314670,
+    "status": "idle",
+    "inputTokens": 0,
+    "outputTokens": 0,
+    "lastChannel": "gateway"
+  },
+  "default/transcript": {
+    "sessionId": "bf87b0e4-3b67-42ff-8cc3-fd55ed2ecef0",
+    "createdAt": 1774838314793,
+    "updatedAt": 1774838314793,
+    "status": "idle",
+    "inputTokens": 0,
+    "outputTokens": 0,
+    "lastChannel": "gateway"
+  }
+}

@@ -22,6 +22,8 @@ const gateway = await createGateway({
   ],
 });
 
+console.log("Mini Gateway learning control plane is running.");
+
 // 优雅关闭处理
 process.on("SIGINT", async () => {
   console.log("\n收到 SIGINT，正在关闭...");
