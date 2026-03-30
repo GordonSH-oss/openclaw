@@ -24,3 +24,10 @@ export {
   resolveDailyMemoryPath,
 } from "./workspace-memory/files.js";
 export { buildMemoryIndex, searchMemoryIndex } from "./workspace-memory/index.js";
+export {
+  appendLearningTranscriptMessage,
+  createLearningSessionEventHub,
+  flushLearningSessionMemory,
+  resolveLearningSession,
+  runLearningSessionMaintenance,
+} from "../../session-memory-design/src/index.js";

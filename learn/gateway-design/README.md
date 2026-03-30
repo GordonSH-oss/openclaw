@@ -2,6 +2,17 @@
 
 `learn/gateway-design` 是一个用于学习 OpenClaw `src/gateway` 设计的 control-plane 示例。它不只是“开一个 WebSocket 服务”，而是把协议、连接、方法路由、chat run 状态、session 元数据、transcript 查询和 channel 接入拆成了几层可单独理解的模块。
 
+现在它已经不再自己维护所有底层逻辑，而是明确依赖：
+
+- `learn/agent-design`
+  - 提供 execution plane 的 `runLearningAgentCommand`
+- `learn/channel-routing-design`
+  - 提供 route 解析和 session key 语义
+- `learn/session-memory-design`
+  - 提供 session metadata / transcript 的持久化底层
+- `learn/plugin-design`
+  - 提供 plugin bootstrap 和 plugin gateway method 注入
+
 ## 当前结构
 
 ```text
@@ -14,8 +25,8 @@ src/
   server-ws-runtime.ts    # 把 ws 连接层挂到 HTTP server
   server-plugin-bootstrap.ts
                          # 注册内置 mock channel，演示 plugin bootstrap 的位置
-  session-store.ts        # 轻量 session metadata
-  transcript-store.ts     # transcript 读取面，实际数据来自 agent package
+  session-store.ts        # session-memory-design 的 gateway 适配层
+  transcript-store.ts     # transcript 读取适配层，底层来自 session-memory-design
   methods/
     agent.ts              # agent / agent.status / agent.wait / agent.cancel
     sessions.ts           # sessions.* / gateway.*
@@ -51,9 +62,15 @@ src/
 - `session-store.ts` 管理小而频繁更新的元数据
 - `transcript-store.ts` 提供 transcript 查询入口
 
-学习版里 transcript 实际由 `learn/agent-design` 负责写入，Gateway 通过 public API 读取，借此把 control-plane / execution-plane 的边界讲清楚。
+现在这两层的真正底座已经下沉到 `learn/session-memory-design`。Gateway 本地保留的是适配层，目的是让你看清 control-plane 为什么要消费这些持久化对象，而不是重新实现它们。
 
-### 4. `agent.wait` 和事件订阅一起构成长任务交互模型
+### 4. plugin bootstrap 也要放在 Gateway 装配阶段
+
+`server-plugin-bootstrap.ts` 现在会加载 `learn/plugin-design`，把 mock plugin registry 并入 Gateway 启动流程。
+
+这对应真实 OpenClaw 的关键认知：Gateway 不只是 RPC 服务器，它还是插件 runtime 的装配点。
+
+### 5. `agent.wait` 和事件订阅一起构成长任务交互模型
 
 学习版同时保留两条消费路径：
 
@@ -72,11 +89,14 @@ src/
 5. `src/methods/sessions.ts`
 6. `src/server.ts`
 7. `src/routing.ts` 和 `src/channels.ts`
+8. `../channel-routing-design/src/route-resolver.ts`
+9. `../session-memory-design/src/session-store.ts`
+10. `../plugin-design/src/loader.ts`
 
 ## 运行和测试
 
 ```bash
 cd learn/gateway-design
 node --import tsx src/index.ts
-node --import tsx --test src/**/*.test.ts
+npm test
 ```

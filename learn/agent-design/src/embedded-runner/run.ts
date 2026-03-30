@@ -172,7 +172,7 @@ export async function runEmbeddedBackend(params: {
         type: "memory",
         runId: params.command.runId,
         action: "write",
-        path: toolOutput.replace("Memory written to ", ""),
+        path: toolOutput.split("\n")[0]?.replace("Memory written to ", "") ?? "",
         note: String(toolCall.input.note ?? ""),
       });
     }

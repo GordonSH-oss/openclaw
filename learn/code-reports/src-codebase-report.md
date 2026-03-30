@@ -840,3 +840,25 @@ The `src/` tree is best understood as four major layers working together:
   - `config`, `infra`, `process`, `secrets`, `security`, `node-host`, `media`
 
 If you keep those four layers in mind, the rest of the codebase becomes much easier to reason about.
+
+## 10. 与 `/learn` 的学习工程映射
+
+为了把这套代码库的核心骨架拆成可以逐层实验的学习工程，`learn/` 现在映射成五个平面：
+
+- control plane
+  - 对应 `learn/gateway-design`
+  - 聚焦 Gateway 的协议、连接、方法路由、chat run 和订阅面。
+- execution plane
+  - 对应 `learn/agent-design`
+  - 聚焦 agent command、attempt、runner、fallback、auth、skills、tools。
+- plugin plane
+  - 对应 `learn/plugin-design`
+  - 聚焦 manifest-first、register(api)、runtime registry、Plugin SDK boundary。
+- routing plane
+  - 对应 `learn/channel-routing-design`
+  - 聚焦 inbound normalization、bindings、route priority、session key、channel policy。
+- persistence plane
+  - 对应 `learn/session-memory-design`
+  - 聚焦 session metadata、append-only transcript、workspace memory、flush、maintenance。
+
+这样拆的好处是：你不需要一开始就吃下整个 OpenClaw，而是可以先理解每一层“独立存在的理由”，再回到真实代码看它们如何互相连接。

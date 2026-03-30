@@ -13,6 +13,7 @@ import {
   readWorkspaceMemoryFile,
   searchMemoryIndex,
 } from "./index.js";
+import { loadLearningPlugins } from "../../plugin-design/src/index.js";
 import { loadAuthProfileStore } from "./auth-profiles/store.js";
 import { markAuthProfileFailure } from "./auth-profiles/order.js";
 import { resolveLearningSession } from "./command/session.js";
@@ -169,4 +170,25 @@ test("pre-compaction memory flush writes recent transcript summary", async () =>
   });
   assert.equal(memory.text.includes("Pre-compaction memory flush"), true);
   assert.equal(memory.text.includes("Session default/main neared compaction"), true);
+});
+
+test("plugin-design registry can provide memory runtime and gateway method to agent tools", async () => {
+  const dataDir = await makeTempDir("agent-plugin-runtime");
+  await loadLearningPlugins();
+  const handle = runLearningAgentCommand({
+    runId: "run-plugin-1",
+    message: "gateway.mock.ping",
+    sessionKey: "default/main",
+    dataDir,
+  });
+  const result = await handle.completion;
+  assert.equal(result.reply?.includes("gateway.mock.ping") ?? false, true);
+  const memoryHandle = runLearningAgentCommand({
+    runId: "run-plugin-2",
+    message: "记住：plugin runtime should own memory writes",
+    sessionKey: "default/main",
+    dataDir,
+  });
+  const memoryResult = await memoryHandle.completion;
+  assert.equal(memoryResult.reply?.includes("plugin:mock-memory") ?? false, true);
 });

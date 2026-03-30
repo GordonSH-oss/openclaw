@@ -2,6 +2,13 @@
 
 `learn/agent-design` 是一个用于学习 agent 执行架构的中高保真示例。它对应 OpenClaw 的 `src/agents`，重点不是接真实模型，而是把一次 agent run 从入口、session、attempt、runner、fallback、auth profile、skills、tools 一直到 transcript 落盘完整走通。
 
+现在它的底层支撑已经显式拆给两个兄弟学习包：
+
+- `learn/session-memory-design`
+  - 提供 session、transcript、workspace memory、memory flush
+- `learn/plugin-design`
+  - 提供 memory runtime 和 gateway method 等 plugin consumption surface
+
 ## 模块分层
 
 ```text
@@ -20,6 +27,13 @@ skills/*
 tools/*
 transcript/*
 workspace-memory/*
+
+其中：
+
+- `transcript/*` 和 `workspace-memory/*`
+  - 现在主要是对 `learn/session-memory-design` 的学习适配层
+- `tools/runtime.ts`
+  - 现在会优先尝试消费 `learn/plugin-design` 里的 active plugin registry
 ```
 
 ## 学习重点
@@ -64,11 +78,11 @@ workspace-memory/*
 建议把它和 session / transcript 一起理解成两层记忆：
 
 - 短期记忆
-  - 主要是 `src/transcript/store.ts` 里的 append-only transcript
-  - 负责保留当前 session 的完整上下文
+  - 真正的底层在 `learn/session-memory-design/src/transcript-store.ts`
+  - `src/transcript/store.ts` 是适配层
 - 长期记忆
-  - 主要是 `src/workspace-memory/*`
-  - 负责保留跨 session 仍值得留下来的 durable notes
+  - 真正的底层在 `learn/session-memory-design/src/workspace-memory.ts`
+  - `src/workspace-memory/*` 是学习版 agent 对这套能力的消费面
 
 这样读会更接近 OpenClaw 的真实心智模型：不是“有一个统一 memory 对象”，而是 transcript、workspace memory、检索索引、flush 生命周期共同组成记忆系统。
 
@@ -96,6 +110,10 @@ workspace-memory/*
    看为什么“会话快变长时先把 durable notes 写回记忆”是合理的设计。
 10. `src/transcript/store.ts`
     最后看所有消息如何被 append-only 写入 transcript。
+11. `../session-memory-design/src/index.ts`
+    再回头看真正的 session / transcript / memory 底层是如何独立成 persistence plane 的。
+12. `../plugin-design/src/index.ts`
+    最后看 agent tools 为什么能消费 plugin 提供的 memory runtime / gateway method。
 
 ## 建议怎么读代码里的注释
 

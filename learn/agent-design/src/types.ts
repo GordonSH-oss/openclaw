@@ -1,11 +1,14 @@
+import type {
+  LearningSessionEntry as SharedLearningSessionEntry,
+  LearningTranscriptMessage as SharedLearningTranscriptMessage,
+  ToolContentPart as SharedToolContentPart,
+} from "../../session-memory-design/src/index.js";
+
 export type ThinkingLevel = "off" | "low" | "medium" | "high";
 export type VerboseLevel = "off" | "on" | "full";
 export type RunnerBackend = "embedded" | "cli";
 
-export type ToolContentPart =
-  | { type: "text"; text: string }
-  | { type: "tool_use"; toolUseId: string; toolName: string; input: unknown }
-  | { type: "tool_result"; toolUseId: string; content: string };
+export type ToolContentPart = SharedToolContentPart;
 
 /**
  * learning 版 transcript 仍然保留 append-only 消息模型。
@@ -14,19 +17,7 @@ export type ToolContentPart =
  * - 会话内短期记忆主要依赖 transcript
  * - 会话外长期记忆则回写到 workspace memory
  */
-export type LearningTranscriptMessage = {
-  id: string;
-  parentId?: string;
-  role: "system" | "user" | "assistant" | "tool";
-  content: string | ToolContentPart[];
-  timestamp: number;
-  model?: string;
-  toolName?: string;
-  usage?: {
-    inputTokens: number;
-    outputTokens: number;
-  };
-};
+export type LearningTranscriptMessage = SharedLearningTranscriptMessage;
 
 export type SkillSnapshotEntry = {
   name: string;
@@ -161,15 +152,4 @@ export type LearningAgentRunHandle = {
   completion: Promise<LearningAgentResult>;
 };
 
-export type LearningAgentSessionEntry = {
-  sessionId: string;
-  sessionKey: string;
-  transcriptPath: string;
-  createdAt: number;
-  updatedAt: number;
-  status: "idle" | "running" | "error";
-  model?: string;
-  provider?: string;
-  inputTokens: number;
-  outputTokens: number;
-};
+export type LearningAgentSessionEntry = SharedLearningSessionEntry;

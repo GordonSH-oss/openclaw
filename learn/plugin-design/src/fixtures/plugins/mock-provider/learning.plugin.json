@@ -1,0 +1,7 @@
+{
+  "id": "mock-provider",
+  "name": "Mock Provider",
+  "version": "0.1.0",
+  "entry": "./index.ts",
+  "capabilities": ["provider", "tool"]
+}

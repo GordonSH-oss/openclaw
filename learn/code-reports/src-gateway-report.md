@@ -280,12 +280,22 @@ Gateway 启动的主链路可以概括为：
   - 学习版把 ws handler 装配从 `server.ts` 拆出，让 `server.ts` 更像真正的 assembly root。
 - `src/gateway/server-plugin-bootstrap.ts`
   - 对应 `learn/gateway-design/src/server-plugin-bootstrap.ts`
-  - 学习版只注册 `MockChannel`，用来讲清“插件启动插在什么位置”。
+  - 学习版现在会加载 `learn/plugin-design`，并保留 `MockChannel`，一起讲清“插件启动插在什么位置”。
 - `src/gateway/session-utils.ts` 一类的 session / transcript 读写面
   - 对应 `learn/gateway-design/src/session-store.ts` 和 `learn/gateway-design/src/transcript-store.ts`
-  - 学习版把“轻量 metadata”和“完整 transcript”显式分成两个模块。
+  - 学习版本地保留 gateway 适配层，但真正的底层已经下沉到 `learn/session-memory-design`。
+- `src/routing/*` / `src/channels/*` 这条入口标准化与路由主线
+  - 对应 `learn/channel-routing-design/*`
+  - 学习版把 route priority、session key、allow-from 和 mention gating 独立拆成一个兄弟包，再由 gateway 来消费。
 
 学习版最重要的设计选择是：Gateway 不再自己实现一个内联 `agent-runner`，而是通过 public API 调 `learn/agent-design`。这一步正好把 OpenClaw 里 `src/gateway` 和 `src/agents` 的边界具象化了。
+同样重要的一点是：Gateway 现在也不再自持 routing / session / plugin 的完整底层实现，而是分别依赖：
+
+- `learn/channel-routing-design`
+- `learn/session-memory-design`
+- `learn/plugin-design`
+
+这样更接近真实 OpenClaw 的控制面位置：它是消费这些边界的装配中心，而不是把所有能力都自己重写一遍。
 7. 运行中的事件通过 broadcaster / tool event recipient / session 更新机制继续向外传播
 8. 客户端可通过 `poll`、`agent.wait`、session 订阅等方式继续观察执行结果
 

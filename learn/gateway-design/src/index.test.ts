@@ -9,6 +9,7 @@ import {
   sessionsMessagesSubscribeHandler,
   sessionsMessagesUnsubscribeHandler,
 } from "./methods/sessions.js";
+import { loadLearningPlugins } from "../../plugin-design/src/index.js";
 
 test("routing priority is peer > account > channel > default", () => {
   const route = resolveAgentRoute({
@@ -28,6 +29,7 @@ test("routing priority is peer > account > channel > default", () => {
 });
 
 test("agent run is accepted immediately and later reaches terminal state", async () => {
+  await loadLearningPlugins();
   const state = createGatewayRuntimeState();
   const { entry } = await getOrCreateSession("default/main", {
     lastChannel: "gateway",
@@ -77,6 +79,7 @@ test("session message subscriptions can be added and removed", () => {
 });
 
 test("gateway transcript surface reads agent-written transcript", async () => {
+  await loadLearningPlugins();
   const state = createGatewayRuntimeState();
   const { entry } = await getOrCreateSession("default/transcript", {
     lastChannel: "gateway",

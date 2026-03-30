@@ -22,7 +22,7 @@ export async function createGateway(config: GatewayConfig = {}) {
   const defaultAgentId = config.defaultAgentId ?? "default";
 
   const state = createGatewayRuntimeState();
-  const { channelRegistry, mockChannel } = bootstrapGatewayChannels();
+  const { channelRegistry, mockChannel, pluginRegistry } = await bootstrapGatewayChannels();
 
   const onChannelMessage = async (msg: {
     body: string;
@@ -36,7 +36,6 @@ export async function createGateway(config: GatewayConfig = {}) {
     });
     const { entry } = await getOrCreateSession(route.sessionKey, {
       lastChannel: msg.source.channel,
-      lastTo: msg.source.accountId,
     });
     const run = launchGatewayAgentRun({
       state,
@@ -65,6 +64,17 @@ export async function createGateway(config: GatewayConfig = {}) {
   await channelRegistry.startAll(onChannelMessage as Parameters<typeof channelRegistry.startAll>[0]);
 
   const router = createCoreGatewayRouter();
+  for (const method of pluginRegistry.gatewayMethods) {
+    router.register(method.name, async ({ request, respond }) => {
+      const payload =
+        typeof request.params === "object" && request.params !== null
+          ? (request.params as Record<string, unknown>)
+          : {};
+      respond(true, await method.handle(payload));
+    }, {
+      description: `Plugin gateway method from ${method.name}`,
+    });
+  }
   const httpServer = createServer((req, res) => {
     if (req.url === "/health") {
       res.writeHead(200, { "Content-Type": "application/json" });
@@ -105,6 +115,7 @@ export async function createGateway(config: GatewayConfig = {}) {
     router,
     channelRegistry,
     mockChannel,
+    pluginRegistry,
     wss,
     async close() {
       await channelRegistry.stopAll();

@@ -65,6 +65,16 @@ export function launchGatewayAgentRun(params: {
       }
       if (event.type === "transcript.message") {
         broadcastSessionMessage(params.state, params.sessionKey, event.message);
+        return;
+      }
+      if (event.type === "memory") {
+        params.state.broadcaster.broadcast("memory.updated", {
+          runId: params.runId,
+          sessionKey: params.sessionKey,
+          action: event.action,
+          path: event.path,
+          note: event.note,
+        });
       }
     },
   });

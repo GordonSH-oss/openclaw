@@ -1,7 +1,11 @@
 import type { LearningTranscriptMessage } from "../types.js";
-import { loadLearningTranscript } from "../transcript/store.js";
-import { searchMemoryIndex } from "../workspace-memory/index.js";
-import { appendDailyMemoryEntry, readWorkspaceMemoryFile } from "../workspace-memory/files.js";
+import {
+  appendLearningDailyMemoryEntry,
+  loadLearningTranscript,
+  readLearningMemoryFile,
+  searchLearningMemory,
+} from "../../../session-memory-design/src/index.js";
+import { getActiveLearningPluginRegistry } from "../../../plugin-design/src/index.js";
 
 export type ToolCall = {
   toolName:
@@ -36,10 +40,11 @@ export function detectToolCall(message: string): ToolCall | null {
       input: { limit: 4 },
     };
   }
-  if (message.includes("gateway status") || message.includes("gateway.status")) {
+  const gatewayMethodMatch = message.match(/(gateway(?:\.[a-z0-9_-]+)+)/i);
+  if (message.includes("gateway status") || gatewayMethodMatch) {
     return {
       toolName: "gateway_stub",
-      input: { method: "gateway.status" },
+      input: { method: gatewayMethodMatch?.[1] ?? "gateway.status" },
     };
   }
   const memorySearchMatch = message.match(
@@ -106,6 +111,14 @@ export async function executeTool(params: {
   dataDir?: string;
   workspaceDir?: string;
 }): Promise<string> {
+  let pluginRegistry:
+    | ReturnType<typeof getActiveLearningPluginRegistry>
+    | null = null;
+  try {
+    pluginRegistry = getActiveLearningPluginRegistry();
+  } catch {
+    pluginRegistry = null;
+  }
   if (params.call.toolName === "math") {
     const expression = String(params.call.input.expression ?? "");
     const result = safeEvaluateExpression(expression);
@@ -118,8 +131,12 @@ export async function executeTool(params: {
   }
   if (params.call.toolName === "memory_search") {
     const query = String(params.call.input.query ?? "").trim();
+    if (pluginRegistry?.memoryRuntime) {
+      const hits = await pluginRegistry.memoryRuntime.search(query);
+      return hits.join("\n");
+    }
     // 这里显式走 index 层，是为了说明长期记忆通常不是“直接全量扫文件”。
-    const results = await searchMemoryIndex({
+    const results = await searchLearningMemory({
       workspaceDir: params.workspaceDir,
       dataDir: params.dataDir,
       query,
@@ -134,8 +151,11 @@ export async function executeTool(params: {
   }
   if (params.call.toolName === "memory_get") {
     const target = String(params.call.input.path ?? "MEMORY.md");
+    if (pluginRegistry?.memoryRuntime) {
+      return await pluginRegistry.memoryRuntime.read(target);
+    }
     // 读取原始 Markdown 文件，体现“memory files 才是 source of truth”。
-    const result = await readWorkspaceMemoryFile({
+    const result = await readLearningMemoryFile({
       workspaceDir: params.workspaceDir,
       target,
     });
@@ -143,13 +163,25 @@ export async function executeTool(params: {
   }
   if (params.call.toolName === "memory_write") {
     const note = String(params.call.input.note ?? "").trim();
+    if (pluginRegistry?.memoryRuntime) {
+      const output = await pluginRegistry.memoryRuntime.write(note);
+      return `Memory written to plugin:${pluginRegistry.memoryRuntime.id}\n${output}`;
+    }
     // learning 版把写入统一落到 daily memory，方便区分 curated memory 和追加记忆。
-    const result = await appendDailyMemoryEntry({
+    const result = await appendLearningDailyMemoryEntry({
       workspaceDir: params.workspaceDir,
       note,
       source: "manual",
     });
     return `Memory written to ${result.path}`;
+  }
+  if (pluginRegistry) {
+    const method = pluginRegistry.gatewayMethods.find(
+      (entry) => entry.name === String(params.call.input.method ?? "gateway.status"),
+    );
+    if (method) {
+      return JSON.stringify(await method.handle(params.call.input));
+    }
   }
   return JSON.stringify({
     ok: true,

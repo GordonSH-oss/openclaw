@@ -333,7 +333,7 @@
   - 学习版保留入口收束职责：参数校验、session 解析、skill snapshot、auth profile 顺序、model candidate、attempt 调度。
 - `src/agents/command/session.ts`
   - 对应 `learn/agent-design/src/command/session.ts`
-  - 学习版把 session 元数据和 transcript 文件路径的解析单独拆出来。
+  - 学习版本地保留 command 适配层，但真正的 session/transcript 底层现在已经下沉到 `learn/session-memory-design`。
 - `src/agents/command/run-context.ts`
   - 对应 `learn/agent-design/src/command/run-context.ts`
   - 学习版保留“执行上下文先统一归一化，再向下传”的模式。
@@ -360,9 +360,12 @@
   - 学习版提供 `math`、`transcript_lookup`、`gateway_stub`、`memory_search`、`memory_get`、`memory_write`，把 tool roundtrip 和长期记忆入口放在一起讲清楚。
 - transcript/session 持久化
   - 对应 `learn/agent-design/src/transcript/store.ts`
-  - 学习版明确使用 append-only DAG 风格 JSONL，承担 session 内的短期记忆。
+  - 学习版本地保留 append-only transcript 适配层，真正底层由 `learn/session-memory-design` 提供。
 - OpenClaw 的 memory host / memory search 主线
   - 对应 `learn/agent-design/src/workspace-memory/files.ts`、`index.ts`、`flush.ts`
-  - 学习版把长期记忆拆成 memory files、search index、pre-compaction flush 三层，方便理解“记忆文件是 source of truth，索引只是检索视图”。
+  - 学习版本地保留 agent 消费面，而真正的 workspace memory / index / flush 底层也已经下沉到 `learn/session-memory-design`。
+- OpenClaw 的 plugin-owned runtime consumption 主线
+  - 对应 `learn/plugin-design`
+  - 学习版现在让 `tools/runtime.ts` 可以消费 plugin 提供的 memory runtime 和 gateway method，用来解释 agent runtime 为什么不能把所有能力都硬编码在 core 里。
 
 学习版刻意不实现真实 provider SDK、复杂 queue/lane、远端 sandbox、ACP、runtime plugins 和完整 compaction，因为那会把“理解设计”淹没在实现噪音里。它保留的是你真正需要掌握的骨架：入口编排、attempt dispatch、runtime execution、fallback、auth、skills、tools 和 transcript。
