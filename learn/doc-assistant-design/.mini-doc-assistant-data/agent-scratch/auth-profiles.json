@@ -1,0 +1,24 @@
+{
+  "profiles": {
+    "primary": {
+      "id": "primary",
+      "provider": "mock",
+      "type": "oauth",
+      "label": "Primary OAuth Profile"
+    },
+    "backup": {
+      "id": "backup",
+      "provider": "mock",
+      "type": "token",
+      "label": "Backup Token Profile"
+    }
+  },
+  "usage": {
+    "primary": {
+      "lastUsed": 1774952934083
+    },
+    "backup": {
+      "lastUsed": 1774952792782
+    }
+  }
+}

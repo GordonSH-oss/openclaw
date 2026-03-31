@@ -1,6 +1,7 @@
 node_modules
 **/node_modules/
 .env
+learn/doc-assistant-design/.env
 docker-compose.override.yml
 docker-compose.extra.yml
 dist

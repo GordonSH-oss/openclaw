@@ -1,0 +1,99 @@
+[
+  {
+    "entryId": "dc7e164a-c585-48a2-b3ce-129f31c49601",
+    "reviewStatus": "pending_review",
+    "normalizedQuestions": [
+      "how to connect to the chat server"
+    ],
+    "tokens": [
+      "to",
+      "connect",
+      "chat",
+      "server"
+    ],
+    "strongTokens": [
+      "connect",
+      "chat",
+      "server"
+    ],
+    "updatedAt": 1774952934130
+  },
+  {
+    "entryId": "efa4f38d-514b-4709-bc4a-88030f06cd80",
+    "reviewStatus": "pending_review",
+    "normalizedQuestions": [
+      "how to create a channel"
+    ],
+    "tokens": [
+      "to",
+      "create",
+      "channel"
+    ],
+    "strongTokens": [
+      "create",
+      "channel"
+    ],
+    "updatedAt": 1774952792791
+  },
+  {
+    "entryId": "14c33536-664a-45c9-9996-25be14254917",
+    "reviewStatus": "rejected",
+    "normalizedQuestions": [
+      "what is nexconn"
+    ],
+    "tokens": [
+      "is",
+      "nexconn"
+    ],
+    "strongTokens": [
+      "nexconn"
+    ],
+    "updatedAt": 1774948468457
+  },
+  {
+    "entryId": "de8179d0-dac7-4228-843b-aea241c7d89b",
+    "reviewStatus": "rejected",
+    "normalizedQuestions": [
+      "how to start a chat"
+    ],
+    "tokens": [
+      "to",
+      "start",
+      "chat"
+    ],
+    "strongTokens": [
+      "start",
+      "chat"
+    ],
+    "updatedAt": 1774948088900
+  },
+  {
+    "entryId": "2219fedb-4bb0-47dd-a406-085f3191cad4",
+    "reviewStatus": "pending_review",
+    "normalizedQuestions": [
+      "android on android"
+    ],
+    "tokens": [
+      "android",
+      "on"
+    ],
+    "strongTokens": [
+      "android"
+    ],
+    "updatedAt": 1774947869038
+  },
+  {
+    "entryId": "281db77d-012e-489c-afd2-d8ffdea85ad8",
+    "reviewStatus": "rejected",
+    "normalizedQuestions": [
+      "我要找android的"
+    ],
+    "tokens": [
+      "我要找android的"
+    ],
+    "strongTokens": [
+      "我要找android的"
+    ],
+    "updatedAt": 1774943556816
+  }
+]

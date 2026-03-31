@@ -1,0 +1,1711 @@
+{
+  "mode": "extractive",
+  "docsRoot": "/Users/admin/Workspace@RongCloud/For-production/rc-new/docs",
+  "passedCount": 26,
+  "total": 26,
+  "generatedAt": "2026-03-31T07:43:50.649Z",
+  "results": [
+    {
+      "caseDef": {
+        "id": "greeting-hello",
+        "title": "Greeting input should return a guided greeting instead of retrieval output",
+        "question": "Hello",
+        "expectedSummaryKeywords": [
+          "guided greeting"
+        ],
+        "expectedAnswerKeywords": [
+          "我是你的 nexconn 文档助手",
+          "例如你可以这样问"
+        ],
+        "allowNoHits": true,
+        "topK": 3
+      },
+      "passed": true,
+      "reasons": [
+        "No hits as expected.",
+        "Answer expectations satisfied."
+      ],
+      "retrieval": [],
+      "answer": "我是你的 Nexconn 文档助手。\n你可以直接告诉我平台、SDK 和目标场景，我会优先根据本地文档整理成开发者可执行的回答。\n例如你可以这样问：\n- Android / iOS / Web Chat SDK 怎么接入和初始化？\n- 如何连接当前用户并建立聊天会话？\n- 如何开始单聊、群聊，或者发送第一条消息？\n- 如何配置推送、通知点击和会话跳转？\n- 如何发起、接听或升级音视频通话？\n- iOS Call SDK 如何发起或接听 1 对 1 通话？\n- Web Call SDK 如何发起 1 对 1 通话或配置推送？\n如果你已经有具体问题，也可以直接输入完整句子，比如“Android Chat SDK 如何开始 direct chat？”",
+      "summary": "guided greeting"
+    },
+    {
+      "caseDef": {
+        "id": "greeting-scope",
+        "title": "Capability question should return a guided greeting with starter topics",
+        "question": "你能做什么",
+        "expectedSummaryKeywords": [
+          "guided greeting"
+        ],
+        "expectedAnswerKeywords": [
+          "nexconn 文档助手",
+          "接入",
+          "单聊"
+        ],
+        "allowNoHits": true,
+        "topK": 3
+      },
+      "passed": true,
+      "reasons": [
+        "No hits as expected.",
+        "Answer expectations satisfied."
+      ],
+      "retrieval": [],
+      "answer": "我是你的 Nexconn 文档助手。\n你可以直接告诉我平台、SDK 和目标场景，我会优先根据本地文档整理成开发者可执行的回答。\n例如你可以这样问：\n- Android / iOS / Web Chat SDK 怎么接入和初始化？\n- 如何连接当前用户并建立聊天会话？\n- 如何开始单聊、群聊，或者发送第一条消息？\n- 如何配置推送、通知点击和会话跳转？\n- 如何发起、接听或升级音视频通话？\n- iOS Call SDK 如何发起或接听 1 对 1 通话？\n- Web Call SDK 如何发起 1 对 1 通话或配置推送？\n如果你已经有具体问题，也可以直接输入完整句子，比如“Android Chat SDK 如何开始 direct chat？”",
+      "summary": "guided greeting"
+    },
+    {
+      "caseDef": {
+        "id": "chat-offline-messages-concept",
+        "title": "Offline-message concept questions should return an explanation instead of steps",
+        "question": "what's offline messages?",
+        "expectedPathSuffixes": [
+          "docs/chatsdk-web/message/manage-offline-message-duration.mdx",
+          "docs/guides/glossary/chat-glossary.mdx"
+        ],
+        "expectedHeadingKeywords": [
+          "offline messages",
+          "about offline messages"
+        ],
+        "expectedSummaryKeywords": [
+          "concept answer"
+        ],
+        "expectedAnswerKeywords": [
+          "定义",
+          "关键点",
+          "离线",
+          "保留"
+        ],
+        "discouragedAnswerKeywords": [
+          "准备工作",
+          "步骤",
+          "DirectChannel"
+        ],
+        "topK": 4
+      },
+      "passed": true,
+      "reasons": [
+        "Retrieval expectations satisfied.",
+        "Answer expectations satisfied."
+      ],
+      "retrieval": [
+        {
+          "path": "docs/chatsdk-web/message/manage-offline-message-duration.mdx",
+          "heading": "About offline messages",
+          "score": 39,
+          "startLine": 17,
+          "endLine": 25,
+          "snippet": "An offline message<sup><a href=\"/guides/glossary/imglossary#offline\">?</a></sup> is a message received while the user is not online. The Nexconn server automatically retains messages received during the user's offline p…"
+        },
+        {
+          "path": "docs/chatsdk-web/message/manage-offline-message-duration.mdx",
+          "heading": "App-level offline message settings",
+          "score": 33,
+          "startLine": 26,
+          "endLine": 35,
+          "snippet": "You can modify the following app-level offline message storage settings: - **Offline message cloud retention period**. Go to the [Nexconn Console](https://console.nexconn.ai/agile/im/service/config), navigate to **Chat*…"
+        },
+        {
+          "path": "docs/guides/glossary/chat-glossary.mdx",
+          "heading": "Offline messages {#offline}",
+          "score": 32,
+          "startLine": 200,
+          "endLine": 211,
+          "snippet": "Messages delivered to a user while they were not connected. Nexconn retains undelivered messages for **7 days**. When the recipient reconnects within that window, Nexconn pushes the messages on reconnection. Messages ol…"
+        },
+        {
+          "path": "docs/chatsdk-flutter/message/manage-offline-message-duration.md",
+          "heading": "About missed messages",
+          "score": 31,
+          "startLine": 12,
+          "endLine": 20,
+          "snippet": "Missed messages are messages received while the user is offline. The server automatically retains messages during the offline period, with a default retention period of 7 days. If the client comes online within 7 days, …"
+        },
+        {
+          "path": "docs/chatsdk-flutter/message/manage-offline-message-duration.md",
+          "heading": "App-level missed message settings",
+          "score": 25,
+          "startLine": 21,
+          "endLine": 28,
+          "snippet": "Modify the following app-level settings: - **Offline message cloud retention period**: Go to the [Nexconn console](https://console.nexconn.ai/agile/im/service/config) under **Chat** > **Chat settings** > **Global Messag…"
+        }
+      ],
+      "answer": "关于“what's offline messages?”，文档里的核心定义是：An offline message<sup><a href=\"/guides/glossary/imglossary#offline\">?</a></sup> is a message received while the user is not online. The Nexconn server automatically retains messages received during the user's offline p…[docs/chatsdk-web/message/manage-offline-message-duration.mdx:17-25]\n\n定义\n- An offline message<sup><a href=\"/guides/glossary/imglossary#offline\">?</a></sup> is a message received while the user is not online. The Nexconn server automatically retains messages received during the user's offline p…[docs/chatsdk-web/message/manage-offline-message-duration.mdx:17-25]\n\n关键点\n- 服务端会在离线期间保留未投递消息；如果文档提到了保留时长或窗口期，可以按该配置理解消息补投行为。[docs/chatsdk-web/message/manage-offline-message-duration.mdx:26-35]\n- 服务端会在离线期间保留未投递消息；如果文档提到了保留时长或窗口期，可以按该配置理解消息补投行为。[docs/guides/glossary/chat-glossary.mdx:200-211]\n- 服务端会在离线期间保留未投递消息；如果文档提到了保留时长或窗口期，可以按该配置理解消息补投行为。[docs/chatsdk-flutter/message/manage-offline-message-duration.md:12-20]\n\nSources:\n- docs/chatsdk-web/message/manage-offline-message-duration.mdx#About offline messages:17-25\n- docs/chatsdk-web/message/manage-offline-message-duration.mdx#App-level offline message settings:26-35\n- docs/guides/glossary/chat-glossary.mdx#Offline messages {#offline}:200-211\n- docs/chatsdk-flutter/message/manage-offline-message-duration.md#About missed messages:12-20",
+      "summary": "concept answer from 4 documentation chunks"
+    },
+    {
+      "caseDef": {
+        "id": "chat-direct-clarify",
+        "title": "Ambiguous direct-chat question should ask for platform clarification",
+        "question": "How to start a direct chat?",
+        "expectedPathSuffixes": [
+          "docs/chatsdk-android/getting-started.md",
+          "docs/chatsdk-ios/quickstart.md",
+          "docs/chatsdk-web/quickstart.md"
+        ],
+        "discouragedPathSuffixes": [
+          "docs/platform-chat-api/message/how-to-sync-to-sender-client.md"
+        ],
+        "expectedHeadingKeywords": [
+          "send a message",
+          "step 5",
+          "message"
+        ],
+        "expectedSummaryKeywords": [
+          "platform clarification required"
+        ],
+        "expectedAnswerKeywords": [
+          "请告诉我你要看 Android、iOS 还是 Web"
+        ],
+        "discouragedAnswerKeywords": [
+          "根据本地文档"
+        ],
+        "topK": 5
+      },
+      "passed": true,
+      "reasons": [
+        "Retrieval expectations satisfied.",
+        "Answer expectations satisfied."
+      ],
+      "retrieval": [
+        {
+          "path": "docs/chatsdk-web/quickstart.md",
+          "heading": "Send a message {#send}",
+          "score": 182,
+          "startLine": 137,
+          "endLine": 156,
+          "snippet": "Send a text message to a user with userId `2`. Besides text messages, you can also send images, files, voice messages, and more. See [Message types](./message/send.md#types). ```ts import { DirectChannel, SendTextMessag…"
+        },
+        {
+          "path": "docs/chatsdk-ios/quickstart.md",
+          "heading": "Step 5: Send a message",
+          "score": 177,
+          "startLine": 199,
+          "endLine": 255,
+          "snippet": "Send a text message to another user: <Tabs groupId=\"language\"> <TabItem value=\"swift\" label=\"Swift\" default> ```swift guard let channel = DirectChannel(channelId: \"recipient-user-id\") else { return } let textContent = T…"
+        },
+        {
+          "path": "docs/chatsdk-android/getting-started.md",
+          "heading": "Step 5: Send a message",
+          "score": 168,
+          "startLine": 305,
+          "endLine": 366,
+          "snippet": "Send a text message to user ID `2` through a direct channel. The SDK also supports image, file, voice, and other message types. See [Message types](/chatsdk-android/message/send) for details. <Tabs groupId=\"language\"> <…"
+        },
+        {
+          "path": "docs/chatsdk-android/message/send.md",
+          "heading": "Sending to different channel types",
+          "score": 150,
+          "startLine": 144,
+          "endLine": 163,
+          "snippet": "```kotlin // Direct channel val directChannel = DirectChannel(userId) directChannel.sendMessage(params, handler) // Group channel val groupChannel = GroupChannel(groupId) groupChannel.sendMessage(params, handler) // Ope…"
+        },
+        {
+          "path": "docs/chatsdk-android/message/send.md",
+          "heading": "Send messages",
+          "score": 144,
+          "startLine": 10,
+          "endLine": 17,
+          "snippet": "This guide covers how to send messages in direct channels, group channels, and open channels using the Nexconn SDK. :::tip By default, users who have not joined an open channel can still send messages to it. To restrict…"
+        }
+      ],
+      "answer": "“How to start a direct chat?” 这个问题需要先确认平台。当前检索结果同时命中了 Web / iOS / Android 的客户端文档，我不应该直接猜平台。\n\n请告诉我你要看 Android、iOS 还是 Web，我再按步骤整理成开发者指南。\n\n当前最接近的文档入口：\n- Web: Send a message {#send} [docs/chatsdk-web/quickstart.md:137-156]\n- iOS: Step 5: Send a message [docs/chatsdk-ios/quickstart.md:199-255]\n- Android: Step 5: Send a message [docs/chatsdk-android/getting-started.md:305-366]\n\nSources:\n- docs/chatsdk-web/quickstart.md#Send a message {#send}:137-156\n- docs/chatsdk-ios/quickstart.md#Step 5: Send a message:199-255\n- docs/chatsdk-android/getting-started.md#Step 5: Send a message:305-366",
+      "summary": "platform clarification required"
+    },
+    {
+      "caseDef": {
+        "id": "chat-android-direct-guide",
+        "title": "Android direct-chat question should produce a guided answer",
+        "question": "How to start a direct chat on Android?",
+        "expectedPathSuffixes": [
+          "docs/chatsdk-android/direct-system-channels/overview.md"
+        ],
+        "discouragedPathSuffixes": [
+          "docs/platform-chat-api/"
+        ],
+        "expectedHeadingKeywords": [
+          "direct channel",
+          "send"
+        ],
+        "expectedSummaryKeywords": [
+          "guided answer"
+        ],
+        "expectedAnswerKeywords": [
+          "步骤",
+          "DirectChannel",
+          "SendTextMessageParams"
+        ],
+        "discouragedAnswerKeywords": [
+          "请告诉我你要看 Android、iOS 还是 Web"
+        ],
+        "topK": 5
+      },
+      "passed": true,
+      "reasons": [
+        "Retrieval expectations satisfied.",
+        "Answer expectations satisfied."
+      ],
+      "retrieval": [
+        {
+          "path": "docs/chatsdk-android/getting-started.md",
+          "heading": "Step 5: Send a message",
+          "score": 204,
+          "startLine": 305,
+          "endLine": 366,
+          "snippet": "Send a text message to user ID `2` through a direct channel. The SDK also supports image, file, voice, and other message types. See [Message types](/chatsdk-android/message/send) for details. <Tabs groupId=\"language\"> <…"
+        },
+        {
+          "path": "docs/chatsdk-android/message/send.md",
+          "heading": "Sending to different channel types",
+          "score": 181,
+          "startLine": 144,
+          "endLine": 163,
+          "snippet": "```kotlin // Direct channel val directChannel = DirectChannel(userId) directChannel.sendMessage(params, handler) // Group channel val groupChannel = GroupChannel(groupId) groupChannel.sendMessage(params, handler) // Ope…"
+        },
+        {
+          "path": "docs/chatsdk-android/message/send.md",
+          "heading": "Send messages",
+          "score": 179,
+          "startLine": 10,
+          "endLine": 17,
+          "snippet": "This guide covers how to send messages in direct channels, group channels, and open channels using the Nexconn SDK. :::tip By default, users who have not joined an open channel can still send messages to it. To restrict…"
+        },
+        {
+          "path": "docs/chatsdk-android/message/send.md",
+          "heading": "Forward and broadcast messages",
+          "score": 169,
+          "startLine": 643,
+          "endLine": 658,
+          "snippet": "**Forward messages**: The Chat SDK does not provide a dedicated forwarding API. Use the standard send message API to forward message content. **Broadcast messages**: To send a message to multiple users (or multiple targ…"
+        },
+        {
+          "path": "docs/chatsdk-android/direct-system-channels/overview.md",
+          "heading": "Direct channel",
+          "score": 167,
+          "startLine": 26,
+          "endLine": 31,
+          "snippet": "A direct channel enables one-to-one messaging between two users. The two users may or may not be contacts — Nexconn does not manage user relationships. The SDK automatically establishes and maintains the channel relatio…"
+        }
+      ],
+      "answer": "以下内容基于 Android 文档整理。当前命中的文档主要支持你 发送第一条消息。\n\n步骤\n1. 创建 `DirectChannel(\"<target-user-id>\")`，再构造 `SendTextMessageParams` 并调用 `channel.sendMessage` 发送第一条消息。[docs/chatsdk-android/getting-started.md:305-366]\n\n关键 API / 文档\n- `DirectChannel`\n- `channel.sendMessage`\n\n注意事项\n- 当前命中的文档没有覆盖完整的 SDK 导入或初始化步骤；如果你需要从零接入，请继续追问 import/init。\n- 当前命中的文档没有展开 token 获取或连接建立步骤；如果你还没完成登录连接，建议继续追问 connect/token。\n\nSources:\n- docs/chatsdk-android/getting-started.md#Step 5: Send a message:305-366",
+      "summary": "guided answer from 1 documentation chunks"
+    },
+    {
+      "caseDef": {
+        "id": "chat-android-connect",
+        "title": "Android connect question should prefer Android connection docs",
+        "question": "How do I connect a user in Android Chat SDK?",
+        "expectedPathSuffixes": [
+          "docs/chatsdk-android/connection/connect.md",
+          "docs/chatsdk-android/getting-started.md"
+        ],
+        "discouragedPathSuffixes": [
+          "docs/chatsdk-ios/connection/connect.md"
+        ],
+        "expectedHeadingKeywords": [
+          "connect",
+          "connection"
+        ],
+        "expectedSummaryKeywords": [
+          "guided answer"
+        ],
+        "expectedAnswerKeywords": [
+          "步骤"
+        ],
+        "topK": 4
+      },
+      "passed": true,
+      "reasons": [
+        "Retrieval expectations satisfied.",
+        "Answer expectations satisfied."
+      ],
+      "retrieval": [
+        {
+          "path": "docs/chatsdk-android/connection/connect.md",
+          "heading": "Connect to the chat server",
+          "score": 104,
+          "startLine": 28,
+          "endLine": 114,
+          "snippet": "Initiate a connection to the Nexconn chat server at the appropriate point in your app's flow (for example, after login or registration). Keep the following in mind: - Call `connect` only after the SDK is initialized, ot…"
+        },
+        {
+          "path": "docs/chatsdk-android/community-channels/creating-channel.md",
+          "heading": "Managing channel lists",
+          "score": 101,
+          "startLine": 32,
+          "endLine": 46,
+          "snippet": "Your app server is responsible for maintaining the community channel list and subchannel list for each user. When users open your app, the client should request these lists from your app server. :::tip The client SDK pr…"
+        },
+        {
+          "path": "docs/chatsdk-android/community-channels/user-group-about.md",
+          "heading": "Listening for user group changes (client)",
+          "score": 98,
+          "startLine": 49,
+          "endLine": 56,
+          "snippet": "The current Android SDK does not expose a dedicated user-group listener on `NCEngine`. Community channel events are handled via `ChannelHandler` (registered with `NCEngine.addChannelHandler()`), but this handler does no…"
+        },
+        {
+          "path": "docs/chatsdk-android/connection/connect.md",
+          "heading": "Error handling example",
+          "score": 98,
+          "startLine": 255,
+          "endLine": 323,
+          "snippet": "<Tabs groupId=\"language\"> <TabItem value=\"kotlin\" label=\"Kotlin\" default> ```kotlin NCEngine.connect(ConnectParams(token)) { userId, error -> if (error != null) { when (error.code) { 31020 -> { // Access token expired r…"
+        },
+        {
+          "path": "docs/chatsdk-android/direct-system-channels/pinning-channel.md",
+          "heading": "Pin in the channel list",
+          "score": 97,
+          "startLine": 18,
+          "endLine": 21,
+          "snippet": "When you pin a channel, the SDK sets its `isPinned` field and syncs the state to the server. Nexconn automatically syncs pin status across the user's devices. The client can proactively retrieve the latest data or recei…"
+        }
+      ],
+      "answer": "以下内容基于 Android 文档整理。当前命中的文档主要支持你 完成 SDK 接入与连接。\n\n准备工作\n- 在应用启动阶段调用 `NCEngine.initialize()` 完成初始化。[docs/chatsdk-android/connection/connect.md:28-114]\n\n步骤\n1. 为当前用户获取 access token，然后调用 `connect` 连接到 Nexconn 服务器；连接成功后再进入聊天流程。[docs/chatsdk-android/connection/connect.md:28-114]\n\n关键 API / 文档\n- `NCEngine.connect`\n\n注意事项\n- 当前命中的文档没有覆盖完整的 SDK 导入或初始化步骤；如果你需要从零接入，请继续追问 import/init。\n- 当前命中的文档没有给出明确的发消息示例，必要时请继续追问具体平台或消息类型。\n\nSources:\n- docs/chatsdk-android/connection/connect.md#Connect to the chat server:28-114",
+      "summary": "guided answer from 1 documentation chunks"
+    },
+    {
+      "caseDef": {
+        "id": "chat-android-push-click",
+        "title": "Android push-click question should land on the notification click guide",
+        "question": "How do I open a single conversation from Android push notification clicks?",
+        "expectedPathSuffixes": [
+          "docs/chatsdk-android/push/handle-push-notification-click.md"
+        ],
+        "discouragedPathSuffixes": [
+          "docs/platform-chat-api/"
+        ],
+        "expectedHeadingKeywords": [
+          "notification",
+          "channel page",
+          "conversation"
+        ],
+        "expectedSummaryKeywords": [
+          "guided answer"
+        ],
+        "expectedAnswerKeywords": [
+          "intent-filter",
+          "conversation"
+        ],
+        "topK": 3
+      },
+      "passed": true,
+      "reasons": [
+        "Retrieval expectations satisfied.",
+        "Answer expectations satisfied."
+      ],
+      "retrieval": [
+        {
+          "path": "docs/chatsdk-android/push/handle-push-notification-click.md",
+          "heading": "Navigate to the channel page {#clicksetting}",
+          "score": 100,
+          "startLine": 24,
+          "endLine": 44,
+          "snippet": "When the user taps notifications from a single sender, the SDK sends an Intent to navigate to the channel Activity. Add the following `intent-filter` to the Activity that opens a single conversation in your app. The And…"
+        },
+        {
+          "path": "docs/chatsdk-android/push/handle-push-notification-click.md",
+          "heading": "Handle push notification clicks",
+          "score": 93,
+          "startLine": 8,
+          "endLine": 15,
+          "snippet": "This guide explains how the SDK handles push notification tap events by default and how your app can customize that behavior. :::tip This guide only covers remote push notification click events. For local notification c…"
+        },
+        {
+          "path": "docs/chatsdk-android/push/handle-push-notification-click.md",
+          "heading": "Navigate to the channel list page",
+          "score": 90,
+          "startLine": 45,
+          "endLine": 65,
+          "snippet": "When the user taps collapsed notifications from multiple senders, the SDK sends an Intent to navigate to the channel list Activity. Add the following `intent-filter` to the Activity that opens your conversation list. Th…"
+        },
+        {
+          "path": "docs/chatsdk-android/push/config-push-notification-style.md",
+          "heading": "Customize push notification style",
+          "score": 86,
+          "startLine": 8,
+          "endLine": 14,
+          "snippet": "When the app receives a push notification, the system displays a notification. You can customize the notification appearance depending on the push provider: - **FCM push**: If the **push method** is set to **data messag…"
+        },
+        {
+          "path": "docs/chatsdk-android/push/handle-push-notification-click.md",
+          "heading": "Implement the default navigation behavior",
+          "score": 86,
+          "startLine": 16,
+          "endLine": 23,
+          "snippet": "The SDK handles remote push notification tap events by default. When a user taps a notification, the SDK sends an implicit Intent. Configure an Intent filter in your app's `AndroidManifest.xml` to receive the Intent and…"
+        }
+      ],
+      "answer": "以下内容基于 Android 文档整理。当前命中的文档主要支持你 先确认最合适的客户端文档入口。\n\n准备工作\n- 在 `AndroidManifest.xml` 里配置接收通知点击的 `intent-filter`，让应用可以打开对应 conversation 页面。[docs/chatsdk-android/push/handle-push-notification-click.md:24-44]\n\n步骤\n1. 在 `AndroidManifest.xml` 里为单聊页面配置 `intent-filter`，让通知点击后可以打开对应 conversation 页面。[docs/chatsdk-android/push/handle-push-notification-click.md:24-44]\n\n关键 API / 文档\n- `intent-filter`\n- `com.example.app.chat.ChannelActivity`\n\n注意事项\n- 当前命中的文档没有覆盖完整的 SDK 导入或初始化步骤；如果你需要从零接入，请继续追问 import/init。\n- 当前命中的文档没有展开 token 获取或连接建立步骤；如果你还没完成登录连接，建议继续追问 connect/token。\n- 当前命中的文档没有给出明确的发消息示例，必要时请继续追问具体平台或消息类型。\n\nSources:\n- docs/chatsdk-android/push/handle-push-notification-click.md#Navigate to the channel page {#clicksetting}:24-44",
+      "summary": "guided answer from 1 documentation chunks"
+    },
+    {
+      "caseDef": {
+        "id": "chat-ios-direct-guide",
+        "title": "iOS direct-chat question should produce an iOS guide",
+        "question": "How to start a direct chat on iOS?",
+        "expectedPathSuffixes": [
+          "docs/chatsdk-ios/direct-system-channels/overview.md",
+          "docs/chatsdk-ios/getting-started.md"
+        ],
+        "discouragedPathSuffixes": [
+          "docs/chatsdk-android/"
+        ],
+        "expectedHeadingKeywords": [
+          "direct channel",
+          "send a message"
+        ],
+        "expectedSummaryKeywords": [
+          "guided answer"
+        ],
+        "expectedAnswerKeywords": [
+          "步骤"
+        ],
+        "topK": 5
+      },
+      "passed": true,
+      "reasons": [
+        "Retrieval expectations satisfied.",
+        "Answer expectations satisfied."
+      ],
+      "retrieval": [
+        {
+          "path": "docs/chatsdk-ios/quickstart.md",
+          "heading": "Step 5: Send a message",
+          "score": 208,
+          "startLine": 199,
+          "endLine": 255,
+          "snippet": "Send a text message to another user: <Tabs groupId=\"language\"> <TabItem value=\"swift\" label=\"Swift\" default> ```swift guard let channel = DirectChannel(channelId: \"recipient-user-id\") else { return } let textContent = T…"
+        },
+        {
+          "path": "docs/chatsdk-ios/channel/intro.md",
+          "heading": "Direct channel",
+          "score": 162,
+          "startLine": 23,
+          "endLine": 28,
+          "snippet": "A Direct Channel is a one-to-one chat between two users. The two users may or may not be friends — Nexconn does not manage user relationships. Nexconn is responsible for creating and maintaining the channel relationship…"
+        },
+        {
+          "path": "docs/chatsdk-ios/getting-started.md",
+          "heading": "Step 5: Send a message {#send}",
+          "score": 158,
+          "startLine": 329,
+          "endLine": 380,
+          "snippet": "Send a text message to the user with userId `2`. Beyond text, you can also send images, files, voice messages, and other message types. See [Message types] for details. <Tabs groupId=\"language\"> <TabItem value=\"swift\" l…"
+        },
+        {
+          "path": "docs/chatsdk-ios/direct-system-channels/overview.md",
+          "heading": "Channel properties",
+          "score": 156,
+          "startLine": 45,
+          "endLine": 77,
+          "snippet": "The `NCBaseChannel` class provides the following key properties: | Property | Type | Description | |------|------|------| | channelType | NCChannelType | Channel type: direct, group, open, system, or community | | chann…"
+        },
+        {
+          "path": "docs/chatsdk-web/quickstart.md",
+          "heading": "Send a message {#send}",
+          "score": 156,
+          "startLine": 137,
+          "endLine": 156,
+          "snippet": "Send a text message to a user with userId `2`. Besides text messages, you can also send images, files, voice messages, and more. See [Message types](./message/send.md#types). ```ts import { DirectChannel, SendTextMessag…"
+        }
+      ],
+      "answer": "以下内容基于 iOS 文档整理。当前命中的文档主要支持你 创建 direct channel，然后发送第一条消息。 [docs/chatsdk-ios/direct-system-channels/overview.md:45-77]\n\n准备工作\n- Direct channel 的 channelId 就是对方用户 ID，需要先明确聊天目标用户。[docs/chatsdk-ios/direct-system-channels/overview.md:45-77]\n\n步骤\n1. 创建 `DirectChannel(\"<target-user-id>\")` 作为与目标用户的一对一会话对象。[docs/chatsdk-ios/direct-system-channels/overview.md:45-77]\n2. 创建 `DirectChannel(\"<target-user-id>\")`，再构造 `SendTextMessageParams` 并调用 `channel.sendMessage` 发送第一条消息。[docs/chatsdk-ios/quickstart.md:199-255]\n\n关键 API / 文档\n- `NCBaseChannel`\n- `latestMessage`\n- `DirectChannel`\n- `channel.sendMessage`\n\n注意事项\n- Direct channel 表示两个用户之间的一对一私聊，会话标识通常就是对方用户 ID。[docs/chatsdk-ios/direct-system-channels/overview.md:45-77]\n- 当前命中的文档没有覆盖完整的 SDK 导入或初始化步骤；如果你需要从零接入，请继续追问 import/init。\n- 当前命中的文档没有展开 token 获取或连接建立步骤；如果你还没完成登录连接，建议继续追问 connect/token。\n\nSources:\n- docs/chatsdk-ios/direct-system-channels/overview.md#Channel properties:45-77\n- docs/chatsdk-ios/quickstart.md#Step 5: Send a message:199-255",
+      "summary": "guided answer from 2 documentation chunks"
+    },
+    {
+      "caseDef": {
+        "id": "chat-ios-connect",
+        "title": "iOS connect question should prefer iOS connect docs",
+        "question": "How do I connect a user in iOS Chat SDK?",
+        "expectedPathSuffixes": [
+          "docs/chatsdk-ios/connection/connect.md",
+          "docs/chatsdk-ios/getting-started.md"
+        ],
+        "discouragedPathSuffixes": [
+          "docs/chatsdk-android/connection/connect.md"
+        ],
+        "expectedHeadingKeywords": [
+          "connect",
+          "server"
+        ],
+        "expectedSummaryKeywords": [
+          "guided answer"
+        ],
+        "expectedAnswerKeywords": [
+          "步骤"
+        ],
+        "topK": 4
+      },
+      "passed": true,
+      "reasons": [
+        "Retrieval expectations satisfied.",
+        "Answer expectations satisfied."
+      ],
+      "retrieval": [
+        {
+          "path": "docs/chatsdk-ios/direct-system-channels/pinning-channel.md",
+          "heading": "Pin a channel in the channel list",
+          "score": 99,
+          "startLine": 16,
+          "endLine": 19,
+          "snippet": "Pinning a channel updates the `isPinned` field on `NCBaseChannel` and syncs the state to the server. The SDK automatically synchronizes the pinned state across all devices where the user is logged in."
+        },
+        {
+          "path": "docs/chatsdk-ios/group-channels/pinning-channel.md",
+          "heading": "Pin a channel in the channel list",
+          "score": 99,
+          "startLine": 16,
+          "endLine": 19,
+          "snippet": "Pinning a channel updates the `isPinned` field on `NCBaseChannel` and syncs the state to the server. The SDK automatically synchronizes the pinned state across all devices where the user is logged in."
+        },
+        {
+          "path": "docs/chatsdk-ios/connection/connect.md",
+          "heading": "Connect to the Chat server",
+          "score": 98,
+          "startLine": 29,
+          "endLine": 39,
+          "snippet": "Choose an appropriate time to connect to the Nexconn chat server based on your application's business needs (for example, on login, registration, or another suitable event to ensure the user can enter the main screen). …"
+        },
+        {
+          "path": "docs/chatsdk-ios/connection/connect.md",
+          "heading": "Connection status codes {#connectstatus}",
+          "score": 98,
+          "startLine": 162,
+          "endLine": 190,
+          "snippet": "The `NCError.errorCode` returned in connection callbacks, and the `NCConnectionStatus` enum used in [Monitor Connection Status](./monitor-status.md), are as follows: :::tip 1. When `NCConnectionStatus.tokenIncorrect` is…"
+        },
+        {
+          "path": "docs/chatsdk-ios/essentials-connection/connect.md",
+          "heading": "Connection status codes {#connectstatus}",
+          "score": 97,
+          "startLine": 127,
+          "endLine": 153,
+          "snippet": "The `NCError.errorCode` in the connection callback and the `NCConnectionStatus` enum values used in [connection status monitoring](./monitor-status.md): :::tip 1. When you receive `NCConnectionStatusTokenIncorrect`, req…"
+        }
+      ],
+      "answer": "以下内容基于 iOS 文档整理。当前命中的文档主要支持你 完成 SDK 接入与连接。\n\n准备工作\n- 在应用启动阶段调用 `NCEngine.initialize()` 完成初始化。[docs/chatsdk-ios/connection/connect.md:29-39]\n\n步骤\n1. 为当前用户获取 access token，然后调用 `connect` 连接到 Nexconn 服务器；连接成功后再进入聊天流程。[docs/chatsdk-ios/connection/connect.md:29-39]\n\n注意事项\n- 当前命中的文档没有覆盖完整的 SDK 导入或初始化步骤；如果你需要从零接入，请继续追问 import/init。\n- 当前命中的文档没有给出明确的发消息示例，必要时请继续追问具体平台或消息类型。\n\nSources:\n- docs/chatsdk-ios/connection/connect.md#Connect to the Chat server:29-39",
+      "summary": "guided answer from 1 documentation chunks"
+    },
+    {
+      "caseDef": {
+        "id": "chat-web-import-init",
+        "title": "Web import/init question should prefer the web quickstart and init docs",
+        "question": "How do I import and initialize the Web Chat SDK?",
+        "expectedPathSuffixes": [
+          "docs/chatsdk-web/quickstart.md"
+        ],
+        "discouragedPathSuffixes": [
+          "docs/chatsdk-ios/"
+        ],
+        "expectedHeadingKeywords": [
+          "import",
+          "initialize",
+          "init"
+        ],
+        "expectedSummaryKeywords": [
+          "guided answer"
+        ],
+        "expectedAnswerKeywords": [
+          "步骤",
+          "NCEngine.initialize"
+        ],
+        "topK": 4
+      },
+      "passed": true,
+      "reasons": [
+        "Retrieval expectations satisfied.",
+        "Answer expectations satisfied."
+      ],
+      "retrieval": [
+        {
+          "path": "docs/chatsdk-web/import.md",
+          "heading": "Import the SDK {#import}",
+          "score": 94,
+          "startLine": 14,
+          "endLine": 47,
+          "snippet": ":::tip The Chat SDK provides full TypeScript support. We recommend TypeScript for better type safety and maintainability. ::: **NPM (recommended)** :::info The `@nexconn/engine` package provides the core capabilities us…"
+        },
+        {
+          "path": "docs/chatsdk-web/init.md",
+          "heading": "Initialize the SDK",
+          "score": 88,
+          "startLine": 16,
+          "endLine": 23,
+          "snippet": "```ts import { NCEngine } from '@nexconn/chat'; NCEngine.initialize({ appKey: '<Your-App-Key>' }); ```"
+        },
+        {
+          "path": "docs/chatsdk-web/quickstart.md",
+          "heading": "Initialize {#init}",
+          "score": 87,
+          "startLine": 45,
+          "endLine": 57,
+          "snippet": "Before using any Chat SDK features, you **must call the initialization method exactly once** during the entire app lifecycle. The **App Key** is the unique identifier for your app. You need a valid App Key to initialize…"
+        },
+        {
+          "path": "docs/chatsdk-web/community-channel/integration.md",
+          "heading": "Import the SDK",
+          "score": 83,
+          "startLine": 16,
+          "endLine": 45,
+          "snippet": ":::tip The Chat SDK provides full TypeScript support. We recommend using TypeScript for better code safety and maintainability. ::: **NPM (recommended)** 1. Install the packages: ```bash npm install @nexconn/engine@late…"
+        },
+        {
+          "path": "docs/chatsdk-web/init.md",
+          "heading": "Initialize the SDK",
+          "score": 83,
+          "startLine": 6,
+          "endLine": 9,
+          "snippet": "Before you use any Chat SDK features, call the initialization method. Call it exactly once during the app lifecycle."
+        }
+      ],
+      "answer": "以下内容基于 Web 文档整理。当前命中的文档主要支持你 完成 SDK 接入与连接。 [docs/chatsdk-web/import.md:14-47]\n\n准备工作\n- 先把 Chat SDK 依赖接入项目。[docs/chatsdk-web/import.md:14-47]\n- 先把 Chat SDK 依赖接入项目。[docs/chatsdk-web/init.md:16-23]\n\n步骤\n1. 先把 Chat SDK 依赖加入工程，确保项目已经完成基础接入。[docs/chatsdk-web/import.md:14-47]\n2. 先把 Chat SDK 依赖加入工程，确保项目已经完成基础接入。[docs/chatsdk-web/init.md:16-23]\n\n关键 API / 文档\n- `DirectChannel`\n- `NCEngine.initialize`\n\n注意事项\n- 当前命中的文档没有展开 token 获取或连接建立步骤；如果你还没完成登录连接，建议继续追问 connect/token。\n- 当前命中的文档没有给出明确的发消息示例，必要时请继续追问具体平台或消息类型。\n\nSources:\n- docs/chatsdk-web/import.md#Import the SDK {#import}:14-47\n- docs/chatsdk-web/init.md#Initialize the SDK:16-23",
+      "summary": "guided answer from 2 documentation chunks"
+    },
+    {
+      "caseDef": {
+        "id": "chat-web-direct-guide",
+        "title": "Web direct-chat question should produce a guided answer",
+        "question": "How to start a direct chat on Web?",
+        "expectedPathSuffixes": [
+          "docs/chatsdk-web/quickstart.md",
+          "docs/chatsdk-web/message/send.md"
+        ],
+        "discouragedPathSuffixes": [
+          "docs/platform-chat-api/"
+        ],
+        "expectedHeadingKeywords": [
+          "send a message",
+          "message"
+        ],
+        "expectedSummaryKeywords": [
+          "guided answer"
+        ],
+        "expectedAnswerKeywords": [
+          "步骤",
+          "DirectChannel",
+          "SendTextMessageParams"
+        ],
+        "topK": 5
+      },
+      "passed": true,
+      "reasons": [
+        "Retrieval expectations satisfied.",
+        "Answer expectations satisfied."
+      ],
+      "retrieval": [
+        {
+          "path": "docs/chatsdk-web/quickstart.md",
+          "heading": "Send a message {#send}",
+          "score": 213,
+          "startLine": 137,
+          "endLine": 156,
+          "snippet": "Send a text message to a user with userId `2`. Besides text messages, you can also send images, files, voice messages, and more. See [Message types](./message/send.md#types). ```ts import { DirectChannel, SendTextMessag…"
+        },
+        {
+          "path": "docs/chatsdk-android/getting-started.md",
+          "heading": "Step 5: Send a message",
+          "score": 160,
+          "startLine": 305,
+          "endLine": 366,
+          "snippet": "Send a text message to user ID `2` through a direct channel. The SDK also supports image, file, voice, and other message types. See [Message types](/chatsdk-android/message/send) for details. <Tabs groupId=\"language\"> <…"
+        },
+        {
+          "path": "docs/chatsdk-web/quickstart.md",
+          "heading": "Get remote messages {#gethistory}",
+          "score": 159,
+          "startLine": 161,
+          "endLine": 184,
+          "snippet": "Example: Get remote messages from a direct channel with user `2`. ```ts import { DirectChannel, BaseChannel } from '@nexconn/chat'; const channel = new DirectChannel('2'); // Paginated fetch of remote messages const que…"
+        },
+        {
+          "path": "docs/chatsdk-web/community-channel/chat.md",
+          "heading": "Send a message",
+          "score": 158,
+          "startLine": 8,
+          "endLine": 25,
+          "snippet": "Messages in community channels are sent to a specific subchannel. Use `CommunitySubChannel` with the community ID and subchannel ID. ```ts import { CommunitySubChannel, SendTextMessageParams } from '@nexconn/chat'; cons…"
+        },
+        {
+          "path": "docs/chatsdk-web/community-channel/integration.md",
+          "heading": "Send a message",
+          "score": 158,
+          "startLine": 108,
+          "endLine": 125,
+          "snippet": "Send a text message to a community subchannel: ```ts import { CommunitySubChannel, SendTextMessageParams } from '@nexconn/chat'; const channel = new CommunitySubChannel('<communityId>', '<subChannelId>'); const params =…"
+        }
+      ],
+      "answer": "以下内容基于 Web 文档整理。当前命中的文档主要支持你 完成 SDK 接入与连接，然后发送第一条消息。 [docs/chatsdk-web/quickstart.md:161-184]\n\n步骤\n1. 创建 `DirectChannel(\"<target-user-id>\")`，再构造 `SendTextMessageParams` 并调用 `channel.sendMessage` 发送第一条消息。[docs/chatsdk-web/quickstart.md:137-156]\n\n关键 API / 文档\n- `DirectChannel`\n- `SendTextMessageParams`\n- `channel.sendMessage`\n\n注意事项\n- 当前命中的文档没有展开 token 获取或连接建立步骤；如果你还没完成登录连接，建议继续追问 connect/token。\n\nSources:\n- docs/chatsdk-web/quickstart.md#Send a message {#send}:137-156",
+      "summary": "guided answer from 1 documentation chunks"
+    },
+    {
+      "caseDef": {
+        "id": "chat-web-targeted-group-message",
+        "title": "Web targeted-message question should use the dedicated directional-message page",
+        "question": "How do I send a targeted message to specific members in a Web group channel?",
+        "expectedPathSuffixes": [
+          "docs/chatsdk-web/group-channel/direct.md"
+        ],
+        "discouragedPathSuffixes": [
+          "docs/platform-chat-api/"
+        ],
+        "expectedHeadingKeywords": [
+          "targeted",
+          "specific members",
+          "directed"
+        ],
+        "expectedSummaryKeywords": [
+          "guided answer"
+        ],
+        "expectedAnswerKeywords": [
+          "directedUserIds"
+        ],
+        "topK": 3
+      },
+      "passed": true,
+      "reasons": [
+        "Retrieval expectations satisfied.",
+        "Answer expectations satisfied."
+      ],
+      "retrieval": [
+        {
+          "path": "docs/chatsdk-web/group-channel/direct.md",
+          "heading": "Send a targeted message",
+          "score": 110,
+          "startLine": 8,
+          "endLine": 26,
+          "snippet": "Use the `directedUserIds` field in `SendMessageParams` to specify recipients: ```ts import { GroupChannel, SendTextMessageParams } from '@nexconn/chat'; const channel = new GroupChannel('<group-id>'); const params = new…"
+        },
+        {
+          "path": "docs/chatsdk-web/group-channel/group-info.md",
+          "heading": "Get joined groups info {#get-joined-group-profile}",
+          "score": 108,
+          "startLine": 8,
+          "endLine": 40,
+          "snippet": "Use `getJoinedGroups()` to retrieve the groups you've joined: ```ts import { GroupChannel } from '@nexconn/chat'; const { code, data: groups } = await GroupChannel.getJoinedGroups(); if (code === 0) { console.log('Joine…"
+        },
+        {
+          "path": "docs/chatsdk-web/message/send.md",
+          "heading": "Send to different channel types",
+          "score": 108,
+          "startLine": 86,
+          "endLine": 108,
+          "snippet": "```ts import { GroupChannel, OpenChannel, CommunitySubChannel, SendTextMessageParams, } from '@nexconn/chat'; // Send to a group channel const groupChannel = new GroupChannel('<group-id>'); await groupChannel.sendMessag…"
+        },
+        {
+          "path": "docs/chatsdk-web/group-channel/overview.mdx",
+          "heading": "Group channel messaging",
+          "score": 107,
+          "startLine": 63,
+          "endLine": 86,
+          "snippet": "Group channel messaging works similarly to Direct Channel messaging and shares some APIs and configuration. | Feature | Description | Client API | Nexconn Server API | |:---------------|:--------------------------------…"
+        },
+        {
+          "path": "docs/chatsdk-web/group-channel/groupat.md",
+          "heading": "Send an @mention message",
+          "score": 106,
+          "startLine": 8,
+          "endLine": 30,
+          "snippet": "Set `mentionedInfo` in the message content to mark this as a mention message: ```ts import { GroupChannel, SendTextMessageParams, MentionedType } from '@nexconn/chat'; const channel = new GroupChannel('<group-id>'); // …"
+        }
+      ],
+      "answer": "以下内容基于 Web 文档整理。当前命中的文档主要支持你 发送第一条消息。\n\n步骤\n1. 构造 `SendTextMessageParams`，设置 `directedUserIds` 指定目标成员，然后调用 `channel.sendMessage` 发送定向消息。[docs/chatsdk-web/group-channel/direct.md:8-26]\n\n关键 API / 文档\n- `directedUserIds`\n- `SendMessageParams`\n- `SendTextMessageParams`\n- `channel.sendMessage`\n\n注意事项\n- 当前命中的文档没有覆盖完整的 SDK 导入或初始化步骤；如果你需要从零接入，请继续追问 import/init。\n- 当前命中的文档没有展开 token 获取或连接建立步骤；如果你还没完成登录连接，建议继续追问 connect/token。\n\nSources:\n- docs/chatsdk-web/group-channel/direct.md#Send a targeted message:8-26",
+      "summary": "guided answer from 1 documentation chunks"
+    },
+    {
+      "caseDef": {
+        "id": "chat-android-release-notes",
+        "title": "Android Chat release-notes question should land on the release-notes page",
+        "question": "Where are the Android Chat SDK release notes?",
+        "expectedPathSuffixes": [
+          "docs/chatsdk-android/release-notes.md"
+        ],
+        "discouragedPathSuffixes": [
+          "docs/chatsdk-ios/release-notes.md"
+        ],
+        "expectedHeadingKeywords": [
+          "26.1.0",
+          "new features",
+          "added"
+        ],
+        "topK": 3
+      },
+      "passed": true,
+      "reasons": [
+        "Retrieval expectations satisfied.",
+        "Answer expectations satisfied."
+      ],
+      "retrieval": [
+        {
+          "path": "docs/chatsdk-android/release-notes.md",
+          "heading": "v26.1.0 (March 2026)",
+          "score": 147,
+          "startLine": 6,
+          "endLine": 9,
+          "snippet": "**Initial release of Chat SDK for Android.**"
+        },
+        {
+          "path": "docs/chatsdk-android/release-notes.md",
+          "heading": "New features",
+          "score": 142,
+          "startLine": 10,
+          "endLine": 29,
+          "snippet": "- **Connection Management**: Connect and disconnect from the Nexconn server, monitor connection status in real time, and handle reconnection and multi-device scenarios. - **User Management**: Manage user profiles, block…"
+        },
+        {
+          "path": "docs/callsdk-android/release-notes.md",
+          "heading": "Added",
+          "score": 131,
+          "startLine": 12,
+          "endLine": 21,
+          "snippet": "- 1-to-1 and group audio and video calling. - Core call lifecycle APIs for starting, receiving, accepting, joining, inviting, rejecting, and ending calls. - Call event and result listeners for incoming calls, call state…"
+        },
+        {
+          "path": "docs/callsdk-android/release-notes.md",
+          "heading": "26.1.0",
+          "score": 122,
+          "startLine": 6,
+          "endLine": 11,
+          "snippet": "Release date: 2026-03-27 **Initial release of Call SDK for Android.**"
+        },
+        {
+          "path": "docs/.archive/chatui-android/release-notes.md",
+          "score": 94,
+          "startLine": 6,
+          "endLine": 6,
+          "snippet": "import ReleaseNotesDev from '/docs/partials/im/shared/android-chatui-chatsdk/release-notes/release-notes.md';"
+        }
+      ],
+      "answer": "以下内容基于 Android 文档整理。当前命中的文档主要支持你 先确认最合适的客户端文档入口。\n\n注意事项\n- 当前命中的文档没有覆盖完整的 SDK 导入或初始化步骤；如果你需要从零接入，请继续追问 import/init。\n- 当前命中的文档没有展开 token 获取或连接建立步骤；如果你还没完成登录连接，建议继续追问 connect/token。\n- 当前命中的文档没有给出明确的发消息示例，必要时请继续追问具体平台或消息类型。\n\nSources:\n- docs/chatsdk-android/release-notes.md#v26.1.0 (March 2026):6-9\n- docs/chatsdk-android/release-notes.md#New features:10-29\n- docs/callsdk-android/release-notes.md#Added:12-21\n- docs/callsdk-android/release-notes.md#26.1.0:6-11",
+      "summary": "guided answer from 4 documentation chunks"
+    },
+    {
+      "caseDef": {
+        "id": "ios-push-config",
+        "title": "iOS push config lands on the dedicated push page",
+        "question": "How do I configure push settings for the iOS Call SDK?",
+        "expectedPathSuffixes": [
+          "docs/callsdk-ios/push-config.md"
+        ],
+        "discouragedPathSuffixes": [
+          "docs/callsdk-web/"
+        ],
+        "expectedHeadingKeywords": [
+          "push",
+          "config",
+          "settings"
+        ],
+        "topK": 3
+      },
+      "passed": true,
+      "reasons": [
+        "Retrieval expectations satisfied.",
+        "Answer expectations satisfied."
+      ],
+      "retrieval": [
+        {
+          "path": "docs/callsdk-ios/push-config.md",
+          "heading": "iOS-specific object: `NCCallIOSPushConfig`",
+          "score": 117,
+          "startLine": 34,
+          "endLine": 44,
+          "snippet": "```objectivec NCCallIOSPushConfig *iosConfig = [NCCallIOSPushConfig new]; iosConfig.threadId = @\"thread-id\"; iosConfig.apnsCollapseId = @\"collapse-id\"; iosConfig.richMediaUri = @\"https://example.com/image.png\"; pushConf…"
+        },
+        {
+          "path": "docs/callsdk-ios/push-config.md",
+          "heading": "Use push settings when starting a call",
+          "score": 114,
+          "startLine": 70,
+          "endLine": 79,
+          "snippet": "```objectivec [[NCCallEngine sharedInstance] startCall:@[@\"remoteUserId\"] callType:NCCallSingleType mediaType:NCCallAudioVideoMediaType pushConfig:pushConfig extra:@\"business-extra\"]; ```"
+        },
+        {
+          "path": "docs/callsdk-ios/push-config.md",
+          "heading": "Top-level object: `NCCallPushConfig`",
+          "score": 105,
+          "startLine": 13,
+          "endLine": 22,
+          "snippet": "```objectivec NCCallPushConfig *pushConfig = [NCCallPushConfig new]; pushConfig.disablePushTitle = NO; pushConfig.pushTitle = @\"New call invitation\"; pushConfig.pushContent = @\"Tap to answer\"; pushConfig.templateId = @\"…"
+        },
+        {
+          "path": "docs/callsdk-ios/push-config.md",
+          "heading": "Android-specific object: `NCCallAndroidPushConfig`",
+          "score": 105,
+          "startLine": 53,
+          "endLine": 69,
+          "snippet": "In the current public headers, the Android push configuration exposes only Huawei Push and FCM related fields: ```objectivec NCCallAndroidPushConfig *androidConfig = [NCCallAndroidPushConfig new]; androidConfig.channelI…"
+        },
+        {
+          "path": "docs/callsdk-ios/push-config.md",
+          "heading": "Field descriptions",
+          "score": 99,
+          "startLine": 23,
+          "endLine": 33,
+          "snippet": "| Field | Type | Description | | --- | --- | --- | | `disablePushTitle` | `BOOL` | Whether to hide the push title. | | `pushTitle` | `NSString *` | Push title. | | `pushContent` | `NSString *` | Push body. | | `template…"
+        }
+      ],
+      "answer": "以下内容基于 iOS 文档整理。当前命中的文档主要支持你 先确认最合适的客户端文档入口。\n\n注意事项\n- 当前命中的文档没有覆盖完整的 SDK 导入或初始化步骤；如果你需要从零接入，请继续追问 import/init。\n- 当前命中的文档没有展开 token 获取或连接建立步骤；如果你还没完成登录连接，建议继续追问 connect/token。\n- 当前命中的文档没有给出明确的发消息示例，必要时请继续追问具体平台或消息类型。\n\nSources:\n- docs/callsdk-ios/push-config.md#iOS-specific object: `NCCallIOSPushConfig`:34-44\n- docs/callsdk-ios/push-config.md#Use push settings when starting a call:70-79\n- docs/callsdk-ios/push-config.md#Top-level object: `NCCallPushConfig`:13-22\n- docs/callsdk-ios/push-config.md#Android-specific object: `NCCallAndroidPushConfig`:53-69",
+      "summary": "guided answer from 4 documentation chunks"
+    },
+    {
+      "caseDef": {
+        "id": "ios-1to1-call",
+        "title": "iOS 1-to-1 start/accept prefers the iOS one-to-one page",
+        "question": "How do I start and accept a 1-to-1 call in the iOS Call SDK?",
+        "expectedPathSuffixes": [
+          "docs/callsdk-ios/one-to-one-call.md"
+        ],
+        "discouragedPathSuffixes": [
+          "docs/callsdk-web/one-to-one-call.md"
+        ],
+        "expectedHeadingKeywords": [
+          "start",
+          "accept",
+          "incoming"
+        ],
+        "topK": 3
+      },
+      "passed": true,
+      "reasons": [
+        "Retrieval expectations satisfied.",
+        "Answer expectations satisfied."
+      ],
+      "retrieval": [
+        {
+          "path": "docs/callsdk-ios/one-to-one-call.md",
+          "heading": "Receive and accept an incoming call",
+          "score": 151,
+          "startLine": 81,
+          "endLine": 92,
+          "snippet": "The callee receives the incoming call through `didCallReceived:extra:`: ```objectivec - (void)didCallReceived:(NCCallSession *)session extra:(NSString *)extra { [[NCCallEngine sharedInstance] acceptCall:session.callId];…"
+        },
+        {
+          "path": "docs/callsdk-ios/one-to-one-call.md",
+          "heading": "Start a 1-to-1 call",
+          "score": 149,
+          "startLine": 57,
+          "endLine": 80,
+          "snippet": "For a 1-to-1 call, `callType` must be `NCCallSingleType`, and `userIds` must contain exactly one remote user. ```objectivec [[NCCallEngine sharedInstance] startCall:@[self.remoteUserId] callType:NCCallSingleType mediaTy…"
+        },
+        {
+          "path": "docs/chatsdk-ios/quickstart.md",
+          "heading": "Step 5: Send a message",
+          "score": 141,
+          "startLine": 199,
+          "endLine": 255,
+          "snippet": "Send a text message to another user: <Tabs groupId=\"language\"> <TabItem value=\"swift\" label=\"Swift\" default> ```swift guard let channel = DirectChannel(channelId: \"recipient-user-id\") else { return } let textContent = T…"
+        },
+        {
+          "path": "docs/callsdk-ios/one-to-one-call.md",
+          "heading": "Key types",
+          "score": 131,
+          "startLine": 8,
+          "endLine": 17,
+          "snippet": "| Type | Description | | --- | --- | | `NCCallEngine` | Call entry point. Starts, accepts, and ends calls, controls devices, and queries call logs. | | `NCCallSession` | Current call session object. Includes `callId`, `…"
+        },
+        {
+          "path": "docs/chatsdk-ios/getting-started.md",
+          "heading": "Step 5: Send a message {#send}",
+          "score": 127,
+          "startLine": 329,
+          "endLine": 380,
+          "snippet": "Send a text message to the user with userId `2`. Beyond text, you can also send images, files, voice messages, and other message types. See [Message types] for details. <Tabs groupId=\"language\"> <TabItem value=\"swift\" l…"
+        }
+      ],
+      "answer": "以下内容基于 iOS 文档整理。当前命中的文档主要支持你 发送第一条消息。\n\n步骤\n1. 创建 `DirectChannel(\"<target-user-id>\")`，再构造 `SendTextMessageParams` 并调用 `channel.sendMessage` 发送第一条消息。[docs/chatsdk-ios/quickstart.md:199-255]\n\n关键 API / 文档\n- `DirectChannel`\n- `channel.sendMessage`\n\n注意事项\n- 当前命中的文档没有覆盖完整的 SDK 导入或初始化步骤；如果你需要从零接入，请继续追问 import/init。\n- 当前命中的文档没有展开 token 获取或连接建立步骤；如果你还没完成登录连接，建议继续追问 connect/token。\n\nSources:\n- docs/chatsdk-ios/quickstart.md#Step 5: Send a message:199-255",
+      "summary": "guided answer from 1 documentation chunks"
+    },
+    {
+      "caseDef": {
+        "id": "ios-install-init",
+        "title": "Install/init questions should surface the setup guide",
+        "question": "How do I install and initialize the iOS Call SDK?",
+        "expectedPathSuffixes": [
+          "docs/callsdk-ios/make-first-call.md"
+        ],
+        "expectedHeadingKeywords": [
+          "install",
+          "initialize"
+        ],
+        "topK": 3
+      },
+      "passed": true,
+      "reasons": [
+        "Retrieval expectations satisfied.",
+        "Answer expectations satisfied."
+      ],
+      "retrieval": [
+        {
+          "path": "docs/callsdk-ios/make-first-call.md",
+          "heading": "Step 2: Install and initialize the Call SDK",
+          "score": 121,
+          "startLine": 42,
+          "endLine": 60,
+          "snippet": "```objectivec NCCallEngine *engine = [NCCallEngine sharedInstance]; // Recommended once during app startup [engine install]; ``` After Chat SDK initialization and IM sign-in are complete, call `initialize:`: ```objectiv…"
+        },
+        {
+          "path": "docs/chatsdk-ios/getting-started.md",
+          "heading": "Step 2: Initialize the SDK {#init}",
+          "score": 73,
+          "startLine": 63,
+          "endLine": 144,
+          "snippet": "Import the SDK in Swift, or use the Objective-C header if your app target still integrates the SDK that way: <Tabs groupId=\"language\"> <TabItem value=\"swift\" label=\"Swift\" default> ```swift import NexconnChatSDK ``` </T…"
+        },
+        {
+          "path": "docs/chatsdk-ios/quickstart.md",
+          "heading": "Step 2: Initialize the SDK",
+          "score": 73,
+          "startLine": 65,
+          "endLine": 121,
+          "snippet": "Import the SDK and call `NCEngine.initialize(_:)` once in `application:didFinishLaunchingWithOptions:`, before using any other SDK features. <Tabs groupId=\"language\"> <TabItem value=\"swift\" label=\"Swift\" default> ```swi…"
+        },
+        {
+          "path": "docs/chatsdk-ios/quickstart.md",
+          "heading": "Step 1: Install the SDK",
+          "score": 71,
+          "startLine": 31,
+          "endLine": 64,
+          "snippet": "<Tabs groupId=\"ios-install\"> <TabItem value=\"cocoapods\" label=\"CocoaPods\" default> Add the following to your `Podfile`: ```ruby pod 'NexconnChat/Chat', '~> x.y.z' ``` Then run: ```shell pod install ``` Open the generate…"
+        },
+        {
+          "path": "docs/callsdk-android/make-first-call.md",
+          "heading": "Step 2: Install and initialize the Call SDK",
+          "score": 69,
+          "startLine": 94,
+          "endLine": 133,
+          "snippet": "Use this initialization order: 1. Call `NCCallEngine.install()` before Chat SDK initialization. 2. Initialize and connect the Chat SDK. 3. After Chat is connected, call `NCCallEngine.getInstance().initialize(...)`. ```j…"
+        }
+      ],
+      "answer": "以下内容基于 iOS 文档整理。当前命中的文档主要支持你 完成 SDK 接入与连接。 [docs/chatsdk-ios/getting-started.md:63-144]\n\n准备工作\n- 在应用启动阶段调用 `initialize:` 完成初始化。[docs/callsdk-ios/make-first-call.md:42-60]\n\n步骤\n1. 按 Step 2: Install and initialize the Call SDK 中的说明完成这一步。[docs/callsdk-ios/make-first-call.md:42-60]\n\n关键 API / 文档\n- `initialize:`\n\n注意事项\n- 当前命中的文档没有展开 token 获取或连接建立步骤；如果你还没完成登录连接，建议继续追问 connect/token。\n- 当前命中的文档没有给出明确的发消息示例，必要时请继续追问具体平台或消息类型。\n\nSources:\n- docs/callsdk-ios/make-first-call.md#Step 2: Install and initialize the Call SDK:42-60",
+      "summary": "guided answer from 1 documentation chunks"
+    },
+    {
+      "caseDef": {
+        "id": "callplus-voip-requirements",
+        "title": "VoIP requirement questions should prioritize the CallPlus VoIP page",
+        "question": "What is required for VoIP push in iOS CallPlus?",
+        "expectedPathSuffixes": [
+          "docs/callsdk-ios/callplus-voip.md"
+        ],
+        "discouragedPathSuffixes": [
+          "docs/partials/"
+        ],
+        "expectedHeadingKeywords": [
+          "require",
+          "pushkit",
+          "voip",
+          "provisioning"
+        ],
+        "topK": 4
+      },
+      "passed": true,
+      "reasons": [
+        "Retrieval expectations satisfied.",
+        "Answer expectations satisfied."
+      ],
+      "retrieval": [
+        {
+          "path": "docs/callsdk-ios/callplus-voip.md",
+          "heading": "When to use VoIP PushKit",
+          "score": 126,
+          "startLine": 11,
+          "endLine": 14,
+          "snippet": "If your iOS app needs to detect incoming calls more quickly after the app is killed or moved to the background, evaluate whether to enable VoIP PushKit. Whether CallKit or PushKit is allowed in your target market depend…"
+        },
+        {
+          "path": "docs/callsdk-ios/callplus-voip.md",
+          "heading": "Enable PushKit",
+          "score": 118,
+          "startLine": 15,
+          "endLine": 22,
+          "snippet": "```objectivec [[NCCallEngine sharedInstance] enableVoipPushKit:YES]; ``` Set this during app startup, before Call SDK initialization or early in the initialization flow."
+        },
+        {
+          "path": "docs/callsdk-ios/callplus-voip.md",
+          "heading": "What the public API confirms",
+          "score": 109,
+          "startLine": 42,
+          "endLine": 56,
+          "snippet": "From `NexconnCall.h` and `NCCallEngine.h`, you can confirm the following: - The SDK can enable or disable VoIP PushKit behavior. - The SDK can deliver VoIP incoming call data back to the app layer. The current public um…"
+        },
+        {
+          "path": "docs/callsdk-ios/callplus-voip.md",
+          "heading": "Receive VoIP incoming call data",
+          "score": 101,
+          "startLine": 23,
+          "endLine": 41,
+          "snippet": "```objectivec @interface MyCallHandler () <NCCallEventDelegate> @end @implementation MyCallHandler - (void)didVoIPPushNotificationReceived:(NSString *)callId inviterUserId:(NSString *)inviterUserId mediaType:(NCCallMedi…"
+        },
+        {
+          "path": "docs/.archive/zh-source/ios-callplus-zh-source/callplus-voip.md",
+          "heading": "设置 provisioning profile",
+          "score": 93,
+          "startLine": 65,
+          "endLine": 69,
+          "snippet": "* 在 Xcode 中设置 `provisioning profile`。因为苹果的 VoIP Push 只提供生产环境的证书，所以只有在生产环境才可以使用 VoIP 推送。 * 所以您在打包的时候，需要设置 `provisioning profile` 为 `distribution` 才能收到 VoIP 推送。 关于 Xcode 如果设置 `provisioning profile` 的更多内容，可以参考 [Xcode 官方文档]…"
+        }
+      ],
+      "answer": "关于“What is required for VoIP push in iOS CallPlus?”，文档里的核心定义是：From `NexconnCall.h` and `NCCallEngine.h`, you can confirm the following: - The SDK can enable or disable VoIP PushKit behavior. - The SDK can deliver VoIP incoming call data back to the app layer. The current public um…[docs/callsdk-ios/callplus-voip.md:42-56]\n\n定义\n- From `NexconnCall.h` and `NCCallEngine.h`, you can confirm the following: - The SDK can enable or disable VoIP PushKit behavior. - The SDK can deliver VoIP incoming call data back to the app layer. The current public um…[docs/callsdk-ios/callplus-voip.md:42-56]\n\n补充说明\n- 如果你接下来想看离线消息的保留时长、控制台设置或不同平台的表现，可以继续追问具体 SDK。\n\nSources:\n- docs/callsdk-ios/callplus-voip.md#What the public API confirms:42-56",
+      "summary": "concept answer from 1 documentation chunks"
+    },
+    {
+      "caseDef": {
+        "id": "ios-group-upgrade",
+        "title": "Upgrade-to-group questions should land on group-call docs",
+        "question": "How do I upgrade a 1-to-1 call to a group call in the iOS Call SDK?",
+        "expectedPathSuffixes": [
+          "docs/callsdk-ios/group-call.md"
+        ],
+        "discouragedPathSuffixes": [
+          "docs/callsdk-web/"
+        ],
+        "expectedHeadingKeywords": [
+          "upgrade",
+          "group"
+        ],
+        "topK": 3
+      },
+      "passed": true,
+      "reasons": [
+        "Retrieval expectations satisfied.",
+        "Answer expectations satisfied."
+      ],
+      "retrieval": [
+        {
+          "path": "docs/callsdk-ios/group-call.md",
+          "heading": "Upgrade a 1-to-1 call to a group call",
+          "score": 135,
+          "startLine": 75,
+          "endLine": 86,
+          "snippet": "When a third participant is successfully invited into a 1-to-1 call, the SDK reports the upgraded call type through `didCallTypeChanged:callType:`: ```objectivec - (void)didCallTypeChanged:(NSString *)callId callType:(N…"
+        },
+        {
+          "path": "docs/callsdk-ios/group-call.md",
+          "heading": "Video views in a group call",
+          "score": 118,
+          "startLine": 87,
+          "endLine": 109,
+          "snippet": "Use `NCCallLocalVideoView` for the local preview and `NCCallRemoteVideoView` for remote participants: ```objectivec NCCallLocalVideoView *localView = [NCCallLocalVideoView new]; localView.userId = self.currentUserId; lo…"
+        },
+        {
+          "path": "docs/callsdk-ios/group-call.md",
+          "heading": "Start a group call",
+          "score": 117,
+          "startLine": 18,
+          "endLine": 42,
+          "snippet": "Set `callType` to `NCCallMultipleType` for group calls. ```objectivec [[NCCallEngine sharedInstance] startCall:@[@\"user_a\", @\"user_b\"] callType:NCCallMultipleType mediaType:NCCallAudioVideoMediaType]; ``` If you need to…"
+        },
+        {
+          "path": "docs/callsdk-ios/group-call.md",
+          "heading": "Receive and join a group call",
+          "score": 117,
+          "startLine": 43,
+          "endLine": 54,
+          "snippet": "Invited users receive the incoming call through `didCallReceived:extra:`: ```objectivec - (void)didCallReceived:(NCCallSession *)session extra:(NSString *)extra { [[NCCallEngine sharedInstance] acceptCall:session.callId…"
+        },
+        {
+          "path": "docs/callsdk-ios/group-call.md",
+          "heading": "Invite additional users",
+          "score": 107,
+          "startLine": 55,
+          "endLine": 74,
+          "snippet": "```objectivec [[NCCallEngine sharedInstance] inviteToCall:@[@\"user_c\", @\"user_d\"]]; ``` If you need to include push fields and `extra`: ```objectivec NCCallPushConfig *pushConfig = [NCCallPushConfig new]; pushConfig.pus…"
+        }
+      ],
+      "answer": "以下内容基于 iOS 文档整理。当前命中的文档主要支持你 先确认最合适的客户端文档入口。\n\n注意事项\n- 当前命中的文档没有覆盖完整的 SDK 导入或初始化步骤；如果你需要从零接入，请继续追问 import/init。\n- 当前命中的文档没有展开 token 获取或连接建立步骤；如果你还没完成登录连接，建议继续追问 connect/token。\n- 当前命中的文档没有给出明确的发消息示例，必要时请继续追问具体平台或消息类型。\n\nSources:\n- docs/callsdk-ios/group-call.md#Upgrade a 1-to-1 call to a group call:75-86\n- docs/callsdk-ios/group-call.md#Video views in a group call:87-109\n- docs/callsdk-ios/group-call.md#Start a group call:18-42\n- docs/callsdk-ios/group-call.md#Receive and join a group call:43-54",
+      "summary": "guided answer from 4 documentation chunks"
+    },
+    {
+      "caseDef": {
+        "id": "ios-chat-summary-message",
+        "title": "iOS chat-summary questions should land on the chat integration page",
+        "question": "How do I insert the call summary message into the chat conversation after an iOS call ends?",
+        "expectedPathSuffixes": [
+          "docs/callsdk-ios/callplus-integration-to-chat.md"
+        ],
+        "discouragedPathSuffixes": [
+          "docs/callsdk-web/callplus-integration-to-chat.md"
+        ],
+        "expectedHeadingKeywords": [
+          "chat",
+          "message",
+          "conversation",
+          "summary"
+        ],
+        "topK": 4
+      },
+      "passed": true,
+      "reasons": [
+        "Retrieval expectations satisfied.",
+        "Answer expectations satisfied."
+      ],
+      "retrieval": [
+        {
+          "path": "docs/callsdk-ios/callplus-integration-to-chat.md",
+          "heading": "Map `NCCallLog` to a chat message",
+          "score": 107,
+          "startLine": 56,
+          "endLine": 79,
+          "snippet": "```objectivec - (void)insertLocalSummaryMessage:(NCCallLog *)callLog { NSString *summary = [self summaryFromCallLog:callLog]; // Replace this with your Chat SDK or IMKit write logic [self.chatRepository insertCallSummar…"
+        },
+        {
+          "path": "docs/callsdk-ios/callplus-integration-to-chat.md",
+          "heading": "Recommendations",
+          "score": 107,
+          "startLine": 80,
+          "endLine": 85,
+          "snippet": "- If you need to show a summary in the current conversation immediately after the call ends, prefer `didLocalCallLogReceived:`. - If you need the final record to stay consistent across devices, prefer `didServerCallLogR…"
+        },
+        {
+          "path": "docs/chatsdk-ios/message/insert.md",
+          "heading": "Insert an outgoing message",
+          "score": 104,
+          "startLine": 25,
+          "endLine": 69,
+          "snippet": "Build an `NCInsertMessageParams` and call `insertMessages` on a channel instance: <Tabs groupId=\"language\"> <TabItem value=\"swift\" label=\"Swift\" default> ```swift import NexconnChatSDK let channel = DirectChannel(channe…"
+        },
+        {
+          "path": "docs/chatsdk-ios/message/insert.md",
+          "heading": "Insert an incoming message",
+          "score": 103,
+          "startLine": 70,
+          "endLine": 110,
+          "snippet": "<Tabs groupId=\"language\"> <TabItem value=\"swift\" label=\"Swift\" default> ```swift import NexconnChatSDK let channel = DirectChannel(channelId: \"targetUserId\") let content = TextMessage(text: \"Received text\") let params =…"
+        },
+        {
+          "path": "docs/chatsdk-ios/community-channels/creating-channel.md",
+          "heading": "Create a community channel and subchannels",
+          "score": 97,
+          "startLine": 6,
+          "endLine": 13,
+          "snippet": "The Chat SDK does not provide client-side APIs for creating community channels or subchannels. Use the Nexconn Server API for these operations. :::tip A single user can join up to 100 community channels and create or jo…"
+        }
+      ],
+      "answer": "以下内容基于 iOS 文档整理。当前命中的文档主要支持你 先确认最合适的客户端文档入口。\n\n关键 API / 文档\n- `NCInsertMessageParams`\n- `insertMessages`\n- `DirectChannel`\n\n注意事项\n- 当前命中的文档没有覆盖完整的 SDK 导入或初始化步骤；如果你需要从零接入，请继续追问 import/init。\n- 当前命中的文档没有展开 token 获取或连接建立步骤；如果你还没完成登录连接，建议继续追问 connect/token。\n- 当前命中的文档没有给出明确的发消息示例，必要时请继续追问具体平台或消息类型。\n\nSources:\n- docs/callsdk-ios/callplus-integration-to-chat.md#Map `NCCallLog` to a chat message:56-79\n- docs/callsdk-ios/callplus-integration-to-chat.md#Recommendations:80-85\n- docs/chatsdk-ios/message/insert.md#Insert an outgoing message:25-69\n- docs/chatsdk-ios/message/insert.md#Insert an incoming message:70-110",
+      "summary": "guided answer from 4 documentation chunks"
+    },
+    {
+      "caseDef": {
+        "id": "ios-release-notes",
+        "title": "Version-history questions should land on the iOS release notes page",
+        "question": "What was added in iOS Call SDK 26.1.0?",
+        "expectedPathSuffixes": [
+          "docs/callsdk-ios/release-notes.md"
+        ],
+        "expectedHeadingKeywords": [
+          "26.1.0",
+          "added"
+        ],
+        "topK": 3
+      },
+      "passed": true,
+      "reasons": [
+        "Retrieval expectations satisfied.",
+        "Answer expectations satisfied."
+      ],
+      "retrieval": [
+        {
+          "path": "docs/callsdk-ios/release-notes.md",
+          "heading": "Added",
+          "score": 127,
+          "startLine": 12,
+          "endLine": 20,
+          "snippet": "- 1-to-1 and group audio and video calling. - Core call lifecycle APIs for starting, receiving, accepting, joining, inviting, rejecting, and ending calls. - Call event and result listeners for incoming calls, call state…"
+        },
+        {
+          "path": "docs/callsdk-ios/release-notes.md",
+          "heading": "26.1.0",
+          "score": 108,
+          "startLine": 6,
+          "endLine": 11,
+          "snippet": "Release date: 2026-03-27 **Initial release of Call SDK for iOS.**"
+        },
+        {
+          "path": "docs/chatsdk-ios/release-notes.md",
+          "heading": "v26.1.0 (March 2026)",
+          "score": 103,
+          "startLine": 6,
+          "endLine": 9,
+          "snippet": "**Initial release of Chat SDK for iOS.**"
+        },
+        {
+          "path": "docs/chatsdk-ios/release-notes.md",
+          "heading": "New features",
+          "score": 93,
+          "startLine": 10,
+          "endLine": 30,
+          "snippet": "- **Connection Management**: Connect and disconnect from the Nexconn server, monitor connection status and database status in real time, and handle reconnection and multi-device scenarios. - **User Management**: Manage …"
+        },
+        {
+          "path": "docs/callsdk-android/release-notes.md",
+          "heading": "Added",
+          "score": 70,
+          "startLine": 12,
+          "endLine": 21,
+          "snippet": "- 1-to-1 and group audio and video calling. - Core call lifecycle APIs for starting, receiving, accepting, joining, inviting, rejecting, and ending calls. - Call event and result listeners for incoming calls, call state…"
+        }
+      ],
+      "answer": "以下内容基于 iOS 文档整理。当前命中的文档主要支持你 先确认最合适的客户端文档入口。\n\n注意事项\n- 当前命中的文档没有覆盖完整的 SDK 导入或初始化步骤；如果你需要从零接入，请继续追问 import/init。\n- 当前命中的文档没有展开 token 获取或连接建立步骤；如果你还没完成登录连接，建议继续追问 connect/token。\n- 当前命中的文档没有给出明确的发消息示例，必要时请继续追问具体平台或消息类型。\n\nSources:\n- docs/callsdk-ios/release-notes.md#Added:12-20\n- docs/callsdk-ios/release-notes.md#26.1.0:6-11\n- docs/chatsdk-ios/release-notes.md#v26.1.0 (March 2026):6-9\n- docs/chatsdk-ios/release-notes.md#New features:10-30",
+      "summary": "guided answer from 4 documentation chunks"
+    },
+    {
+      "caseDef": {
+        "id": "web-1to1-call",
+        "title": "Web-specific questions should choose web docs",
+        "question": "How do I start a 1-to-1 call in the Web Call SDK?",
+        "expectedPathSuffixes": [
+          "docs/callsdk-web/one-to-one-call.md"
+        ],
+        "discouragedPathSuffixes": [
+          "docs/callsdk-ios/one-to-one-call.md"
+        ],
+        "expectedHeadingKeywords": [
+          "start",
+          "call"
+        ],
+        "topK": 3
+      },
+      "passed": true,
+      "reasons": [
+        "Retrieval expectations satisfied.",
+        "Answer expectations satisfied."
+      ],
+      "retrieval": [
+        {
+          "path": "docs/callsdk-web/one-to-one-call.md",
+          "heading": "Start a call {#startCall}",
+          "score": 155,
+          "startLine": 308,
+          "endLine": 332,
+          "snippet": ":::tip The `startCall` method accepts optional `pushConfig` and `extra` parameters. `pushConfig` carries mobile push settings through `INCCallPushConfig`, including `pushTitle`, `pushContent`, and platform-specific push…"
+        },
+        {
+          "path": "docs/callsdk-web/one-to-one-call.md",
+          "heading": "NCCallEngine",
+          "score": 137,
+          "startLine": 10,
+          "endLine": 49,
+          "snippet": "`NCCallEngine` is the core class in Call SDK for Web. It manages call behavior on the client, including placing calls, answering, hanging up, controlling audio and video devices, and managing call logs. | Method | Descr…"
+        },
+        {
+          "path": "docs/callsdk-web/one-to-one-call.md",
+          "heading": "INCCallEventsListener",
+          "score": 135,
+          "startLine": 66,
+          "endLine": 85,
+          "snippet": "`INCCallEventsListener` provides callbacks for incoming calls, call state changes, and call logs. | Callback | Description | | --- | --- | | onCallReceived | Fired when the local user receives an incoming call. `session…"
+        },
+        {
+          "path": "docs/callsdk-web/one-to-one-call.md",
+          "heading": "Answer an incoming call while already in a call {#busy-accept}",
+          "score": 134,
+          "startLine": 487,
+          "endLine": 504,
+          "snippet": "You can answer a new incoming call while another call is active. Because only one active call is allowed at a time, the SDK ends the current call internally before answering the new one. > **Note** > > Call SDK does not…"
+        },
+        {
+          "path": "docs/chatsdk-web/quickstart.md",
+          "heading": "Send a message {#send}",
+          "score": 134,
+          "startLine": 137,
+          "endLine": 156,
+          "snippet": "Send a text message to a user with userId `2`. Besides text messages, you can also send images, files, voice messages, and more. See [Message types](./message/send.md#types). ```ts import { DirectChannel, SendTextMessag…"
+        }
+      ],
+      "answer": "以下内容基于 Web 文档整理。当前命中的文档主要支持你 发送第一条消息。\n\n步骤\n1. 创建 `DirectChannel(\"<target-user-id>\")`，再构造 `SendTextMessageParams` 并调用 `channel.sendMessage` 发送第一条消息。[docs/chatsdk-web/quickstart.md:137-156]\n\n关键 API / 文档\n- `DirectChannel`\n- `SendTextMessageParams`\n- `channel.sendMessage`\n\n注意事项\n- 当前命中的文档没有覆盖完整的 SDK 导入或初始化步骤；如果你需要从零接入，请继续追问 import/init。\n- 当前命中的文档没有展开 token 获取或连接建立步骤；如果你还没完成登录连接，建议继续追问 connect/token。\n\nSources:\n- docs/chatsdk-web/quickstart.md#Send a message {#send}:137-156",
+      "summary": "guided answer from 1 documentation chunks"
+    },
+    {
+      "caseDef": {
+        "id": "web-push-config",
+        "title": "Web push-config questions should choose the web push page",
+        "question": "How do I configure push settings for the Web Call SDK?",
+        "expectedPathSuffixes": [
+          "docs/callsdk-web/push-config.md"
+        ],
+        "discouragedPathSuffixes": [
+          "docs/callsdk-ios/push-config.md"
+        ],
+        "expectedHeadingKeywords": [
+          "push",
+          "attribute"
+        ],
+        "topK": 3
+      },
+      "passed": true,
+      "reasons": [
+        "Retrieval expectations satisfied.",
+        "Answer expectations satisfied."
+      ],
+      "retrieval": [
+        {
+          "path": "docs/callsdk-web/push-config.md",
+          "heading": "Push attribute reference",
+          "score": 95,
+          "startLine": 15,
+          "endLine": 67,
+          "snippet": "`INCCallPushConfig` includes the following fields: | Parameter | Type | Description | | :--- | :--- | :--- | | pushTitle | `string` | Push notification title. This field is part of the current public type definition. | …"
+        },
+        {
+          "path": "docs/callsdk-web/one-to-one-call.md",
+          "heading": "Start a call {#startCall}",
+          "score": 77,
+          "startLine": 308,
+          "endLine": 332,
+          "snippet": ":::tip The `startCall` method accepts optional `pushConfig` and `extra` parameters. `pushConfig` carries mobile push settings through `INCCallPushConfig`, including `pushTitle`, `pushContent`, and platform-specific push…"
+        },
+        {
+          "path": "docs/callsdk-web/one-to-one-call.md",
+          "heading": "End the call {#endCall}",
+          "score": 77,
+          "startLine": 467,
+          "endLine": 486,
+          "snippet": "> **Note** > > The `endCall` method accepts an optional `pushConfig` parameter. `pushConfig` carries mobile push settings through `INCCallPushConfig`, including `pushTitle`, `pushContent`, and platform-specific push att…"
+        },
+        {
+          "path": "docs/callsdk-web/make-first-call.md",
+          "heading": "Step 8: Start a call",
+          "score": 73,
+          "startLine": 237,
+          "endLine": 261,
+          "snippet": ":::tip The `startCall` method accepts optional `pushConfig` and `extra` parameters. `pushConfig` carries mobile push settings through `INCCallPushConfig`, including `pushTitle`, `pushContent`, and platform-specific push…"
+        },
+        {
+          "path": "docs/callsdk-web/group-call.md",
+          "heading": "Start a group call",
+          "score": 72,
+          "startLine": 17,
+          "endLine": 32,
+          "snippet": ":::tip The `startCall` method accepts optional `pushConfig` and `extra` parameters. `pushConfig` carries mobile push settings through `INCCallPushConfig`, including `pushTitle`, `pushContent`, and platform-specific push…"
+        }
+      ],
+      "answer": "以下内容基于 Web 文档整理。当前命中的文档主要支持你 先确认最合适的客户端文档入口。\n\n注意事项\n- 当前命中的文档没有覆盖完整的 SDK 导入或初始化步骤；如果你需要从零接入，请继续追问 import/init。\n- 当前命中的文档没有展开 token 获取或连接建立步骤；如果你还没完成登录连接，建议继续追问 connect/token。\n- 当前命中的文档没有给出明确的发消息示例，必要时请继续追问具体平台或消息类型。\n\nSources:\n- docs/callsdk-web/push-config.md#Push attribute reference:15-67\n- docs/callsdk-web/one-to-one-call.md#Start a call {#startCall}:308-332\n- docs/callsdk-web/one-to-one-call.md#End the call {#endCall}:467-486\n- docs/callsdk-web/make-first-call.md#Step 8: Start a call:237-261",
+      "summary": "guided answer from 4 documentation chunks"
+    },
+    {
+      "caseDef": {
+        "id": "web-group-answer",
+        "title": "Web group-call answer questions should land on the group-call page",
+        "question": "How do I answer a group call invitation in the Web Call SDK?",
+        "expectedPathSuffixes": [
+          "docs/callsdk-web/group-call.md"
+        ],
+        "discouragedPathSuffixes": [
+          "docs/callsdk-web/one-to-one-call.md"
+        ],
+        "expectedHeadingKeywords": [
+          "answer",
+          "invitation",
+          "group"
+        ],
+        "topK": 3
+      },
+      "passed": true,
+      "reasons": [
+        "Retrieval expectations satisfied.",
+        "Answer expectations satisfied."
+      ],
+      "retrieval": [
+        {
+          "path": "docs/callsdk-web/group-call.md",
+          "heading": "Answer a group call",
+          "score": 158,
+          "startLine": 33,
+          "endLine": 46,
+          "snippet": ":::tip The callee must register `INCCallEventsListener` and implement `onCallReceived(session: NCCallSession)`. Incoming call notifications are delivered through the user's IM connection to Nexconn. ::: After the callee…"
+        },
+        {
+          "path": "docs/callsdk-web/group-call.md",
+          "heading": "Accept or reject an invitation",
+          "score": 149,
+          "startLine": 90,
+          "endLine": 103,
+          "snippet": "When an invited user accepts or rejects the invitation, the inviter receives the related state change. You can update your UI so the inviter can see whether invited users joined or declined. - To accept a ringing invita…"
+        },
+        {
+          "path": "docs/callsdk-web/group-call.md",
+          "heading": "Invite other users during a call",
+          "score": 138,
+          "startLine": 47,
+          "endLine": 54,
+          "snippet": "You can invite additional users into a group call. Invited users can accept or reject the invitation. :::caution Call does not currently support canceling an invitation after it is sent. :::"
+        },
+        {
+          "path": "docs/callsdk-web/group-call.md",
+          "heading": "Get unfinished group calls",
+          "score": 136,
+          "startLine": 104,
+          "endLine": 121,
+          "snippet": "A user might reject a group call invitation or leave a group call. As long as the call itself has not ended, the user can rejoin later. First, call `getOngoingCallLogs` to query the server for group calls that the local…"
+        },
+        {
+          "path": "docs/callsdk-web/group-call.md",
+          "heading": "Start a group call",
+          "score": 132,
+          "startLine": 17,
+          "endLine": 32,
+          "snippet": ":::tip The `startCall` method accepts optional `pushConfig` and `extra` parameters. `pushConfig` carries mobile push settings through `INCCallPushConfig`, including `pushTitle`, `pushContent`, and platform-specific push…"
+        }
+      ],
+      "answer": "以下内容基于 Web 文档整理。当前命中的文档主要支持你 先确认最合适的客户端文档入口。\n\n注意事项\n- 当前命中的文档没有覆盖完整的 SDK 导入或初始化步骤；如果你需要从零接入，请继续追问 import/init。\n- 当前命中的文档没有展开 token 获取或连接建立步骤；如果你还没完成登录连接，建议继续追问 connect/token。\n- 当前命中的文档没有给出明确的发消息示例，必要时请继续追问具体平台或消息类型。\n\nSources:\n- docs/callsdk-web/group-call.md#Answer a group call:33-46\n- docs/callsdk-web/group-call.md#Accept or reject an invitation:90-103\n- docs/callsdk-web/group-call.md#Invite other users during a call:47-54\n- docs/callsdk-web/group-call.md#Get unfinished group calls:104-121",
+      "summary": "guided answer from 4 documentation chunks"
+    },
+    {
+      "caseDef": {
+        "id": "web-chat-call-log",
+        "title": "Web chat-integration questions should land on the call-log integration page",
+        "question": "How do I show call end information in the chat conversation for Web Call SDK?",
+        "expectedPathSuffixes": [
+          "docs/callsdk-web/callplus-integration-to-chat.md"
+        ],
+        "discouragedPathSuffixes": [
+          "docs/callsdk-ios/callplus-integration-to-chat.md"
+        ],
+        "expectedHeadingKeywords": [
+          "call end",
+          "conversation",
+          "chat"
+        ],
+        "topK": 4
+      },
+      "passed": true,
+      "reasons": [
+        "Retrieval expectations satisfied.",
+        "Answer expectations satisfied."
+      ],
+      "retrieval": [
+        {
+          "path": "docs/callsdk-web/callplus-integration-to-chat.md",
+          "heading": "Show call end information in the conversation view",
+          "score": 155,
+          "startLine": 10,
+          "endLine": 15,
+          "snippet": "Your app can return to the chat view after a call ends and refresh the conversation list or call list UI based on the call result. To simplify Chat SDK integration, Call SDK provides call-related data after a 1-to-1 cal…"
+        },
+        {
+          "path": "docs/callsdk-web/callplus-integration-to-chat.md",
+          "heading": "Get call end information with INCCallLog",
+          "score": 140,
+          "startLine": 16,
+          "endLine": 37,
+          "snippet": ":::warning Call SDK currently returns call log data through `onLocalCallLogReceived` only when a 1-to-1 call with the type `NCCallType.SINGLE` ends. Group calls are not supported at this time. ::: When a call ends norma…"
+        },
+        {
+          "path": "docs/chatsdk-web/community-channel/chat.md",
+          "heading": "Send a message",
+          "score": 95,
+          "startLine": 8,
+          "endLine": 25,
+          "snippet": "Messages in community channels are sent to a specific subchannel. Use `CommunitySubChannel` with the community ID and subchannel ID. ```ts import { CommunitySubChannel, SendTextMessageParams } from '@nexconn/chat'; cons…"
+        },
+        {
+          "path": "docs/callsdk-web/callplus-integration-to-chat.md",
+          "heading": "Integrate with your IM workflow",
+          "score": 93,
+          "startLine": 6,
+          "endLine": 9,
+          "snippet": "You can integrate Call into an app that already uses `@nexconn/chat` (Chat SDK) so users get a seamless calling and messaging experience."
+        },
+        {
+          "path": "docs/chatsdk-web/community-channel/chat.md",
+          "heading": "Send a media message",
+          "score": 92,
+          "startLine": 26,
+          "endLine": 45,
+          "snippet": "```ts import { CommunitySubChannel, Helper } from '@nexconn/chat'; const channel = new CommunitySubChannel('<communityId>', '<subChannelId>'); const result = await Helper.createSendImageMessageParams(file); // file: Fil…"
+        }
+      ],
+      "answer": "以下内容基于 Web 文档整理。当前命中的文档主要支持你 完成 SDK 接入与连接。\n\n准备工作\n- 准备用户 access token，并确保客户端已经连上 Nexconn 服务器。[docs/callsdk-web/callplus-integration-to-chat.md:16-37]\n\n步骤\n1. 按 Get call end information with INCCallLog 中的说明完成这一步。[docs/callsdk-web/callplus-integration-to-chat.md:16-37]\n\n关键 API / 文档\n- `NCEngine.connect`\n\n注意事项\n- 当前命中的文档没有覆盖完整的 SDK 导入或初始化步骤；如果你需要从零接入，请继续追问 import/init。\n- 当前命中的文档没有给出明确的发消息示例，必要时请继续追问具体平台或消息类型。\n\nSources:\n- docs/callsdk-web/callplus-integration-to-chat.md#Get call end information with INCCallLog:16-37",
+      "summary": "guided answer from 1 documentation chunks"
+    },
+    {
+      "caseDef": {
+        "id": "archive-fallback-allowed",
+        "title": "Provisioning-profile detail may still use archive as fallback evidence",
+        "question": "Which provisioning profile should I use for VoIP push in iOS CallPlus?",
+        "expectedPathSuffixes": [
+          "docs/callsdk-ios/callplus-voip.md",
+          "docs/.archive/zh-source/ios-callplus-zh-source/callplus-voip.md"
+        ],
+        "expectedHeadingKeywords": [
+          "provisioning",
+          "voip"
+        ],
+        "topK": 5,
+        "notes": "Primary docs should rank ahead, but archive fallback is acceptable in top results."
+      },
+      "passed": true,
+      "reasons": [
+        "Retrieval expectations satisfied.",
+        "Answer expectations satisfied."
+      ],
+      "retrieval": [
+        {
+          "path": "docs/callsdk-ios/callplus-voip.md",
+          "heading": "Receive VoIP incoming call data",
+          "score": 111,
+          "startLine": 23,
+          "endLine": 41,
+          "snippet": "```objectivec @interface MyCallHandler () <NCCallEventDelegate> @end @implementation MyCallHandler - (void)didVoIPPushNotificationReceived:(NSString *)callId inviterUserId:(NSString *)inviterUserId mediaType:(NCCallMedi…"
+        },
+        {
+          "path": "docs/callsdk-ios/callplus-voip.md",
+          "heading": "When to use VoIP PushKit",
+          "score": 110,
+          "startLine": 11,
+          "endLine": 14,
+          "snippet": "If your iOS app needs to detect incoming calls more quickly after the app is killed or moved to the background, evaluate whether to enable VoIP PushKit. Whether CallKit or PushKit is allowed in your target market depend…"
+        },
+        {
+          "path": "docs/callsdk-ios/callplus-voip.md",
+          "heading": "Enable PushKit",
+          "score": 97,
+          "startLine": 15,
+          "endLine": 22,
+          "snippet": "```objectivec [[NCCallEngine sharedInstance] enableVoipPushKit:YES]; ``` Set this during app startup, before Call SDK initialization or early in the initialization flow."
+        },
+        {
+          "path": "docs/callsdk-ios/callplus-voip.md",
+          "heading": "What the public API confirms",
+          "score": 97,
+          "startLine": 42,
+          "endLine": 56,
+          "snippet": "From `NexconnCall.h` and `NCCallEngine.h`, you can confirm the following: - The SDK can enable or disable VoIP PushKit behavior. - The SDK can deliver VoIP incoming call data back to the app layer. The current public um…"
+        },
+        {
+          "path": "docs/.archive/zh-source/ios-callplus-zh-source/callplus-voip.md",
+          "heading": "设置 provisioning profile",
+          "score": 91,
+          "startLine": 65,
+          "endLine": 69,
+          "snippet": "* 在 Xcode 中设置 `provisioning profile`。因为苹果的 VoIP Push 只提供生产环境的证书，所以只有在生产环境才可以使用 VoIP 推送。 * 所以您在打包的时候，需要设置 `provisioning profile` 为 `distribution` 才能收到 VoIP 推送。 关于 Xcode 如果设置 `provisioning profile` 的更多内容，可以参考 [Xcode 官方文档]…"
+        }
+      ],
+      "answer": "以下内容基于 iOS 文档整理。当前命中的文档主要支持你 先确认最合适的客户端文档入口。\n\n注意事项\n- 当前命中的文档没有覆盖完整的 SDK 导入或初始化步骤；如果你需要从零接入，请继续追问 import/init。\n- 当前命中的文档没有展开 token 获取或连接建立步骤；如果你还没完成登录连接，建议继续追问 connect/token。\n- 当前命中的文档没有给出明确的发消息示例，必要时请继续追问具体平台或消息类型。\n\nSources:\n- docs/callsdk-ios/callplus-voip.md#Receive VoIP incoming call data:23-41\n- docs/callsdk-ios/callplus-voip.md#When to use VoIP PushKit:11-14\n- docs/callsdk-ios/callplus-voip.md#Enable PushKit:15-22\n- docs/callsdk-ios/callplus-voip.md#What the public API confirms:42-56",
+      "summary": "guided answer from 4 documentation chunks"
+    },
+    {
+      "caseDef": {
+        "id": "no-hit-kubernetes",
+        "title": "Off-topic infra question should produce no hits",
+        "question": "How do I configure Kubernetes liveness probes for this SDK?",
+        "expectedSummaryKeywords": [
+          "no relevant documentation found"
+        ],
+        "expectedAnswerKeywords": [
+          "我没有在本地 Markdown 文档库里找到"
+        ],
+        "allowNoHits": true,
+        "topK": 3
+      },
+      "passed": true,
+      "reasons": [
+        "No hits as expected.",
+        "Answer expectations satisfied."
+      ],
+      "retrieval": [],
+      "answer": "我没有在本地 Markdown 文档库里找到和“How do I configure Kubernetes liveness probes for this SDK?”直接相关的内容。\n\n你可以换更具体的关键词，或者确认目标文档已经放进 docs/ 目录。\n\nSources:\n- none",
+      "summary": "no relevant documentation found"
+    }
+  ]
+}

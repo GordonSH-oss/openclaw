@@ -1,0 +1,14 @@
+{
+  "name": "learning-doc-assistant-design",
+  "version": "0.1.0",
+  "description": "Learning-focused document assistant project inspired by OpenClaw gateway and agent flows",
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": {
+    "dev": "node --import ../gateway-design/node_modules/tsx/dist/loader.mjs src/index.ts",
+    "ask": "node --import ../gateway-design/node_modules/tsx/dist/loader.mjs src/cli.ts",
+    "eval": "node --import ../gateway-design/node_modules/tsx/dist/loader.mjs src/eval.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "node --import ../gateway-design/node_modules/tsx/dist/loader.mjs --test src/*.test.ts"
+  }
+}

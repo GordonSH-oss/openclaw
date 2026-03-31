@@ -1,0 +1,86 @@
+{
+  "scratch/aafc69d5-61b5-4f79-9803-adb3623d4069": {
+    "sessionId": "52f74e0c-9ef3-4084-9435-fa280a007d6c",
+    "sessionKey": "scratch/aafc69d5-61b5-4f79-9803-adb3623d4069",
+    "transcriptPath": "/Users/admin/Workspace@RongCloud/For-learning/openclaw/learn/doc-assistant-design/.mini-doc-assistant-data/agent-scratch/transcripts/52f74e0c-9ef3-4084-9435-fa280a007d6c.jsonl",
+    "createdAt": 1774947867319,
+    "updatedAt": 1774947869032,
+    "status": "idle",
+    "inputTokens": 577,
+    "outputTokens": 590,
+    "model": "learning-primary",
+    "provider": "mock"
+  },
+  "scratch/bae34cb1-249d-4197-8ec4-f3d692a06643": {
+    "sessionId": "ac761736-8464-4b7c-96a7-9a52d4bfecc1",
+    "sessionKey": "scratch/bae34cb1-249d-4197-8ec4-f3d692a06643",
+    "transcriptPath": "/Users/admin/Workspace@RongCloud/For-learning/openclaw/learn/doc-assistant-design/.mini-doc-assistant-data/agent-scratch/transcripts/ac761736-8464-4b7c-96a7-9a52d4bfecc1.jsonl",
+    "createdAt": 1774948466654,
+    "updatedAt": 1774948468449,
+    "status": "idle",
+    "inputTokens": 685,
+    "outputTokens": 698,
+    "model": "learning-primary",
+    "provider": "mock"
+  },
+  "scratch/5e63da1a-aa3d-448b-afef-25319e7cef62": {
+    "sessionId": "0e93bf33-c069-4edd-8f8c-00308d574173",
+    "sessionKey": "scratch/5e63da1a-aa3d-448b-afef-25319e7cef62",
+    "transcriptPath": "/Users/admin/Workspace@RongCloud/For-learning/openclaw/learn/doc-assistant-design/.mini-doc-assistant-data/agent-scratch/transcripts/0e93bf33-c069-4edd-8f8c-00308d574173.jsonl",
+    "createdAt": 1774950053312,
+    "updatedAt": 1774950055101,
+    "status": "idle",
+    "inputTokens": 807,
+    "outputTokens": 820,
+    "model": "learning-primary",
+    "provider": "mock"
+  },
+  "scratch/58fd1b64-3199-4ac3-b0a9-9d3630c31b60": {
+    "sessionId": "69a754b0-beac-47b1-9891-e35f54198180",
+    "sessionKey": "scratch/58fd1b64-3199-4ac3-b0a9-9d3630c31b60",
+    "transcriptPath": "/Users/admin/Workspace@RongCloud/For-learning/openclaw/learn/doc-assistant-design/.mini-doc-assistant-data/agent-scratch/transcripts/69a754b0-beac-47b1-9891-e35f54198180.jsonl",
+    "createdAt": 1774950143060,
+    "updatedAt": 1774950145020,
+    "status": "idle",
+    "inputTokens": 807,
+    "outputTokens": 820,
+    "model": "learning-primary",
+    "provider": "mock"
+  },
+  "scratch/a4d85b92-91c0-4cf6-8d92-ff0fa145becd": {
+    "sessionId": "1583f08f-e7e3-4fbe-a42b-f328c819a9ec",
+    "sessionKey": "scratch/a4d85b92-91c0-4cf6-8d92-ff0fa145becd",
+    "transcriptPath": "/Users/admin/Workspace@RongCloud/For-learning/openclaw/learn/doc-assistant-design/.mini-doc-assistant-data/agent-scratch/transcripts/1583f08f-e7e3-4fbe-a42b-f328c819a9ec.jsonl",
+    "createdAt": 1774952192417,
+    "updatedAt": 1774952195449,
+    "status": "idle",
+    "inputTokens": 1108,
+    "outputTokens": 1121,
+    "model": "learning-primary",
+    "provider": "mock"
+  },
+  "scratch/be044b35-d1eb-4ed5-a25a-e598d1c6e63f": {
+    "sessionId": "998153ee-a8aa-4f08-b113-ad3699d09464",
+    "sessionKey": "scratch/be044b35-d1eb-4ed5-a25a-e598d1c6e63f",
+    "transcriptPath": "/Users/admin/Workspace@RongCloud/For-learning/openclaw/learn/doc-assistant-design/.mini-doc-assistant-data/agent-scratch/transcripts/998153ee-a8aa-4f08-b113-ad3699d09464.jsonl",
+    "createdAt": 1774952789462,
+    "updatedAt": 1774952792785,
+    "status": "idle",
+    "inputTokens": 909,
+    "outputTokens": 922,
+    "model": "learning-primary",
+    "provider": "mock"
+  },
+  "scratch/1e9701cc-df1d-4256-943c-1dcaea6a1786": {
+    "sessionId": "044e917f-aa61-4de1-9276-8b86b0b1eaae",
+    "sessionKey": "scratch/1e9701cc-df1d-4256-943c-1dcaea6a1786",
+    "transcriptPath": "/Users/admin/Workspace@RongCloud/For-learning/openclaw/learn/doc-assistant-design/.mini-doc-assistant-data/agent-scratch/transcripts/044e917f-aa61-4de1-9276-8b86b0b1eaae.jsonl",
+    "createdAt": 1774952931420,
+    "updatedAt": 1774952934118,
+    "status": "idle",
+    "inputTokens": 548,
+    "outputTokens": 562,
+    "model": "learning-primary",
+    "provider": "mock"
+  }
+}

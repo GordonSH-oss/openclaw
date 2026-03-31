@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Learn Doc Assistant</title>
+    <link rel="stylesheet" href="/assets/doc-assistant-ui.css" />
+  </head>
+  <body>
+    <div class="shell">
+      <aside class="side-panel">
+        <div class="brand-block">
+          <p class="eyebrow">Learning UI</p>
+          <h1>Learn Doc Assistant</h1>
+          <p class="lede">
+            Ask questions against the local Markdown library and inspect grounded sources before
+            embedding the assistant into docs.
+          </p>
+        </div>
+
+        <section class="control-card">
+          <div class="control-row">
+            <label for="mode-select">Mode</label>
+            <select id="mode-select">
+              <option value="extractive">extractive</option>
+              <option value="agent">agent</option>
+            </select>
+          </div>
+
+          <div class="control-row">
+            <label for="max-results-input">Max results</label>
+            <input id="max-results-input" type="number" min="1" max="8" value="4" />
+          </div>
+
+          <div class="control-row">
+            <label for="question-input">Question</label>
+            <textarea
+              id="question-input"
+              rows="6"
+              placeholder="How do I start and accept a 1-to-1 call in the iOS Call SDK?"
+            ></textarea>
+          </div>
+
+          <div class="button-row">
+            <button id="ask-button" class="primary-button" type="button">Ask</button>
+            <button id="new-session-button" class="secondary-button" type="button">
+              New session
+            </button>
+          </div>
+        </section>
+
+        <section class="status-card">
+          <div class="status-row">
+            <span>Status</span>
+            <strong id="connection-status">Connecting</strong>
+          </div>
+          <div class="status-row">
+            <span>User</span>
+            <code id="user-id-label">-</code>
+          </div>
+          <div class="status-row">
+            <span>Session</span>
+            <code id="session-key-label">-</code>
+          </div>
+        </section>
+      </aside>
+
+      <main class="chat-panel">
+        <header class="chat-header">
+          <div>
+            <p class="eyebrow">Grounded Q&A</p>
+            <h2>Conversation</h2>
+          </div>
+          <p class="header-note">Retrieved chunks and citations are shown inline with each answer.</p>
+        </header>
+
+        <section id="message-list" class="message-list"></section>
+      </main>
+    </div>
+
+    <template id="message-template">
+      <article class="message-card">
+        <div class="message-meta">
+          <span class="message-role"></span>
+          <span class="message-extra"></span>
+        </div>
+        <div class="message-body"></div>
+        <div class="message-retrieval"></div>
+        <div class="message-citations"></div>
+      </article>
+    </template>
+
+    <script type="module" src="/assets/doc-assistant-ui.js"></script>
+  </body>
+</html>
