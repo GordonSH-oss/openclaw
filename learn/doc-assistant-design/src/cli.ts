@@ -72,7 +72,7 @@ export function printCliUsage(): void {
       "Usage:",
       "  npm run ask -- --question \"How do I configure push settings?\"",
       "  npm run ask -- --docs-root /path/to/docs --mode agent --question \"How do I start a 1-to-1 call?\"",
-      "  npm run ask -- --docs-root /path/to/docs --mode agent --base-url https://host/v1 --api-key sk-... --model gpt-5.4-mini --question \"How do I start a 1-to-1 call?\"",
+      "  npm run ask -- --docs-root /path/to/docs --mode agent --base-url https://host/v1 --api-key sk-... --model gpt-5.4 --question \"How do I start a 1-to-1 call?\"",
       "",
       "Auto-loaded .env:",
       "  learn/doc-assistant-design/.env",

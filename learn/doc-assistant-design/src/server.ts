@@ -3,6 +3,7 @@ import type { AddressInfo } from "node:net";
 import process from "node:process";
 import type { OpenAICompatibleConfig } from "./protocol/index.js";
 import { resolveDefaultDocsRoot } from "./doc-index.js";
+import { DEFAULT_DOC_ASSISTANT_AGENT_MODEL } from "./openai-compatible.js";
 import { createDocAssistantRuntimeState } from "./server-runtime-state.js";
 import { createDocAssistantRouter } from "./server-methods.js";
 import { attachDocAssistantWsHandlers } from "./server-ws-runtime.js";
@@ -25,6 +26,32 @@ export type DocAssistantServerConfig = {
   allowedOrigins?: string[];
 };
 
+function resolveDefaultAgentConfig(
+  config: DocAssistantServerConfig,
+): DocAssistantServerConfig["defaultAgentConfig"] {
+  if (config.defaultAgentConfig) {
+    return config.defaultAgentConfig;
+  }
+
+  const baseURL = process.env.DOC_ASSISTANT_BASE_URL?.trim();
+  const apiKey = process.env.DOC_ASSISTANT_API_KEY?.trim();
+  const model = process.env.DOC_ASSISTANT_MODEL?.trim() || DEFAULT_DOC_ASSISTANT_AGENT_MODEL;
+
+  if (!baseURL || !apiKey) {
+    return undefined;
+  }
+
+  return {
+    provider: "openai-compatible",
+    model,
+    openAICompatible: {
+      baseURL,
+      apiKey,
+      model,
+    },
+  };
+}
+
 export async function createDocAssistantServer(config: DocAssistantServerConfig = {}) {
   const port = config.port ?? 8790;
   const host = config.host ?? "127.0.0.1";
@@ -36,7 +63,7 @@ export async function createDocAssistantServer(config: DocAssistantServerConfig 
     dataDir: config.dataDir,
     defaultMode,
     adminToken: config.adminToken,
-    defaultAgentConfig: config.defaultAgentConfig,
+    defaultAgentConfig: resolveDefaultAgentConfig(config),
   });
   const router = createDocAssistantRouter();
   const allowedOrigins = config.allowedOrigins;

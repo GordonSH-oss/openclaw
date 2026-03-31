@@ -74,8 +74,8 @@ function rpc(method, params) {
   });
 }
 
-function scrollMessagesToEnd() {
-  dom.messageList.scrollTop = dom.messageList.scrollHeight;
+function scrollMessagesToTop() {
+  dom.messageList.scrollTop = 0;
 }
 
 function formatNow() {
@@ -91,9 +91,9 @@ function createMessageCard(role, extra = "") {
   card.classList.add(`role-${role}`);
   card.querySelector(".message-role").textContent = role;
   card.querySelector(".message-extra").textContent = extra;
-  dom.messageList.appendChild(fragment);
-  scrollMessagesToEnd();
-  return dom.messageList.lastElementChild;
+  dom.messageList.prepend(fragment);
+  scrollMessagesToTop();
+  return card;
 }
 
 function setMessageBody(card, text) {
@@ -253,7 +253,7 @@ function handleEvent(frame) {
   if (frame.event === "docs.delta") {
     context.text = data.text ?? "";
     setMessageBody(context.card, context.text);
-    scrollMessagesToEnd();
+    scrollMessagesToTop();
     return;
   }
 

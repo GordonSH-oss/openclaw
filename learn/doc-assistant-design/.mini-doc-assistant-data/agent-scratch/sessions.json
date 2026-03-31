@@ -94,5 +94,29 @@
     "outputTokens": 731,
     "model": "learning-primary",
     "provider": "mock"
+  },
+  "scratch/73dd7804-d37b-4ce6-b25c-15ceb2439b6b": {
+    "sessionId": "e4a960d5-5082-43fd-8cff-6be06d8970da",
+    "sessionKey": "scratch/73dd7804-d37b-4ce6-b25c-15ceb2439b6b",
+    "transcriptPath": "/Users/admin/Workspace@RongCloud/For-learning/openclaw/learn/doc-assistant-design/.mini-doc-assistant-data/agent-scratch/transcripts/e4a960d5-5082-43fd-8cff-6be06d8970da.jsonl",
+    "createdAt": 1774956532323,
+    "updatedAt": 1774956535231,
+    "status": "idle",
+    "inputTokens": 1024,
+    "outputTokens": 1037,
+    "model": "learning-primary",
+    "provider": "mock"
+  },
+  "scratch/e3ad4f73-dbc6-4b80-a060-60c657727793": {
+    "sessionId": "c9c5b7f5-16e3-4cfa-bc51-a4a32cc29a21",
+    "sessionKey": "scratch/e3ad4f73-dbc6-4b80-a060-60c657727793",
+    "transcriptPath": "/Users/admin/Workspace@RongCloud/For-learning/openclaw/learn/doc-assistant-design/.mini-doc-assistant-data/agent-scratch/transcripts/c9c5b7f5-16e3-4cfa-bc51-a4a32cc29a21.jsonl",
+    "createdAt": 1774956824381,
+    "updatedAt": 1774956826291,
+    "status": "idle",
+    "inputTokens": 574,
+    "outputTokens": 588,
+    "model": "learning-primary",
+    "provider": "mock"
   }
 }

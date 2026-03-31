@@ -1,6 +1,8 @@
 import { detectAnswerLanguage } from "./answer-language.js";
 import type { DocCitation, DocSearchHit, OpenAICompatibleConfig } from "./protocol/index.js";
 
+export const DEFAULT_DOC_ASSISTANT_AGENT_MODEL = "gpt-5.4";
+
 type ChatCompletionMessage = {
   content?: string | Array<{ type?: string; text?: string }>;
 };
@@ -163,7 +165,7 @@ export async function answerWithOpenAICompatible(params: {
     endLine: hit.endLine,
     snippet: hit.snippet,
   }));
-  const model = params.config.model ?? "gpt-4.1-mini";
+  const model = params.config.model ?? DEFAULT_DOC_ASSISTANT_AGENT_MODEL;
   const response = await fetch(joinUrl(params.config.baseURL, "/chat/completions"), {
     method: "POST",
     headers: {
