@@ -227,6 +227,69 @@ async function createClientConnectFixtureDocs(): Promise<string> {
   return docsRoot;
 }
 
+async function createWebhookFixtureDocs(): Promise<string> {
+  const docsRoot = await makeTempDir("doc-assistant-webhook-docs");
+  await fs.mkdir(path.join(docsRoot, "docs", "platform-chat-api", "webhook", "events", "message"), {
+    recursive: true,
+  });
+  await fs.mkdir(path.join(docsRoot, "docs", "chatsdk-web", "community-channel"), {
+    recursive: true,
+  });
+  await fs.mkdir(path.join(docsRoot, "docs", "chatsdk-web", "message"), {
+    recursive: true,
+  });
+
+  await fs.writeFile(
+    path.join(docsRoot, "docs", "platform-chat-api", "webhook", "overview.md"),
+    [
+      "# Webhooks overview",
+      "",
+      "## Set up webhooks",
+      "",
+      "Open the Nexconn Console, go to Webhooks, click Config, enter the webhook URL, select the events, and save.",
+      "",
+      "## Verify signatures",
+      "",
+      "Verify the webhook signature before processing the callback payload.",
+      "",
+    ].join("\n"),
+    "utf-8",
+  );
+  await fs.writeFile(
+    path.join(docsRoot, "docs", "platform-chat-api", "webhook", "events", "message", "delete.md"),
+    [
+      "# Message delete webhook",
+      "",
+      "This event page describes the message delete payload.",
+      "",
+      "For the complete webhook setup and signature verification guide, see Webhooks overview.",
+      "",
+    ].join("\n"),
+    "utf-8",
+  );
+  await fs.writeFile(
+    path.join(docsRoot, "docs", "chatsdk-web", "community-channel", "group-member-manager.md"),
+    [
+      "# Set up group member manager",
+      "",
+      "Use this page to configure group member manager behavior in the Web Chat SDK.",
+      "",
+    ].join("\n"),
+    "utf-8",
+  );
+  await fs.writeFile(
+    path.join(docsRoot, "docs", "chatsdk-web", "message", "delete.md"),
+    [
+      "# Delete messages",
+      "",
+      "Delete a message for yourself or for all participants.",
+      "",
+    ].join("\n"),
+    "utf-8",
+  );
+  return docsRoot;
+}
+
 function makeMemoryEntry(params: {
   question: string;
   answer: string;
@@ -815,6 +878,34 @@ test("search treats chat server connection questions as client SDK connection, n
   assert.equal(hits[0]?.heading, "Connect");
 });
 
+test("search prefers webhook overview for generic webhook setup wording", async () => {
+  const docsRoot = await createWebhookFixtureDocs();
+
+  const hits = await searchDocs({
+    query: "How to set up Webhook?",
+    docsRoot,
+    maxResults: 4,
+  });
+
+  assert.equal(hits[0]?.path.endsWith("docs/platform-chat-api/webhook/overview.md"), true);
+  assert.equal(hits[0]?.heading, "Set up webhooks");
+  assert.equal(hits.slice(0, 2).some((hit) => hit.path.includes("group-member-manager.md")), false);
+});
+
+test("search ignores filler wording and still prefers webhook overview", async () => {
+  const docsRoot = await createWebhookFixtureDocs();
+
+  const hits = await searchDocs({
+    query: "Just let me know how to implement webhook",
+    docsRoot,
+    maxResults: 4,
+  });
+
+  assert.equal(hits[0]?.path.endsWith("docs/platform-chat-api/webhook/overview.md"), true);
+  assert.equal(hits[0]?.heading, "Set up webhooks");
+  assert.equal(hits.slice(0, 2).some((hit) => hit.path.endsWith("/message/delete.md")), false);
+});
+
 test("buildDocAnswer asks for platform clarification when multiple SDK platforms match", async () => {
   const result = await buildDocAnswer({
     runId: "clarify-1",
@@ -1001,6 +1092,43 @@ test("buildDocAnswer turns explicit-platform chat questions into a step guide", 
   assert.equal(result.answer.includes("当前命中的文档主要支持你"), false);
   assert.equal(result.answer.includes("`DirectChannel"), true);
   assert.equal(result.answer.includes("sendMessage"), true);
+});
+
+test("buildDocAnswer turns webhook questions into a direct configuration guide", async () => {
+  const result = await buildDocAnswer({
+    runId: "guide-webhook-1",
+    question: "Just let me know how to implement webhook",
+    mode: "extractive",
+    hits: [
+      {
+        path: "docs/platform-chat-api/webhook/overview.md",
+        heading: "Set up webhooks",
+        startLine: 3,
+        endLine: 6,
+        snippet:
+          "Open the Nexconn Console, go to Webhooks, click Config, enter the webhook URL, select the events, and save.",
+        text:
+          "Open the Nexconn Console, go to Webhooks, click Config, enter the webhook URL, select the events, and save.",
+        score: 120,
+      },
+      {
+        path: "docs/platform-chat-api/webhook/overview.md",
+        heading: "Verify signatures",
+        startLine: 7,
+        endLine: 9,
+        snippet: "Verify the webhook signature before processing the callback payload.",
+        text: "Verify the webhook signature before processing the callback payload.",
+        score: 108,
+      },
+    ],
+  });
+
+  assert.equal(result.summary.startsWith("guided answer from "), true);
+  assert.equal(result.answer.includes("Use the documented flow below to configure webhooks."), true);
+  assert.equal(result.answer.includes("Open the Webhooks settings, click Config"), true);
+  assert.equal(result.answer.includes("Verify the webhook signature"), true);
+  assert.equal(result.answer.includes("token acquisition"), false);
+  assert.equal(result.answer.includes("send-message example"), false);
 });
 
 test("buildDocAnswer turns concept questions into an explanation instead of a step guide", async () => {

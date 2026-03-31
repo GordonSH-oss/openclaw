@@ -144,13 +144,13 @@
     "sessionKey": "temp/ce18f0d2-fb1f-424c-85fb-bf82a93748d3",
     "transcriptPath": "/Users/admin/Workspace@RongCloud/For-learning/openclaw/learn/doc-assistant-design/.mini-doc-assistant-data/runtime/transcripts/93afc5dd-3ccb-409f-8b4b-86b1e0e5a1a9.jsonl",
     "createdAt": 1774955913501,
-    "updatedAt": 1774957351040,
+    "updatedAt": 1774958084922,
     "status": "idle",
-    "inputTokens": 77,
-    "outputTokens": 1863,
+    "inputTokens": 98,
+    "outputTokens": 2084,
     "lastChannel": "doc-assistant",
-    "startedAt": 1774957332386,
-    "endedAt": 1774957351040,
+    "startedAt": 1774958081335,
+    "endedAt": 1774958084922,
     "model": "gpt-5.4",
     "provider": "openai-compatible"
   }

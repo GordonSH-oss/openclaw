@@ -129,6 +129,10 @@ function renderRetrieval(card, hits) {
   container.appendChild(list);
 }
 
+function shouldShowRetrieval(result) {
+  return result?.summary !== "no relevant documentation found";
+}
+
 function renderCitations(card, citations, meta = "") {
   const container = card.querySelector(".message-citations");
   container.innerHTML = "";
@@ -264,7 +268,7 @@ function handleEvent(frame) {
       ? `model: ${data.selectedProvider ?? "unknown"}/${data.selectedModel ?? "unknown"}`
       : data.summary ?? "";
     renderCitations(context.card, data.citations ?? [], meta);
-    renderRetrieval(context.card, context.retrieval);
+    renderRetrieval(context.card, shouldShowRetrieval(data) ? context.retrieval : []);
     state.pendingRuns.delete(data.runId);
     dom.askButton.disabled = false;
     dom.newSessionButton.disabled = false;

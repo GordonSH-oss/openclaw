@@ -130,6 +130,17 @@ function inlineCitation(hit: DocCitation): string {
   return `[${hit.path}:${hit.startLine}-${hit.endLine}]`;
 }
 
+function isWebhookText(value: string): boolean {
+  return normalizeAnswerText(value).includes("webhook");
+}
+
+function isWebhookHit(hit: Pick<DocSearchHit, "path" | "heading" | "text"> | undefined): boolean {
+  if (!hit) {
+    return false;
+  }
+  return isWebhookText([hit.path, hit.heading ?? "", hit.text].join("\n"));
+}
+
 function normalizeAnswerText(text: string): string {
   return text
     .toLowerCase()
@@ -301,9 +312,10 @@ function classifyHitRole(hit: DocSearchHit): AnswerRole {
   const normalized = normalizeAnswerText([hit.path, hit.heading ?? "", hit.text].join("\n"));
   const normalizedBody = normalizeAnswerText(hit.text);
   const normalizedHeadingPath = normalizeAnswerText([hit.path, hit.heading ?? ""].join("\n"));
+  const webhookPage = normalized.includes("webhook");
 
   if (
-    normalized.includes("platform chat api") ||
+    (!webhookPage && normalized.includes("platform chat api")) ||
     normalized.includes("server api") ||
     normalized.includes("query history") ||
     normalized.includes("cloud message history") ||
@@ -357,6 +369,8 @@ function classifyHitRole(hit: DocSearchHit): AnswerRole {
     normalizedHeadingPath.includes("quickstart") ||
     normalizedHeadingPath.includes("get started") ||
     normalizedHeadingPath.includes("getting started") ||
+    normalizedHeadingPath.includes("set up") ||
+    normalizedHeadingPath.includes("setup") ||
     normalizedHeadingPath.includes("requirements") ||
     normalizedHeadingPath.includes("prerequisites") ||
     normalizedHeadingPath.endsWith(" import") ||
@@ -710,7 +724,13 @@ function buildGuideIntro(params: {
 }): string {
   const citation = params.overviewHit ? ` ${inlineCitation(params.overviewHit)}` : "";
   const platformText = params.platform ? formatPlatform(params.platform) : undefined;
+  const webhookGuide = [params.overviewHit, params.setupHit, params.connectHit, params.channelHit, params.sendHit].some(
+    (hit) => isWebhookHit(hit),
+  );
   if (params.language === "en") {
+    if (webhookGuide) {
+      return `Use the documented flow below to configure webhooks.${citation}`;
+    }
     const onPlatform = platformText ? ` on ${platformText}` : "";
     if (params.channelKind === "group") {
       return `Use the documented flow below to create a group channel${onPlatform}.${citation}`;
@@ -726,6 +746,9 @@ function buildGuideIntro(params: {
     }
     return `Use the documented flow below.${citation}`;
   }
+  if (webhookGuide) {
+    return `下面是配置 Webhook 的文档步骤。${citation}`;
+  }
   if (params.platform && (params.channelHit || params.sendHit)) {
     return `下面是 ${formatPlatform(params.platform)} 的对应文档步骤，用来开始当前聊天流程。${citation}`;
   }
@@ -734,6 +757,11 @@ function buildGuideIntro(params: {
 
 function buildNeedLine(hit: AnalyzedHit, language: AnswerLanguage): string {
   const normalized = normalizeAnswerText([hit.path, hit.heading ?? "", hit.text].join("\n"));
+  if (isWebhookHit(hit)) {
+    return language === "en"
+      ? `- Prepare a reachable webhook callback URL before you configure the Nexconn Console settings.${inlineCitation(hit)}`
+      : `- 先准备一个可访问的 webhook 回调 URL，再去配置 Nexconn Console。${inlineCitation(hit)}`;
+  }
   if (hit.role === "navigation") {
     return language === "en"
       ? `- Add an \`intent-filter\` in \`AndroidManifest.xml\` so notification taps can open the target conversation page.${inlineCitation(hit)}`
@@ -780,6 +808,34 @@ function buildStepLine(hit: AnalyzedHit, language: AnswerLanguage): string {
     codeTerms.find((value) => value.includes("NCEngine.initialize")) ?? initialize;
   const connectCall = codeTerms.find((value) => value.includes("connect")) ?? "NCEngine.connect(...)";
   const targetedField = codeTerms.find((value) => value.includes("directedUserIds")) ?? "directedUserIds";
+
+  if (isWebhookHit(hit)) {
+    if (
+      normalized.includes("set up webhook") ||
+      normalized.includes("setup webhook") ||
+      normalized.includes("webhook url") ||
+      normalized.includes("callback url") ||
+      normalized.includes("select the events") ||
+      normalized.includes("config")
+    ) {
+      return language === "en"
+        ? `Open the Webhooks settings, click Config, enter the callback URL, choose the events to deliver, and save the webhook configuration.${inlineCitation(hit)}`
+        : `打开 Webhooks 设置并点击 Config，填写回调 URL，选择要投递的事件，然后保存配置。${inlineCitation(hit)}`;
+    }
+    if (normalized.includes("signature")) {
+      return language === "en"
+        ? `Verify the webhook signature on your server before you trust the callback payload.${inlineCitation(hit)}`
+        : `在服务端处理回调前，先校验 webhook signature。${inlineCitation(hit)}`;
+    }
+    if (normalized.includes("event") || normalized.includes("payload")) {
+      return language === "en"
+        ? `Handle the webhook event payload on your server according to the documented event schema.${inlineCitation(hit)}`
+        : `按照文档里的事件结构处理服务端收到的 webhook payload。${inlineCitation(hit)}`;
+    }
+    return language === "en"
+      ? `Configure the webhook endpoint and delivery behavior exactly as documented.${inlineCitation(hit)}`
+      : `按文档说明配置 webhook 端点和投递行为。${inlineCitation(hit)}`;
+  }
 
   if (hit.role === "setup") {
     if (normalized.includes("import")) {
@@ -1010,13 +1066,34 @@ function buildGuideAnswer(
   const channelHit = pickBestHit(effectiveHits, ["start_chat", "platform"]);
   const sendHit = pickBestHit(effectiveHits, ["send_first_message"]);
   const overviewHit = pickBestHit(effectiveHits, ["platform", "start_chat", "setup"]);
+  const webhookGuide = normalizeAnswerText(question).includes("webhook") || effectiveHits.some((hit) => isWebhookHit(hit));
+  const webhookStepHits = webhookGuide
+    ? effectiveHits.filter((hit) => {
+        const normalizedHeadingPath = normalizeAnswerText([hit.path, hit.heading ?? ""].join("\n"));
+        const normalizedBody = normalizeAnswerText(hit.text);
+        return (
+          isWebhookHit(hit) &&
+          (normalizedHeadingPath.includes("/webhook/overview") ||
+            normalizedHeadingPath.includes("set up webhook") ||
+            normalizedHeadingPath.includes("setup webhook") ||
+            normalizedHeadingPath.includes("signature") ||
+            normalizedBody.includes("webhook url") ||
+            normalizedBody.includes("callback url") ||
+            normalizedBody.includes("signature"))
+        );
+      })
+    : [];
 
-  const needHits = [importHit, initializeHit, connectHit, navigationHit, channelHit].filter(
-    (hit): hit is AnalyzedHit => Boolean(hit),
-  );
-  const stepHits = [importHit, initializeHit, connectHit, navigationHit, channelHit, sendHit].filter(
-    (hit, index, all): hit is AnalyzedHit => Boolean(hit) && all.indexOf(hit) === index,
-  );
+  const needHits = webhookGuide
+    ? []
+    : [importHit, initializeHit, connectHit, navigationHit, channelHit].filter(
+        (hit): hit is AnalyzedHit => Boolean(hit),
+      );
+  const stepHits = webhookGuide
+    ? (webhookStepHits.length > 0 ? webhookStepHits : effectiveHits.filter((hit) => isWebhookHit(hit)).slice(0, 3))
+    : [importHit, initializeHit, connectHit, navigationHit, channelHit, sendHit].filter(
+        (hit, index, all): hit is AnalyzedHit => Boolean(hit) && all.indexOf(hit) === index,
+      );
   const citedHits = stepHits.length > 0 ? stepHits : effectiveHits.slice(0, 4);
   const citations = dedupeCitations(citedHits);
 
@@ -1037,28 +1114,34 @@ function buildGuideAnswer(
   ).slice(0, 6);
 
   const noteLines: string[] = [];
-  if (channelHit) {
+  const sdkChatFlow =
+    !webhookGuide &&
+    (effectiveHits.some((hit) => normalizeAnswerText(hit.path).includes("chatsdk")) ||
+      Boolean(channelHit) ||
+      Boolean(sendHit) ||
+      Boolean(connectHit));
+  if (channelHit && sdkChatFlow) {
     noteLines.push(
       language === "en"
         ? `- A direct channel is a one-to-one conversation whose channel ID is typically the target user ID.${inlineCitation(channelHit)}`
         : `- Direct channel 表示两个用户之间的一对一私聊，会话标识通常就是对方用户 ID。${inlineCitation(channelHit)}`,
     );
   }
-  if (!setupHit && !importHit && !initializeHit) {
+  if (sdkChatFlow && !setupHit && !importHit && !initializeHit) {
     noteLines.push(
       language === "en"
         ? "- The retrieved docs do not cover SDK import or initialization."
         : "- 当前命中的文档没有覆盖完整的 SDK 导入或初始化步骤。",
     );
   }
-  if (!connectHit) {
+  if (sdkChatFlow && !connectHit) {
     noteLines.push(
       language === "en"
         ? "- The retrieved docs do not cover token acquisition or connection establishment."
         : "- 当前命中的文档没有展开 token 获取或连接建立步骤。",
     );
   }
-  if (!sendHit) {
+  if (sdkChatFlow && !sendHit) {
     noteLines.push(
       language === "en"
         ? "- The retrieved docs do not include a concrete send-message example."

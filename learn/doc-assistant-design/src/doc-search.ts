@@ -56,6 +56,10 @@ const GENERIC_QUERY_TOKENS = new Set([
   "in",
   "is",
   "it",
+  "just",
+  "know",
+  "let",
+  "me",
   "of",
   "sdk",
   "settings",
@@ -63,6 +67,7 @@ const GENERIC_QUERY_TOKENS = new Set([
   "the",
   "this",
   "to",
+  "up",
   "use",
   "what",
 ]);
@@ -80,6 +85,7 @@ function normalizeSearchText(text: string): string {
     .toLowerCase()
     .replace(/\bjavascript\b/g, "web")
     .replace(/\bjs\b/g, "web")
+    .replace(/\bset\s+up\b/g, "setup")
     .replace(/\bsub[\s\-_/]*channels?\b/g, "subchannel")
     .replace(/\bprivate[\s\-_/]*sub[\s\-_/]*channels?\b/g, "private subchannel")
     .replace(/\b1[\s\-_/]*to[\s\-_/]*1\b/g, "one to one")
@@ -245,6 +251,9 @@ function detectQueryIntents(normalizedQuery: string, normalizedTokens: string[])
     intents.add("accept");
   }
   if (hasToken("configure") || hasToken("config") || hasToken("settings") || hasToken("setup")) {
+    intents.add("configure");
+  }
+  if (hasToken("implement") || hasToken("implementation")) {
     intents.add("configure");
   }
   if (
@@ -559,6 +568,18 @@ function scorePathSemantics(
     }
   }
 
+  if (signals.normalizedQuery.includes("webhook")) {
+    if (normalizedPath.includes("webhook")) {
+      score += 28;
+    }
+    if (normalizedPath.includes("platform chat api")) {
+      score += 12;
+    }
+    if (normalizedPath.includes("/webhook/overview")) {
+      score += 36;
+    }
+  }
+
   if (signals.products.includes("callsdk")) {
     if (
       normalizedPath.includes("chatsdk") ||
@@ -584,6 +605,67 @@ function scorePathSemantics(
     if (normalizedPath.includes("gethistory") || normalizedPath.includes("history")) {
       score -= 10;
     }
+  }
+
+  return score;
+}
+
+function isGenericWebhookQuery(signals: ReturnType<typeof detectQuerySignals>): boolean {
+  const normalizedQuery = signals.normalizedQuery;
+  if (!normalizedQuery.includes("webhook")) {
+    return false;
+  }
+  return !(
+    normalizedQuery.includes("pre messaging") ||
+    normalizedQuery.includes("event") ||
+    normalizedQuery.includes("message delete") ||
+    normalizedQuery.includes("signature") ||
+    normalizedQuery.includes("connection status") ||
+    normalizedQuery.includes("open channel") ||
+    normalizedQuery.includes("metadata update") ||
+    normalizedQuery.includes("operationtype")
+  );
+}
+
+function scoreWebhookSemantics(
+  pathText: string,
+  headingText: string,
+  bodyText: string,
+  signals: ReturnType<typeof detectQuerySignals>,
+): number {
+  if (!isGenericWebhookQuery(signals)) {
+    return 0;
+  }
+
+  const normalizedPath = normalizeSearchText(pathText);
+  const normalizedHeading = normalizeSearchText(headingText);
+  const normalizedBody = normalizeSearchText(bodyText.slice(0, 900));
+  let score = 0;
+
+  if (normalizedPath.includes("/webhook/overview")) {
+    score += 70;
+  }
+  if (normalizedPath.includes("platform chat api") && normalizedPath.includes("webhook")) {
+    score += 30;
+  }
+  if (normalizedHeading.includes("set up webhook") || normalizedHeading.includes("set up webhooks")) {
+    score += 34;
+  }
+  if (normalizedHeading.includes("verify signature") || normalizedHeading.includes("verify signatures")) {
+    score += 16;
+  }
+  if (normalizedBody.includes("register a single endpoint")) {
+    score += 18;
+  }
+  if (normalizedBody.includes("webhook url") || normalizedBody.includes("select the events")) {
+    score += 18;
+  }
+
+  if (normalizedPath.includes("/webhook/events/")) {
+    score -= 40;
+  }
+  if (normalizedPath.includes("moderation")) {
+    score -= 16;
   }
 
   return score;
@@ -932,6 +1014,7 @@ function scoreChunk(
   score += scoreHeadingIntent(headingText, bodyText, signals);
   score += scoreClientChatStartSemantics(pathText, headingText, bodyText, signals);
   score += scoreClientConnectionSemantics(pathText, headingText, bodyText, signals);
+  score += scoreWebhookSemantics(pathText, headingText, bodyText, signals);
   score += scoreChannelCreationSemantics(pathText, headingText, bodyText, signals);
   return score;
 }
