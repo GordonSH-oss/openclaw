@@ -1184,6 +1184,41 @@ test("docs.ask greeting inputs skip retrieval and return a guided welcome answer
   assert.equal(history.entries[0]?.citationCount, 0);
 });
 
+test("docs.ask English greeting inputs return an English guided welcome answer", async (t) => {
+  const docsRoot = await createGreetingFixtureDocs();
+  const dataDir = await makeTempDir("doc-assistant-greeting-en");
+  const { client } = await createHarness({ docsRoot, dataDir });
+  t.after(() => client.close());
+
+  const user = responseResult<UserCreateResult>(await client.request("docs.user.create"));
+  responseResult<DocsAcceptedResult>(
+    await client.request("docs.ask", {
+      userId: user.userId,
+      question: "Hello",
+      idempotencyKey: "greeting-en-run-1",
+      mode: "extractive",
+    }),
+  );
+
+  const terminal = eventData<DocsTerminalResult>(
+    await client.waitForEvent("docs.completed", (frame) => {
+      const data = eventData<{ runId: string }>(frame);
+      return data.runId === "greeting-en-run-1";
+    }),
+  );
+  assert.equal(terminal.summary, "guided greeting");
+  assert.equal(terminal.answer.includes("I'm your Nexconn documentation assistant"), true);
+  assert.equal(
+    terminal.answer.includes("How do I integrate and initialize the Android, iOS, or Web Chat SDK?"),
+    true,
+  );
+  assert.equal(
+    terminal.answer.includes("How do I start or accept a 1-to-1 call in the iOS Call SDK?"),
+    true,
+  );
+  assert.equal(terminal.answer.includes("For example:"), true);
+});
+
 test("docs.ask in extractive mode accepts immediately, completes, and persists transcript", async (t) => {
   const docsRoot = await createLifecycleFixtureDocs();
   const dataDir = await makeTempDir("doc-assistant-extractive");

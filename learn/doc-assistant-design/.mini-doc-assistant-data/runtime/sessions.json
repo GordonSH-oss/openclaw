@@ -138,5 +138,20 @@
     "endedAt": 1774952934152,
     "model": "learning-primary",
     "provider": "mock"
+  },
+  "temp/ce18f0d2-fb1f-424c-85fb-bf82a93748d3": {
+    "sessionId": "93afc5dd-3ccb-409f-8b4b-86b1e0e5a1a9",
+    "sessionKey": "temp/ce18f0d2-fb1f-424c-85fb-bf82a93748d3",
+    "transcriptPath": "/Users/admin/Workspace@RongCloud/For-learning/openclaw/learn/doc-assistant-design/.mini-doc-assistant-data/runtime/transcripts/93afc5dd-3ccb-409f-8b4b-86b1e0e5a1a9.jsonl",
+    "createdAt": 1774955913501,
+    "updatedAt": 1774956114809,
+    "status": "idle",
+    "inputTokens": 20,
+    "outputTokens": 472,
+    "lastChannel": "doc-assistant",
+    "startedAt": 1774956109500,
+    "endedAt": 1774956114809,
+    "model": "learning-primary",
+    "provider": "mock"
   }
 }

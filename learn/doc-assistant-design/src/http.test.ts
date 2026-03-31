@@ -564,7 +564,8 @@ test("HTTP API greeting runs skip retrieval and complete with a guided greeting"
   assert.equal(waitPayload.result.runId, "http-greeting-run-1");
   assert.equal(waitPayload.result.status, "ok");
   assert.equal(waitPayload.result.summary, "guided greeting");
-  assert.equal(waitPayload.result.answer.includes("我是你的 Nexconn 文档助手"), true);
+  assert.equal(waitPayload.result.answer.includes("I'm your Nexconn documentation assistant"), true);
+  assert.equal(waitPayload.result.answer.includes("For example:"), true);
   assert.deepEqual(waitPayload.result.citations, []);
 
   const completedEvent = await harness.events.waitFor("docs.completed", (frame) => {

@@ -1,4 +1,5 @@
 import { buildDocIndex, type DocIndexChunk } from "./doc-index.js";
+import { detectQuestionLanguage, type AnswerLanguage } from "./answer-language.js";
 import type { DocAssistantMode } from "./protocol/index.js";
 import type { DocAnswerResult } from "./doc-answer.js";
 
@@ -145,25 +146,37 @@ export function detectGreetingIntent(question: string): GreetingIntentMatch | nu
   return null;
 }
 
-function mapAreaToStarterTopic(area: string): string | null {
+function mapAreaToStarterTopic(area: string, language: AnswerLanguage): string | null {
   const normalizedArea = area.toLowerCase();
   if (normalizedArea.includes("chatsdk") && normalizedArea.includes("android")) {
-    return "Android Chat SDK 如何初始化并开始单聊？";
+    return language === "zh"
+      ? "Android Chat SDK 如何初始化并开始单聊？"
+      : "How do I initialize the Android Chat SDK and start a direct chat?";
   }
   if (normalizedArea.includes("chatsdk") && normalizedArea.includes("ios")) {
-    return "iOS Chat SDK 如何连接用户并发送第一条消息？";
+    return language === "zh"
+      ? "iOS Chat SDK 如何连接用户并发送第一条消息？"
+      : "How do I connect a user in the iOS Chat SDK and send the first message?";
   }
   if (normalizedArea.includes("chatsdk") && normalizedArea.includes("web")) {
-    return "Web Chat SDK 如何初始化并创建 DirectChannel？";
+    return language === "zh"
+      ? "Web Chat SDK 如何初始化并创建 DirectChannel？"
+      : "How do I initialize the Web Chat SDK and create a DirectChannel?";
   }
   if (normalizedArea.includes("callsdk") && normalizedArea.includes("ios")) {
-    return "iOS Call SDK 如何发起或接听 1 对 1 通话？";
+    return language === "zh"
+      ? "iOS Call SDK 如何发起或接听 1 对 1 通话？"
+      : "How do I start or accept a 1-to-1 call in the iOS Call SDK?";
   }
   if (normalizedArea.includes("callsdk") && normalizedArea.includes("web")) {
-    return "Web Call SDK 如何发起 1 对 1 通话或配置推送？";
+    return language === "zh"
+      ? "Web Call SDK 如何发起 1 对 1 通话或配置推送？"
+      : "How do I start a 1-to-1 call or configure push in the Web Call SDK?";
   }
   if (normalizedArea.includes("platform-chat-api")) {
-    return "服务端消息同步、历史消息和发送回执怎么配置？";
+    return language === "zh"
+      ? "服务端消息同步、历史消息和发送回执怎么配置？"
+      : "How do I configure server-side message sync, message history, and delivery callbacks?";
   }
   return null;
 }
@@ -179,6 +192,7 @@ function extractAreaName(chunk: DocIndexChunk): string | null {
 async function buildDynamicStarterTopics(params: {
   docsRoot: string;
   dataDir?: string;
+  language: AnswerLanguage;
 }): Promise<string[]> {
   const index = await buildDocIndex({
     docsRoot: params.docsRoot,
@@ -194,7 +208,7 @@ async function buildDynamicStarterTopics(params: {
       continue;
     }
     seenAreas.add(area);
-    const suggestion = mapAreaToStarterTopic(area);
+    const suggestion = mapAreaToStarterTopic(area, params.language);
     if (!suggestion || seenSuggestions.has(suggestion)) {
       continue;
     }
@@ -215,17 +229,28 @@ export async function buildGreetingAnswer(params: {
   dataDir?: string;
   match: GreetingIntentMatch;
 }): Promise<DocAnswerResult> {
+  const language = detectQuestionLanguage(params.question);
   const dynamicTopics = await buildDynamicStarterTopics({
     docsRoot: params.docsRoot,
     dataDir: params.dataDir,
+    language,
   });
-  const fixedTopics = [
-    "Android / iOS / Web Chat SDK 怎么接入和初始化？",
-    "如何连接当前用户并建立聊天会话？",
-    "如何开始单聊、群聊，或者发送第一条消息？",
-    "如何配置推送、通知点击和会话跳转？",
-    "如何发起、接听或升级音视频通话？",
-  ];
+  const fixedTopics =
+    language === "zh"
+      ? [
+          "Android / iOS / Web Chat SDK 怎么接入和初始化？",
+          "如何连接当前用户并建立聊天会话？",
+          "如何开始单聊、群聊，或者发送第一条消息？",
+          "如何配置推送、通知点击和会话跳转？",
+          "如何发起、接听或升级音视频通话？",
+        ]
+      : [
+          "How do I integrate and initialize the Android, iOS, or Web Chat SDK?",
+          "How do I connect the current user and establish a chat session?",
+          "How do I start a direct chat, a group chat, or send the first message?",
+          "How do I configure push, notification click handling, and conversation navigation?",
+          "How do I start, accept, or upgrade an audio or video call?",
+        ];
   const starterTopics = Array.from(new Set([...fixedTopics, ...dynamicTopics])).slice(0, 7);
 
   const introLine =
@@ -234,17 +259,23 @@ export async function buildGreetingAnswer(params: {
       : params.match.kind === "small_talk" &&
           (params.match.normalizedQuestion.includes("thanks") ||
             params.match.normalizedQuestion.includes("thank you"))
-        ? "不客气。"
-        : "我是你的 Nexconn 文档助手。";
+        ? "You're welcome."
+        : language === "zh"
+          ? "我是你的 Nexconn 文档助手。"
+          : "I'm your Nexconn documentation assistant.";
 
   return {
     mode: params.mode,
     answer: [
       introLine,
-      "你可以直接告诉我平台、SDK 和目标场景，我会优先根据本地文档整理成开发者可执行的回答。",
-      "例如你可以这样问：",
+      language === "zh"
+        ? "你可以直接告诉我平台、SDK 和目标场景，我会优先根据本地文档整理成开发者可执行的回答。"
+        : "Tell me the platform, SDK, and target scenario, and I’ll answer from the local docs first.",
+      language === "zh" ? "例如你可以这样问：" : "For example:",
       ...starterTopics.map((topic) => `- ${topic}`),
-      "如果你已经有具体问题，也可以直接输入完整句子，比如“Android Chat SDK 如何开始 direct chat？”",
+      language === "zh"
+        ? "如果你已经有具体问题，也可以直接输入完整句子，比如“Android Chat SDK 如何开始 direct chat？”"
+        : 'If you already have a concrete question, ask it directly, for example: "How do I start a direct chat in the Android Chat SDK?"',
     ].join("\n"),
     summary: "guided greeting",
     citations: [],

@@ -20,7 +20,7 @@ export const DOC_ASSISTANT_EVAL_CASES: DocAssistantEvalCase[] = [
     title: "Greeting input should return a guided greeting instead of retrieval output",
     question: "Hello",
     expectedSummaryKeywords: ["guided greeting"],
-    expectedAnswerKeywords: ["我是你的 nexconn 文档助手", "例如你可以这样问"],
+    expectedAnswerKeywords: ["i'm your nexconn documentation assistant", "for example"],
     allowNoHits: true,
     topK: 3,
   },
