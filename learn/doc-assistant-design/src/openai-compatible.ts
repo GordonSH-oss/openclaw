@@ -115,15 +115,14 @@ function buildPrompt(question: string, hits: DocSearchHit[]): string {
     .map(([group, groupHits]) =>
       [
         `Evidence group: ${group}`,
-        ...groupHits.map(
-          (hit, index) =>
-            [
-              `Source ${index + 1}`,
-              `Path: ${hit.path}`,
-              `Heading: ${hit.heading ?? "(none)"}`,
-              `Lines: ${hit.startLine}-${hit.endLine}`,
-              `Snippet: ${hit.snippet}`,
-            ].join("\n"),
+        ...groupHits.map((hit, index) =>
+          [
+            `Source ${index + 1}`,
+            `Path: ${hit.path}`,
+            `Heading: ${hit.heading ?? "(none)"}`,
+            `Lines: ${hit.startLine}-${hit.endLine}`,
+            `Snippet: ${hit.snippet}`,
+          ].join("\n"),
         ),
       ].join("\n\n"),
     )

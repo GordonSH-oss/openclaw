@@ -35,9 +35,7 @@ export function normalizeLearningInboundContext(input: {
     accountId: (input.accountId ?? "default").trim().toLowerCase(),
     chatType,
     peer: { kind: chatType, id: input.peerId.trim() },
-    parentPeer: input.parentPeerId
-      ? { kind: chatType, id: input.parentPeerId.trim() }
-      : undefined,
+    parentPeer: input.parentPeerId ? { kind: chatType, id: input.parentPeerId.trim() } : undefined,
     guildId: input.guildId?.trim(),
     teamId: input.teamId?.trim(),
     text: (input.text ?? "").trim(),

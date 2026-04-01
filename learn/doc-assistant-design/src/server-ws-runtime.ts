@@ -1,8 +1,8 @@
 import type { Server as HttpServer } from "node:http";
-import { WebSocketServer } from "./ws-runtime.js";
-import { handleConnection, parseUrlQuery } from "./ws-connection.js";
-import type { DocAssistantRuntimeState } from "./server-runtime-state.js";
 import type { MethodRouter } from "./method-router.js";
+import type { DocAssistantRuntimeState } from "./server-runtime-state.js";
+import { handleConnection, parseUrlQuery } from "./ws-connection.js";
+import { WebSocketServer } from "./ws-runtime.js";
 
 export function attachDocAssistantWsHandlers(params: {
   httpServer: HttpServer;

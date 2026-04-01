@@ -1,3 +1,17 @@
+import { isTerminalResultCacheable } from "../answer-cache-policy.js";
+import {
+  approveAnswerMemoryEntry,
+  enqueueGeneratedAnswerMemory,
+  getAnswerMemoryCounts,
+  getAnswerMemoryEntry,
+  listAnswerMemory,
+  rejectAnswerMemoryEntry,
+  updateAnswerMemoryEntry,
+} from "../answer-memory.js";
+import { buildTerminalResult } from "../doc-answer.js";
+import { searchDocs, toCitation } from "../doc-search.js";
+import { updateClarificationStateAfterAnswer } from "../follow-up-context.js";
+import type { MethodHandler } from "../method-router.js";
 import {
   validateDocsAdminMemoryApproveParams,
   validateDocsAdminMemoryGetParams,
@@ -17,25 +31,14 @@ import {
   type DocsAcceptedResult,
   type DocsTerminalResult,
 } from "../protocol/index.js";
+import { executeDocQuestion } from "../question-execution.js";
+import { appendQuestionHistoryEntry, loadQuestionHistory } from "../question-history.js";
 import {
   completeDocRun,
   registerDocRun,
   setDedupeEntry,
   type DocAssistantRuntimeState,
 } from "../server-runtime-state.js";
-import { searchDocs, toCitation } from "../doc-search.js";
-import { buildTerminalResult } from "../doc-answer.js";
-import { isTerminalResultCacheable } from "../answer-cache-policy.js";
-import {
-  approveAnswerMemoryEntry,
-  enqueueGeneratedAnswerMemory,
-  getAnswerMemoryCounts,
-  getAnswerMemoryEntry,
-  listAnswerMemory,
-  rejectAnswerMemoryEntry,
-  updateAnswerMemoryEntry,
-} from "../answer-memory.js";
-import { createTempDocUser, getTempDocUser, loadDocUserStore } from "../user-store.js";
 import {
   getOrCreateSession,
   loadSessionStore,
@@ -46,10 +49,7 @@ import {
   appendDocAssistantTranscriptMessage,
   loadDocAssistantTranscript,
 } from "../transcript-store.js";
-import { appendQuestionHistoryEntry, loadQuestionHistory } from "../question-history.js";
-import type { MethodHandler } from "../method-router.js";
-import { executeDocQuestion } from "../question-execution.js";
-import { updateClarificationStateAfterAnswer } from "../follow-up-context.js";
+import { createTempDocUser, getTempDocUser, loadDocUserStore } from "../user-store.js";
 
 function resolveTargetConnIds(
   state: DocAssistantRuntimeState,
@@ -525,7 +525,11 @@ export const docsAdminMemoryGetHandler: MethodHandler = async ({ request, respon
   }
   const entry = await getAnswerMemoryEntry(request.params.entryId, state.config.dataDir);
   if (!entry) {
-    respond(false, undefined, makeError("NOT_FOUND", `找不到 memory entry: ${request.params.entryId}`));
+    respond(
+      false,
+      undefined,
+      makeError("NOT_FOUND", `找不到 memory entry: ${request.params.entryId}`),
+    );
     return;
   }
   respond(true, entry);
@@ -541,7 +545,11 @@ export const docsAdminMemoryApproveHandler: MethodHandler = async ({ request, re
     dataDir: state.config.dataDir,
   });
   if (!entry) {
-    respond(false, undefined, makeError("NOT_FOUND", `找不到 memory entry: ${request.params.entryId}`));
+    respond(
+      false,
+      undefined,
+      makeError("NOT_FOUND", `找不到 memory entry: ${request.params.entryId}`),
+    );
     return;
   }
   respond(true, entry);
@@ -557,7 +565,11 @@ export const docsAdminMemoryRejectHandler: MethodHandler = async ({ request, res
     dataDir: state.config.dataDir,
   });
   if (!entry) {
-    respond(false, undefined, makeError("NOT_FOUND", `找不到 memory entry: ${request.params.entryId}`));
+    respond(
+      false,
+      undefined,
+      makeError("NOT_FOUND", `找不到 memory entry: ${request.params.entryId}`),
+    );
     return;
   }
   respond(true, entry);
@@ -573,7 +585,11 @@ export const docsAdminMemoryUpdateHandler: MethodHandler = async ({ request, res
     dataDir: state.config.dataDir,
   });
   if (!entry) {
-    respond(false, undefined, makeError("NOT_FOUND", `找不到 memory entry: ${request.params.entryId}`));
+    respond(
+      false,
+      undefined,
+      makeError("NOT_FOUND", `找不到 memory entry: ${request.params.entryId}`),
+    );
     return;
   }
   respond(true, entry);

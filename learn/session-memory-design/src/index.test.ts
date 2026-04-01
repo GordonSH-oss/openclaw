@@ -1,8 +1,8 @@
-import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
-import path from "node:path";
 import os from "node:os";
+import path from "node:path";
+import test from "node:test";
 import {
   appendLearningDailyMemoryEntry,
   appendLearningTranscriptMessage,
@@ -21,7 +21,7 @@ async function createTempDir(): Promise<string> {
   return await fs.mkdtemp(path.join(os.tmpdir(), "learning-session-memory-"));
 }
 
-test("session resolution creates stable entries and transcript remains append-only", async () => {
+void test("session resolution creates stable entries and transcript remains append-only", async () => {
   const dataDir = await createTempDir();
   const entry = await resolveLearningSession({
     sessionKey: "agent:main:main",
@@ -42,7 +42,7 @@ test("session resolution creates stable entries and transcript remains append-on
   assert.equal(transcript[1]?.parentId, transcript[0]?.id);
 });
 
-test("session lifecycle emits events", async () => {
+void test("session lifecycle emits events", async () => {
   const dataDir = await createTempDir();
   const hub = createLearningSessionEventHub();
   const events: string[] = [];
@@ -55,7 +55,7 @@ test("session lifecycle emits events", async () => {
   assert.deepEqual(events, ["sessions.changed"]);
 });
 
-test("maintenance prunes stale sessions and rotates large transcripts", async () => {
+void test("maintenance prunes stale sessions and rotates large transcripts", async () => {
   const dataDir = await createTempDir();
   const stale = await resolveLearningSession({
     sessionKey: "agent:main:stale",
@@ -79,13 +79,23 @@ test("maintenance prunes stale sessions and rotates large transcripts", async ()
   });
   assert.equal(result.prunedKeys.includes("agent:main:stale"), true);
   assert.equal(result.rotatedSessionIds.includes(active.sessionId), true);
-  assert.equal(await fs.stat(`${active.transcriptPath}.rotated`).then(() => true, () => false), true);
+  assert.equal(
+    await fs.stat(`${active.transcriptPath}.rotated`).then(
+      () => true,
+      () => false,
+    ),
+    true,
+  );
   await fs.rm(stale.transcriptPath, { force: true });
 });
 
-test("memory_get gracefully handles missing files and search indexes curated + daily memory", async () => {
+void test("memory_get gracefully handles missing files and search indexes curated + daily memory", async () => {
   const workspaceDir = await createTempDir();
-  await fs.writeFile(path.join(workspaceDir, "MEMORY.md"), "# Profile\n\nLikes routing diagrams", "utf-8");
+  await fs.writeFile(
+    path.join(workspaceDir, "MEMORY.md"),
+    "# Profile\n\nLikes routing diagrams",
+    "utf-8",
+  );
   await appendLearningDailyMemoryEntry({
     workspaceDir,
     note: "Remember to explain plugin registry",
@@ -106,7 +116,7 @@ test("memory_get gracefully handles missing files and search indexes curated + d
   assert.equal(results.length >= 1, true);
 });
 
-test("flush writes durable notes once per transcript tail", async () => {
+void test("flush writes durable notes once per transcript tail", async () => {
   const workspaceDir = await createTempDir();
   const transcript = Array.from({ length: 6 }, (_, index) => ({
     id: `m-${index}`,

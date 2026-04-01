@@ -1,9 +1,6 @@
-import fs from "node:fs/promises";
 import { randomUUID } from "node:crypto";
-import {
-  getLearningTranscriptDir,
-  getLearningTranscriptPath,
-} from "./session-store.js";
+import fs from "node:fs/promises";
+import { getLearningTranscriptDir, getLearningTranscriptPath } from "./session-store.js";
 
 export type ToolContentPart =
   | { type: "text"; text: string }

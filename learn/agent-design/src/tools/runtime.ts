@@ -1,11 +1,11 @@
-import type { LearningTranscriptMessage } from "../types.js";
+import { getActiveLearningPluginRegistry } from "../../../plugin-design/src/index.js";
 import {
   appendLearningDailyMemoryEntry,
   loadLearningTranscript,
   readLearningMemoryFile,
   searchLearningMemory,
 } from "../../../session-memory-design/src/index.js";
-import { getActiveLearningPluginRegistry } from "../../../plugin-design/src/index.js";
+import type { LearningTranscriptMessage } from "../types.js";
 
 export type ToolCall = {
   toolName:
@@ -47,27 +47,21 @@ export function detectToolCall(message: string): ToolCall | null {
       input: { method: gatewayMethodMatch?.[1] ?? "gateway.status" },
     };
   }
-  const memorySearchMatch = message.match(
-    /(?:memory_search|搜索记忆|查找记忆)[:：]?\s*([\s\S]+)/i,
-  );
+  const memorySearchMatch = message.match(/(?:memory_search|搜索记忆|查找记忆)[:：]?\s*([\s\S]+)/i);
   if (memorySearchMatch) {
     return {
       toolName: "memory_search",
       input: { query: memorySearchMatch[1]?.trim() ?? "" },
     };
   }
-  const memoryGetMatch = message.match(
-    /(?:memory_get|读取记忆|查看\s*memory)[:：]?\s*([^\n]+)?/i,
-  );
+  const memoryGetMatch = message.match(/(?:memory_get|读取记忆|查看\s*memory)[:：]?\s*([^\n]+)?/i);
   if (memoryGetMatch) {
     return {
       toolName: "memory_get",
       input: { path: memoryGetMatch[1]?.trim() || "MEMORY.md" },
     };
   }
-  const memoryWriteMatch = message.match(
-    /(?:remember|记住|写入记忆|存到记忆)[:：]?\s*([\s\S]+)/i,
-  );
+  const memoryWriteMatch = message.match(/(?:remember|记住|写入记忆|存到记忆)[:：]?\s*([\s\S]+)/i);
   if (memoryWriteMatch) {
     return {
       toolName: "memory_write",
@@ -77,12 +71,74 @@ export function detectToolCall(message: string): ToolCall | null {
   return null;
 }
 
+function stringInput(input: Record<string, unknown>, key: string, fallback = ""): string {
+  const value = input[key];
+  return typeof value === "string" ? value : fallback;
+}
+
+function numberInput(input: Record<string, unknown>, key: string, fallback: number): number {
+  const value = input[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
 function safeEvaluateExpression(raw: string): number {
   if (!/^[0-9+\-*/().\s]+$/.test(raw)) {
     throw new Error("表达式只允许数字和 + - * / ()");
   }
-  // eslint-disable-next-line no-new-func
-  return Function(`"use strict"; return (${raw});`)() as number;
+  const expression = raw.replace(/\s+/g, "");
+  let index = 0;
+
+  const readPrimary = (): number => {
+    const char = expression[index];
+    if (char === "(") {
+      index += 1;
+      const value = readExpression();
+      if (expression[index] !== ")") {
+        throw new Error("括号未闭合");
+      }
+      index += 1;
+      return value;
+    }
+    if (char === "+" || char === "-") {
+      index += 1;
+      const value = readPrimary();
+      return char === "-" ? -value : value;
+    }
+    const match = expression.slice(index).match(/^\d+(?:\.\d+)?/);
+    if (!match?.[0]) {
+      throw new Error("表达式格式不正确");
+    }
+    index += match[0].length;
+    return Number(match[0]);
+  };
+
+  const readTerm = (): number => {
+    let value = readPrimary();
+    while (expression[index] === "*" || expression[index] === "/") {
+      const operator = expression[index];
+      index += 1;
+      const right = readPrimary();
+      value = operator === "*" ? value * right : value / right;
+    }
+    return value;
+  };
+
+  const readExpression = (): number => {
+    let value = readTerm();
+    while (expression[index] === "+" || expression[index] === "-") {
+      const operator = expression[index];
+      index += 1;
+      const right = readTerm();
+      value = operator === "+" ? value + right : value - right;
+    }
+    return value;
+  };
+
+  const result = readExpression();
+  if (index !== expression.length || !Number.isFinite(result)) {
+    throw new Error("表达式格式不正确");
+  }
+  return result;
 }
 
 function renderTranscriptPreview(messages: LearningTranscriptMessage[]): string {
@@ -111,26 +167,24 @@ export async function executeTool(params: {
   dataDir?: string;
   workspaceDir?: string;
 }): Promise<string> {
-  let pluginRegistry:
-    | ReturnType<typeof getActiveLearningPluginRegistry>
-    | null = null;
+  let pluginRegistry: ReturnType<typeof getActiveLearningPluginRegistry> | null = null;
   try {
     pluginRegistry = getActiveLearningPluginRegistry();
   } catch {
     pluginRegistry = null;
   }
   if (params.call.toolName === "math") {
-    const expression = String(params.call.input.expression ?? "");
+    const expression = stringInput(params.call.input, "expression");
     const result = safeEvaluateExpression(expression);
-    return `${expression} = ${String(result)}`;
+    return `${expression} = ${result}`;
   }
   if (params.call.toolName === "transcript_lookup") {
-    const limit = Number(params.call.input.limit ?? 4);
+    const limit = numberInput(params.call.input, "limit", 4);
     const transcript = await loadLearningTranscript(params.sessionId, params.dataDir);
     return renderTranscriptPreview(transcript.slice(-Math.max(1, limit)));
   }
   if (params.call.toolName === "memory_search") {
-    const query = String(params.call.input.query ?? "").trim();
+    const query = stringInput(params.call.input, "query").trim();
     if (pluginRegistry?.memoryRuntime) {
       const hits = await pluginRegistry.memoryRuntime.search(query);
       return hits.join("\n");
@@ -145,12 +199,10 @@ export async function executeTool(params: {
     if (results.length === 0) {
       return "No memory matches found.";
     }
-    return results
-      .map((chunk) => `${chunk.path}\n${chunk.text}`)
-      .join("\n\n---\n\n");
+    return results.map((chunk) => `${chunk.path}\n${chunk.text}`).join("\n\n---\n\n");
   }
   if (params.call.toolName === "memory_get") {
-    const target = String(params.call.input.path ?? "MEMORY.md");
+    const target = stringInput(params.call.input, "path", "MEMORY.md");
     if (pluginRegistry?.memoryRuntime) {
       return await pluginRegistry.memoryRuntime.read(target);
     }
@@ -162,7 +214,7 @@ export async function executeTool(params: {
     return result.text || `No memory found at ${result.path}`;
   }
   if (params.call.toolName === "memory_write") {
-    const note = String(params.call.input.note ?? "").trim();
+    const note = stringInput(params.call.input, "note").trim();
     if (pluginRegistry?.memoryRuntime) {
       const output = await pluginRegistry.memoryRuntime.write(note);
       return `Memory written to plugin:${pluginRegistry.memoryRuntime.id}\n${output}`;
@@ -176,16 +228,15 @@ export async function executeTool(params: {
     return `Memory written to ${result.path}`;
   }
   if (pluginRegistry) {
-    const method = pluginRegistry.gatewayMethods.find(
-      (entry) => entry.name === String(params.call.input.method ?? "gateway.status"),
-    );
+    const methodName = stringInput(params.call.input, "method", "gateway.status");
+    const method = pluginRegistry.gatewayMethods.find((entry) => entry.name === methodName);
     if (method) {
       return JSON.stringify(await method.handle(params.call.input));
     }
   }
   return JSON.stringify({
     ok: true,
-    method: params.call.input.method ?? "gateway.status",
+    method: stringInput(params.call.input, "method", "gateway.status"),
     source: "learning-gateway-stub",
   });
 }

@@ -1,6 +1,6 @@
+import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { randomUUID } from "node:crypto";
 import type { DocUserRecord } from "./protocol/index.js";
 
 const DEFAULT_DATA_DIR = path.resolve(process.cwd(), ".mini-doc-assistant-data");

@@ -1,4 +1,3 @@
-import { loadAuthProfileStore, saveAuthProfileStore } from "./auth-profiles/store.js";
 import {
   markAuthProfileFailure,
   markAuthProfileSuccess,
@@ -8,9 +7,10 @@ import {
   clearSessionAuthProfileOverride,
   getSessionAuthProfileOverride,
 } from "./auth-profiles/session-override.js";
-import { resolveLearningSession, updateLearningSession } from "./command/session.js";
-import { resolveLearningRunContext } from "./command/run-context.js";
+import { loadAuthProfileStore, saveAuthProfileStore } from "./auth-profiles/store.js";
 import { runLearningAgentAttempt } from "./command/attempt-execution.js";
+import { resolveLearningRunContext } from "./command/run-context.js";
+import { resolveLearningSession, updateLearningSession } from "./command/session.js";
 import {
   resolveModelCandidates,
   runWithModelFallback,
@@ -156,7 +156,7 @@ async function executeLearningAgentRun(
               reason: error.reason,
             });
           }
-            throw error;
+          throw error;
         }
       },
     });

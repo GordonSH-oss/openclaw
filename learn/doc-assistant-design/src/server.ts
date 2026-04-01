@@ -1,15 +1,15 @@
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import process from "node:process";
-import type { OpenAICompatibleConfig } from "./protocol/index.js";
-import { DEFAULT_DOC_ASSISTANT_AGENT_MODEL } from "./openai-compatible.js";
-import { createDocAssistantRuntimeState } from "./server-runtime-state.js";
-import { createDocAssistantRouter } from "./server-methods.js";
-import { attachDocAssistantWsHandlers } from "./server-ws-runtime.js";
+import { loadDocAssistantDotEnv, resolveDocAssistantDocsRootFromEnv } from "./env.js";
 import { serveDocAssistantApi } from "./http-api.js";
 import { serveDocAssistantUi } from "./http-ui.js";
+import { DEFAULT_DOC_ASSISTANT_AGENT_MODEL } from "./openai-compatible.js";
+import type { OpenAICompatibleConfig } from "./protocol/index.js";
+import { createDocAssistantRouter } from "./server-methods.js";
+import { createDocAssistantRuntimeState } from "./server-runtime-state.js";
+import { attachDocAssistantWsHandlers } from "./server-ws-runtime.js";
 import { DOC_ASSISTANT_MARKETING_VERSION, DOC_ASSISTANT_PACKAGE_VERSION } from "./version.js";
-import { loadDocAssistantDotEnv, resolveDocAssistantDocsRootFromEnv } from "./env.js";
 
 export type DocAssistantServerConfig = {
   port?: number;

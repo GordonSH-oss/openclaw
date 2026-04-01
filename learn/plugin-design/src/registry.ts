@@ -1,5 +1,7 @@
 import type { LearningPluginCapability, LearningPluginManifest } from "./manifest.js";
 
+type Awaitable<T> = T | Promise<T>;
+
 export type LearningProviderRegistration = {
   id: string;
   models: string[];
@@ -14,24 +16,24 @@ export type LearningChannelRegistration = {
 export type LearningToolRegistration = {
   id: string;
   description: string;
-  invoke: (input: Record<string, unknown>) => Promise<string> | string;
+  invoke: (input: Record<string, unknown>) => Awaitable<string>;
 };
 
 export type LearningGatewayMethodRegistration = {
   name: string;
-  handle: (params: Record<string, unknown>) => Promise<unknown> | unknown;
+  handle: (params: Record<string, unknown>) => Awaitable<unknown>;
 };
 
 export type LearningHookRegistration = {
   event: string;
-  handle: (payload: Record<string, unknown>) => Promise<void> | void;
+  handle: (payload: Record<string, unknown>) => Awaitable<void>;
 };
 
 export type LearningMemoryRuntime = {
   id: string;
-  search: (query: string) => Promise<string[]> | string[];
-  read: (target: string) => Promise<string> | string;
-  write: (note: string) => Promise<string> | string;
+  search: (query: string) => Awaitable<string[]>;
+  read: (target: string) => Awaitable<string>;
+  write: (note: string) => Awaitable<string>;
 };
 
 export type LearningPluginRecord = {

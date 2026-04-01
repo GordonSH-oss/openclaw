@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import { resolveScopesFromToken } from "./auth.js";
+import type { MethodRouter } from "./method-router.js";
 import {
   parseClientMessage,
   serializeMessage,
@@ -7,9 +9,7 @@ import {
   type ConnectParams,
   type DocAssistantResponse,
 } from "./protocol.js";
-import { resolveScopesFromToken } from "./auth.js";
 import type { DocAssistantRuntimeState } from "./runtime-state.js";
-import type { MethodRouter } from "./method-router.js";
 
 type MessagePayload = {
   toString(): string;

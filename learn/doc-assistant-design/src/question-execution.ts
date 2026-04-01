@@ -1,7 +1,6 @@
+import { findAnswerMemoryMatch, noteAnswerMemoryHit } from "./answer-memory.js";
 import { buildDocAnswer, type DocAnswerResult } from "./doc-answer.js";
 import { searchDocs } from "./doc-search.js";
-import { buildGreetingAnswer, detectGreetingIntent } from "./greeting-intent.js";
-import { findAnswerMemoryMatch, noteAnswerMemoryHit } from "./answer-memory.js";
 import {
   detectClarificationFollowUpQuestion,
   getStoredClarificationContext,
@@ -9,6 +8,7 @@ import {
   selectPlatformHits,
   shouldReuseClarificationHits,
 } from "./follow-up-context.js";
+import { buildGreetingAnswer, detectGreetingIntent } from "./greeting-intent.js";
 import type { DocAssistantMode, DocSearchHit, OpenAICompatibleConfig } from "./protocol/index.js";
 
 export async function executeDocQuestion(params: {
@@ -36,7 +36,8 @@ export async function executeDocQuestion(params: {
       ? await getStoredClarificationContext(params.sessionId, params.dataDir)
       : null;
   const selectedPlatform = clarificationFollowUp ? followUpMatch?.platform : undefined;
-  const followUpBaseQuestion = clarificationFollowUp?.pendingQuestion ?? clarificationFollowUp?.originalQuestion;
+  const followUpBaseQuestion =
+    clarificationFollowUp?.pendingQuestion ?? clarificationFollowUp?.originalQuestion;
   const rewrittenQuestion =
     followUpBaseQuestion && selectedPlatform
       ? rewriteClarificationQuestion(followUpBaseQuestion, selectedPlatform)

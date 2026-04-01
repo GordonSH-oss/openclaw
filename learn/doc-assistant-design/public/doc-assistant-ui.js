@@ -225,8 +225,7 @@ function consumeTable(lines, startIndex) {
   const headerHtml = header.map((cell) => `<th>${renderInlineMarkdown(cell)}</th>`).join("");
   const bodyHtml = rows
     .map(
-      (row) =>
-        `<tr>${row.map((cell) => `<td>${renderInlineMarkdown(cell)}</td>`).join("")}</tr>`,
+      (row) => `<tr>${row.map((cell) => `<td>${renderInlineMarkdown(cell)}</td>`).join("")}</tr>`,
     )
     .join("");
 
@@ -258,7 +257,11 @@ function consumeList(lines, startIndex) {
     while (index < lines.length) {
       const line = lines[index];
       const nextMarker = parseListMarker(line);
-      if (nextMarker && nextMarker.indent === first.indent && nextMarker.ordered === first.ordered) {
+      if (
+        nextMarker &&
+        nextMarker.indent === first.indent &&
+        nextMarker.ordered === first.ordered
+      ) {
         break;
       }
       if (nextMarker && nextMarker.indent <= first.indent) {
@@ -514,7 +517,10 @@ async function loadTranscript() {
   for (const message of response.result.messages) {
     const role = message.role === "user" ? "user" : "assistant";
     const card = createMessageCard(role, formatNow());
-    setMessageBody(card, typeof message.content === "string" ? message.content : JSON.stringify(message.content));
+    setMessageBody(
+      card,
+      typeof message.content === "string" ? message.content : JSON.stringify(message.content),
+    );
   }
 }
 
@@ -562,9 +568,10 @@ function handleEvent(frame) {
   if (frame.event === "docs.completed") {
     context.text = data.answer ?? context.text;
     setMessageBody(context.card, context.text);
-    const meta = data.selectedProvider || data.selectedModel
-      ? `model: ${data.selectedProvider ?? "unknown"}/${data.selectedModel ?? "unknown"}`
-      : data.summary ?? "";
+    const meta =
+      data.selectedProvider || data.selectedModel
+        ? `model: ${data.selectedProvider ?? "unknown"}/${data.selectedModel ?? "unknown"}`
+        : (data.summary ?? "");
     renderCitations(context.card, data.citations ?? [], meta);
     renderRetrieval(context.card, shouldShowRetrieval(data) ? context.retrieval : []);
     state.pendingRuns.delete(data.runId);

@@ -1,18 +1,18 @@
-import test from "node:test";
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { randomUUID } from "node:crypto";
+import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { replaceAnswerMemoryEntries } from "./answer-memory.js";
-import { createDocAssistantRuntimeState } from "./server-runtime-state.js";
-import { createDocAssistantRouter } from "./server-methods.js";
-import { handleConnection } from "./ws-connection.js";
 import { serveDocAssistantApi } from "./http-api.js";
 import { serveDocAssistantUi } from "./http-ui.js";
-import { createDocAssistantServer } from "./server.js";
 import type { AnswerMemoryEntry } from "./protocol/index.js";
+import { createDocAssistantRouter } from "./server-methods.js";
+import { createDocAssistantRuntimeState } from "./server-runtime-state.js";
+import { createDocAssistantServer } from "./server.js";
+import { handleConnection } from "./ws-connection.js";
 
 async function makeTempDir(name: string): Promise<string> {
   return await fs.mkdtemp(path.join(os.tmpdir(), `${name}-`));
@@ -244,7 +244,12 @@ async function createHttpHarness(params?: { adminToken?: string }) {
   });
   const router = createDocAssistantRouter();
   const ws = new MockWebSocket();
-  handleConnection(ws as Parameters<typeof handleConnection>[0], { clientId: "http-test-client" }, state, router);
+  handleConnection(
+    ws as Parameters<typeof handleConnection>[0],
+    { clientId: "http-test-client" },
+    state,
+    router,
+  );
   const events = new EventCollector(ws);
   await events.waitFor("docs.connected");
   return { docsRoot, state, router, ws, events };
@@ -276,7 +281,7 @@ async function dispatchApi(params: {
   return { handled, res };
 }
 
-test("HTTP API exposes users, search, runs, transcript, and status", async () => {
+void test("HTTP API exposes users, search, runs, transcript, and status", async () => {
   const harness = await createHttpHarness();
 
   const user = await dispatchApi({
@@ -439,8 +444,14 @@ test("HTTP API exposes users, search, runs, transcript, and status", async () =>
     result: { methods: Array<{ method: string }> };
   };
   assert.equal(methodsPayload.ok, true);
-  assert.equal(methodsPayload.result.methods.some((entry) => entry.method === "docs.ask"), true);
-  assert.equal(methodsPayload.result.methods.some((entry) => entry.method === "docs.history.list"), true);
+  assert.equal(
+    methodsPayload.result.methods.some((entry) => entry.method === "docs.ask"),
+    true,
+  );
+  assert.equal(
+    methodsPayload.result.methods.some((entry) => entry.method === "docs.history.list"),
+    true,
+  );
 
   const runtimeStatus = await dispatchApi({
     state: harness.state,
@@ -466,7 +477,7 @@ test("HTTP API exposes users, search, runs, transcript, and status", async () =>
   assert.equal(runtimeStatusPayload.result.questionHistoryEntries, 1);
 });
 
-test("HTTP API handles CORS preflight and serves the built-in UI page", async () => {
+void test("HTTP API handles CORS preflight and serves the built-in UI page", async () => {
   const harness = await createHttpHarness();
 
   const localhostPreflight = await dispatchApi({
@@ -481,7 +492,10 @@ test("HTTP API handles CORS preflight and serves the built-in UI page", async ()
     },
   });
   assert.equal(localhostPreflight.res.statusCode, 204);
-  assert.equal(localhostPreflight.res.headers.get("access-control-allow-origin"), "http://localhost:3000");
+  assert.equal(
+    localhostPreflight.res.headers.get("access-control-allow-origin"),
+    "http://localhost:3000",
+  );
 
   const preflight = await dispatchApi({
     state: harness.state,
@@ -496,7 +510,10 @@ test("HTTP API handles CORS preflight and serves the built-in UI page", async ()
     allowedOrigins: ["https://docs.example.com"],
   });
   assert.equal(preflight.res.statusCode, 204);
-  assert.equal(preflight.res.headers.get("access-control-allow-origin"), "https://docs.example.com");
+  assert.equal(
+    preflight.res.headers.get("access-control-allow-origin"),
+    "https://docs.example.com",
+  );
   assert.equal(preflight.res.headers.get("access-control-allow-methods"), "GET,POST,OPTIONS");
 
   const uiReq = new MockIncomingMessage({
@@ -525,47 +542,51 @@ test("HTTP API handles CORS preflight and serves the built-in UI page", async ()
   assert.equal(assetRes.body.includes("docs.ask"), true);
 });
 
-test("server bootstrap honors .env docs root outside src/index.ts", { concurrency: false }, async (t) => {
-  const docsRoot = await createFixtureDocs();
-  const envPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../.env");
-  let originalEnvFile: string | null = null;
-  try {
-    originalEnvFile = await fs.readFile(envPath, "utf-8");
-  } catch {
-    originalEnvFile = null;
-  }
-  const originalEnvVar = process.env.DOC_ASSISTANT_DOCS_ROOT;
-  t.after(async () => {
-    if (originalEnvFile === null) {
-      await fs.rm(envPath, { force: true });
-    } else {
-      await fs.writeFile(envPath, originalEnvFile, "utf-8");
+void test(
+  "server bootstrap honors .env docs root outside src/index.ts",
+  { concurrency: false },
+  async (t) => {
+    const docsRoot = await createFixtureDocs();
+    const envPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../.env");
+    let originalEnvFile: string | null = null;
+    try {
+      originalEnvFile = await fs.readFile(envPath, "utf-8");
+    } catch {
+      originalEnvFile = null;
     }
-    if (originalEnvVar === undefined) {
-      delete process.env.DOC_ASSISTANT_DOCS_ROOT;
-    } else {
-      process.env.DOC_ASSISTANT_DOCS_ROOT = originalEnvVar;
-    }
-  });
+    const originalEnvVar = process.env.DOC_ASSISTANT_DOCS_ROOT;
+    t.after(async () => {
+      if (originalEnvFile === null) {
+        await fs.rm(envPath, { force: true });
+      } else {
+        await fs.writeFile(envPath, originalEnvFile, "utf-8");
+      }
+      if (originalEnvVar === undefined) {
+        delete process.env.DOC_ASSISTANT_DOCS_ROOT;
+      } else {
+        process.env.DOC_ASSISTANT_DOCS_ROOT = originalEnvVar;
+      }
+    });
 
-  delete process.env.DOC_ASSISTANT_DOCS_ROOT;
-  await fs.writeFile(envPath, `DOC_ASSISTANT_DOCS_ROOT=${docsRoot}\n`, "utf-8");
+    delete process.env.DOC_ASSISTANT_DOCS_ROOT;
+    await fs.writeFile(envPath, `DOC_ASSISTANT_DOCS_ROOT=${docsRoot}\n`, "utf-8");
 
-  const server = await createDocAssistantServer({
-    host: "127.0.0.1",
-    port: 0,
-    listen: false,
-  });
-  t.after(async () => {
-    await server.close();
-  });
+    const server = await createDocAssistantServer({
+      host: "127.0.0.1",
+      port: 0,
+      listen: false,
+    });
+    t.after(async () => {
+      await server.close();
+    });
 
-  assert.equal(server.docsRoot, docsRoot);
-  assert.equal(server.state.config.docsRoot, docsRoot);
-  assert.equal(server.apiBaseUrl.endsWith("/api/doc-assistant"), true);
-});
+    assert.equal(server.docsRoot, docsRoot);
+    assert.equal(server.state.config.docsRoot, docsRoot);
+    assert.equal(server.apiBaseUrl.endsWith("/api/doc-assistant"), true);
+  },
+);
 
-test("HTTP API greeting runs skip retrieval and complete with a guided greeting", async () => {
+void test("HTTP API greeting runs skip retrieval and complete with a guided greeting", async () => {
   const harness = await createHttpHarness();
 
   const user = await dispatchApi({
@@ -628,7 +649,10 @@ test("HTTP API greeting runs skip retrieval and complete with a guided greeting"
   assert.equal(waitPayload.result.runId, "http-greeting-run-1");
   assert.equal(waitPayload.result.status, "ok");
   assert.equal(waitPayload.result.summary, "guided greeting");
-  assert.equal(waitPayload.result.answer.includes("I'm your Nexconn documentation assistant"), true);
+  assert.equal(
+    waitPayload.result.answer.includes("I'm your Nexconn documentation assistant"),
+    true,
+  );
   assert.equal(waitPayload.result.answer.includes("For example:"), true);
   assert.deepEqual(waitPayload.result.citations, []);
 
@@ -647,7 +671,7 @@ test("HTTP API greeting runs skip retrieval and complete with a guided greeting"
   );
 });
 
-test("HTTP admin memory endpoints require auth and can approve standard answers", async () => {
+void test("HTTP admin memory endpoints require auth and can approve standard answers", async () => {
   const adminToken = "http-admin-token";
   const harness = await createHttpHarness({ adminToken });
   await replaceAnswerMemoryEntries(

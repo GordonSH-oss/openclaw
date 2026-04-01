@@ -13,7 +13,11 @@ export {
   listLearningSessions,
   deleteLearningSession,
 } from "./session-store.js";
-export { appendLearningTranscriptMessage, loadLearningTranscript, ensureLearningTranscriptDir } from "./transcript-store.js";
+export {
+  appendLearningTranscriptMessage,
+  loadLearningTranscript,
+  ensureLearningTranscriptDir,
+} from "./transcript-store.js";
 export {
   createLearningSessionLifecycle,
   resetLearningSessionLifecycle,

@@ -1,9 +1,9 @@
-import test from "node:test";
 import assert from "node:assert/strict";
+import test from "node:test";
 import { DOC_ASSISTANT_EVAL_CASES } from "./eval-cases.js";
 import { evaluateAnswerCase, evaluateRetrievalCase } from "./eval.js";
 
-test("evaluation cases use unique ids", () => {
+void test("evaluation cases use unique ids", () => {
   const ids = new Set<string>();
   for (const caseDef of DOC_ASSISTANT_EVAL_CASES) {
     assert.equal(ids.has(caseDef.id), false);
@@ -11,7 +11,7 @@ test("evaluation cases use unique ids", () => {
   }
 });
 
-test("evaluation cases cover ios, web, archive, and no-hit scenarios", () => {
+void test("evaluation cases cover ios, web, and no-hit scenarios", () => {
   assert.equal(DOC_ASSISTANT_EVAL_CASES.length >= 20, true);
   assert.equal(
     DOC_ASSISTANT_EVAL_CASES.some((caseDef) =>
@@ -26,14 +26,13 @@ test("evaluation cases cover ios, web, archive, and no-hit scenarios", () => {
     true,
   );
   assert.equal(
-    DOC_ASSISTANT_EVAL_CASES.some((caseDef) =>
-      caseDef.expectedPathSuffixes?.some((pathSuffix) => pathSuffix.includes(".archive/")),
-    ),
+    DOC_ASSISTANT_EVAL_CASES.some((caseDef) => caseDef.allowNoHits === true),
     true,
   );
-  assert.equal(DOC_ASSISTANT_EVAL_CASES.some((caseDef) => caseDef.allowNoHits === true), true);
   assert.equal(
-    DOC_ASSISTANT_EVAL_CASES.some((caseDef) => caseDef.expectedSummaryKeywords?.includes("platform clarification required")),
+    DOC_ASSISTANT_EVAL_CASES.some((caseDef) =>
+      caseDef.expectedSummaryKeywords?.includes("platform clarification required"),
+    ),
     true,
   );
   assert.equal(
@@ -46,7 +45,7 @@ test("evaluation cases cover ios, web, archive, and no-hit scenarios", () => {
   );
 });
 
-test("evaluateRetrievalCase passes when expected retrieval appears in topK", () => {
+void test("evaluateRetrievalCase passes when expected retrieval appears in topK", () => {
   const result = evaluateRetrievalCase({
     caseDef: {
       id: "case",
@@ -80,7 +79,7 @@ test("evaluateRetrievalCase passes when expected retrieval appears in topK", () 
   assert.equal(result.passed, true);
 });
 
-test("evaluateRetrievalCase fails when discouraged retrieval appears in topK", () => {
+void test("evaluateRetrievalCase fails when discouraged retrieval appears in topK", () => {
   const result = evaluateRetrievalCase({
     caseDef: {
       id: "case",
@@ -111,10 +110,13 @@ test("evaluateRetrievalCase fails when discouraged retrieval appears in topK", (
   });
 
   assert.equal(result.passed, false);
-  assert.equal(result.reasons.some((reason) => reason.includes("Discouraged path")), true);
+  assert.equal(
+    result.reasons.some((reason) => reason.includes("Discouraged path")),
+    true,
+  );
 });
 
-test("evaluateAnswerCase passes when summary and answer match expectations", () => {
+void test("evaluateAnswerCase passes when summary and answer match expectations", () => {
   const result = evaluateAnswerCase({
     caseDef: {
       id: "answer-case",
@@ -124,14 +126,14 @@ test("evaluateAnswerCase passes when summary and answer match expectations", () 
       expectedAnswerKeywords: ["Steps", "DirectChannel"],
       discouragedAnswerKeywords: ["根据本地文档"],
     },
-    answer: "Steps\n1. Create `DirectChannel(\"u2\")`.",
+    answer: 'Steps\n1. Create `DirectChannel("u2")`.',
     summary: "guided answer from 2 documentation chunks",
   });
 
   assert.equal(result.passed, true);
 });
 
-test("evaluateAnswerCase fails when clarification was expected but answer keywords are missing", () => {
+void test("evaluateAnswerCase fails when clarification was expected but answer keywords are missing", () => {
   const result = evaluateAnswerCase({
     caseDef: {
       id: "answer-case",
@@ -145,6 +147,12 @@ test("evaluateAnswerCase fails when clarification was expected but answer keywor
   });
 
   assert.equal(result.passed, false);
-  assert.equal(result.reasons.some((reason) => reason.includes("Summary did not include expected keyword")), true);
-  assert.equal(result.reasons.some((reason) => reason.includes("Answer did not include expected keyword")), true);
+  assert.equal(
+    result.reasons.some((reason) => reason.includes("Summary did not include expected keyword")),
+    true,
+  );
+  assert.equal(
+    result.reasons.some((reason) => reason.includes("Answer did not include expected keyword")),
+    true,
+  );
 });

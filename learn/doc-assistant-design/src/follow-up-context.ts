@@ -91,13 +91,18 @@ async function loadFollowUpContextStore(dataDir?: string): Promise<FollowUpConte
   }
 }
 
-async function saveFollowUpContextStore(store: FollowUpContextStore, dataDir?: string): Promise<void> {
+async function saveFollowUpContextStore(
+  store: FollowUpContextStore,
+  dataDir?: string,
+): Promise<void> {
   const root = resolveDocAssistantDataDir(dataDir);
   await fs.mkdir(root, { recursive: true });
   await fs.writeFile(getFollowUpContextPath(dataDir), JSON.stringify(store, null, 2), "utf-8");
 }
 
-function isStoredClarificationContextValid(entry: StoredClarificationContext | null | undefined): boolean {
+function isStoredClarificationContextValid(
+  entry: StoredClarificationContext | null | undefined,
+): boolean {
   if (!entry) {
     return false;
   }
@@ -180,7 +185,13 @@ export function rewriteClarificationQuestion(
   platform: DocFollowUpPlatform,
 ): string {
   const platformLabel =
-    platform === "ios" ? "iOS" : platform === "web" ? "Web" : platform === "flutter" ? "Flutter" : "Android";
+    platform === "ios"
+      ? "iOS"
+      : platform === "web"
+        ? "Web"
+        : platform === "flutter"
+          ? "Flutter"
+          : "Android";
   const trimmed = originalQuestion.trim().replace(/[?!.。！？]+$/u, "");
   const asciiCount = (trimmed.match(/[A-Za-z]/g) ?? []).length;
   const cjkCount = (trimmed.match(/[\u4e00-\u9fff]/g) ?? []).length;

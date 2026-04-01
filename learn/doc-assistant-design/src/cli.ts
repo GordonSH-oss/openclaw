@@ -70,9 +70,9 @@ export function printCliUsage(): void {
   console.log(
     [
       "Usage:",
-      "  npm run ask -- --question \"How do I configure push settings?\"",
-      "  npm run ask -- --docs-root /path/to/docs --mode agent --question \"How do I start a 1-to-1 call?\"",
-      "  npm run ask -- --docs-root /path/to/docs --mode agent --base-url https://host/v1 --api-key sk-... --model gpt-5.4 --question \"How do I start a 1-to-1 call?\"",
+      '  npm run ask -- --question "How do I configure push settings?"',
+      '  npm run ask -- --docs-root /path/to/docs --mode agent --question "How do I start a 1-to-1 call?"',
+      '  npm run ask -- --docs-root /path/to/docs --mode agent --base-url https://host/v1 --api-key sk-... --model gpt-5.4 --question "How do I start a 1-to-1 call?"',
       "",
       "Auto-loaded .env:",
       "  learn/doc-assistant-design/.env",
@@ -94,7 +94,9 @@ async function main(): Promise<void> {
     return;
   }
   if (options.mode === "agent" && (!options.baseURL || !options.apiKey)) {
-    console.error("Agent mode requires --base-url and --api-key, or DOC_ASSISTANT_BASE_URL / DOC_ASSISTANT_API_KEY.");
+    console.error(
+      "Agent mode requires --base-url and --api-key, or DOC_ASSISTANT_BASE_URL / DOC_ASSISTANT_API_KEY.",
+    );
     process.exitCode = 1;
     return;
   }

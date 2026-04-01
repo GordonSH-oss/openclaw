@@ -44,7 +44,7 @@ export type InboundMessage = {
 export type InboundAttachment = {
   type: "image" | "file" | "audio";
   url?: string;
-  data?: string;  // base64
+  data?: string; // base64
   mimeType?: string;
   fileName?: string;
 };

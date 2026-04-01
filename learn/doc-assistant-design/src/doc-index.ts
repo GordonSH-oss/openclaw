@@ -1,7 +1,7 @@
-import fs from "node:fs/promises";
-import { existsSync } from "node:fs";
-import path from "node:path";
 import { createHash } from "node:crypto";
+import { existsSync } from "node:fs";
+import fs from "node:fs/promises";
+import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { resolveDocAssistantDataDir } from "./user-store.js";
 
@@ -66,6 +66,9 @@ async function collectMarkdownFiles(root: string, current = root): Promise<strin
   for (const entry of entries) {
     const fullPath = path.join(current, entry.name);
     if (entry.isDirectory()) {
+      if (entry.name === ".archive") {
+        continue;
+      }
       files.push(...(await collectMarkdownFiles(root, fullPath)));
       continue;
     }
@@ -73,7 +76,7 @@ async function collectMarkdownFiles(root: string, current = root): Promise<strin
       files.push(fullPath);
     }
   }
-  return files.sort((a, b) => a.localeCompare(b));
+  return files.toSorted((a, b) => a.localeCompare(b));
 }
 
 function trimChunkText(lines: string[]): string {
@@ -203,10 +206,7 @@ export async function buildDocIndex(params?: {
 
   for (const filePath of files) {
     const rawText = await fs.readFile(filePath, "utf-8");
-    const relativePath = path
-      .relative(path.dirname(docsRoot), filePath)
-      .split(path.sep)
-      .join("/");
+    const relativePath = path.relative(path.dirname(docsRoot), filePath).split(path.sep).join("/");
     chunks.push(...extractHeadingChunks(relativePath, rawText));
   }
 

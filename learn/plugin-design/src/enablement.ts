@@ -11,7 +11,9 @@ export async function resolveLearningPluginEnablement(params: {
   disabledPluginIds?: string[];
   memoryPluginId?: string;
 }): Promise<LearningPluginEnablementDecision[]> {
-  const disabled = new Set((params.disabledPluginIds ?? []).map((value) => value.trim()).filter(Boolean));
+  const disabled = new Set(
+    (params.disabledPluginIds ?? []).map((value) => value.trim()).filter(Boolean),
+  );
   return params.candidates.map((candidate) => {
     if (disabled.has(candidate.manifest.id)) {
       return { candidate, enabled: false, reason: "disabled" as const };
@@ -23,6 +25,10 @@ export async function resolveLearningPluginEnablement(params: {
     ) {
       return { candidate, enabled: false, reason: "memory_slot_replaced" as const };
     }
-    return { candidate, enabled: candidate.manifest.enabledByDefault !== false, reason: "enabled" as const };
+    return {
+      candidate,
+      enabled: candidate.manifest.enabledByDefault !== false,
+      reason: "enabled" as const,
+    };
   });
 }

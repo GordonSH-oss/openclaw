@@ -18,6 +18,7 @@
 
 import { randomUUID } from "node:crypto";
 import type { WebSocket } from "ws";
+import type { MethodRouter } from "./method-router.js";
 import {
   parseClientMessage,
   serializeMessage,
@@ -27,7 +28,6 @@ import {
   type GatewayResponse,
 } from "./protocol.js";
 import type { GatewayRuntimeState } from "./runtime-state.js";
-import type { MethodRouter } from "./method-router.js";
 import { removeConnFromChatSubscriptions } from "./server-chat.js";
 
 // ─── 连接上下文 ────────────────────────────────────────────────────────────────
@@ -45,6 +45,22 @@ export type ConnectionContext = {
   connectedAt: number;
 };
 
+function rawWsMessageToString(rawData: unknown): string {
+  if (typeof rawData === "string") {
+    return rawData;
+  }
+  if (Buffer.isBuffer(rawData)) {
+    return rawData.toString("utf-8");
+  }
+  if (rawData instanceof ArrayBuffer) {
+    return Buffer.from(rawData).toString("utf-8");
+  }
+  if (Array.isArray(rawData)) {
+    return Buffer.concat(rawData.filter((part) => Buffer.isBuffer(part))).toString("utf-8");
+  }
+  return "";
+}
+
 // ─── 认证逻辑 ──────────────────────────────────────────────────────────────────
 
 /**
@@ -54,7 +70,9 @@ export type ConnectionContext = {
  * 本示例简化为：没有 token 就是匿名连接（只读 scope），
  * 有 token 就是管理员连接（admin scope）。
  */
-function resolveClientFromQuery(query: Record<string, string | string[] | undefined>): ConnectedClient {
+function resolveClientFromQuery(
+  query: Record<string, string | string[] | undefined>,
+): ConnectedClient {
   const tokenRaw = query["token"];
   const token = Array.isArray(tokenRaw) ? tokenRaw[0] : tokenRaw;
   const clientIdRaw = query["clientId"];
@@ -101,13 +119,6 @@ export function handleConnection(
   const client = resolveClientFromQuery(query);
   const connId = client.connId;
 
-  const conn: ConnectionContext = {
-    connId,
-    ws,
-    client,
-    connectedAt: Date.now(),
-  };
-
   // 发送函数：序列化并发送一帧数据到这个连接
   const send = (msg: string) => {
     if (ws.readyState === ws.OPEN) {
@@ -137,7 +148,7 @@ export function handleConnection(
 
   // ── 消息处理 ────────────────────────────────────────────────────
   ws.on("message", (rawData) => {
-    const raw = rawData.toString();
+    const raw = rawWsMessageToString(rawData);
 
     // 解析请求帧
     const request = parseClientMessage(raw);
@@ -173,9 +184,7 @@ export function handleConnection(
 
   // ── 连接断开处理 ────────────────────────────────────────────────
   ws.on("close", (code, reason) => {
-    console.log(
-      `[ws] 连接断开: connId=${connId} code=${code} reason=${reason.toString()}`,
-    );
+    console.log(`[ws] 连接断开: connId=${connId} code=${code} reason=${reason.toString()}`);
 
     // 从广播器注销
     state.broadcaster.unregisterConn(connId);

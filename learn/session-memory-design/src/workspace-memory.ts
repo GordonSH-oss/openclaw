@@ -61,7 +61,9 @@ export async function loadLearningBootstrapMemory(params: {
   };
 }
 
-export async function listLearningMemoryFiles(params: { workspaceDir?: string }): Promise<string[]> {
+export async function listLearningMemoryFiles(params: {
+  workspaceDir?: string;
+}): Promise<string[]> {
   const workspaceDir = resolveLearningMemoryWorkspaceDir(params.workspaceDir);
   const result: string[] = [];
   for (const filePath of [
@@ -73,7 +75,9 @@ export async function listLearningMemoryFiles(params: { workspaceDir?: string })
     }
   }
   try {
-    const entries = await fs.readdir(resolveLearningDailyMemoryDir(workspaceDir), { withFileTypes: true });
+    const entries = await fs.readdir(resolveLearningDailyMemoryDir(workspaceDir), {
+      withFileTypes: true,
+    });
     for (const entry of entries) {
       if (entry.isFile() && entry.name.endsWith(".md")) {
         result.push(path.join(resolveLearningDailyMemoryDir(workspaceDir), entry.name));
@@ -82,7 +86,7 @@ export async function listLearningMemoryFiles(params: { workspaceDir?: string })
   } catch {
     // Missing daily memory dir is fine.
   }
-  return result.sort();
+  return result.toSorted();
 }
 
 export async function readLearningMemoryFile(params: {
@@ -91,7 +95,9 @@ export async function readLearningMemoryFile(params: {
 }): Promise<{ path: string; text: string }> {
   const workspaceDir = resolveLearningMemoryWorkspaceDir(params.workspaceDir);
   const target = (params.target ?? "MEMORY.md").trim() || "MEMORY.md";
-  const resolved = path.isAbsolute(target) ? path.resolve(target) : path.resolve(workspaceDir, target);
+  const resolved = path.isAbsolute(target)
+    ? path.resolve(target)
+    : path.resolve(workspaceDir, target);
   if (!isPathInside(workspaceDir, resolved)) {
     throw new Error("memory_get 只能读取当前 workspace 内的记忆文件");
   }

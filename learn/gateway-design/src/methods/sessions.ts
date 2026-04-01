@@ -1,4 +1,6 @@
+import type { MethodHandler } from "../method-router.js";
 import { makeError } from "../protocol/index.js";
+import { subscribeSessionMessages, unsubscribeSessionMessages } from "../server-chat.js";
 import {
   listSessions,
   loadSessionStore,
@@ -6,8 +8,6 @@ import {
   resolveGatewayAgentDataDir,
 } from "../session-store.js";
 import { loadGatewayTranscript } from "../transcript-store.js";
-import type { MethodHandler } from "../method-router.js";
-import { subscribeSessionMessages, unsubscribeSessionMessages } from "../server-chat.js";
 
 export const sessionsListHandler: MethodHandler = async ({ respond }) => {
   const sessions = await listSessions();
@@ -57,7 +57,11 @@ export const sessionsDeleteHandler: MethodHandler = async ({ request, respond, c
   }
   for (const [, run] of state.chat.activeRuns) {
     if (run.sessionKey === sessionKey) {
-      respond(false, undefined, makeError("CONFLICT", `Session ${sessionKey} 正在运行，请先取消再删除`));
+      respond(
+        false,
+        undefined,
+        makeError("CONFLICT", `Session ${sessionKey} 正在运行，请先取消再删除`),
+      );
       return;
     }
   }
@@ -80,7 +84,12 @@ export const sessionsUnsubscribeHandler: MethodHandler = ({ respond, client, sta
   respond(true, { unsubscribed: true });
 };
 
-export const sessionsMessagesSubscribeHandler: MethodHandler = ({ request, respond, client, state }) => {
+export const sessionsMessagesSubscribeHandler: MethodHandler = ({
+  request,
+  respond,
+  client,
+  state,
+}) => {
   const params = request.params as Record<string, unknown>;
   const sessionKey = typeof params?.sessionKey === "string" ? params.sessionKey.trim() : "";
   if (!sessionKey) {
@@ -131,7 +140,11 @@ export const sessionsTranscriptGetHandler: MethodHandler = async ({ request, res
 export const gatewayMethodsHandler: MethodHandler = ({ respond }) => {
   respond(true, {
     methods: [
-      { method: "agent", description: "执行一次 agent turn（发消息给 AI）", requiredScopes: ["admin"] },
+      {
+        method: "agent",
+        description: "执行一次 agent turn（发消息给 AI）",
+        requiredScopes: ["admin"],
+      },
       { method: "agent.status", description: "查询 run 状态" },
       { method: "agent.wait", description: "等待 run 完成" },
       { method: "agent.cancel", description: "取消正在运行的 run", requiredScopes: ["admin"] },

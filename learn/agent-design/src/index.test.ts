@@ -1,8 +1,12 @@
-import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import test from "node:test";
+import { loadLearningPlugins } from "../../plugin-design/src/index.js";
+import { markAuthProfileFailure } from "./auth-profiles/order.js";
+import { loadAuthProfileStore } from "./auth-profiles/store.js";
+import { resolveLearningSession } from "./command/session.js";
 import {
   runLearningAgentCommand,
   waitForLearningAgentRun,
@@ -13,16 +17,12 @@ import {
   readWorkspaceMemoryFile,
   searchMemoryIndex,
 } from "./index.js";
-import { loadLearningPlugins } from "../../plugin-design/src/index.js";
-import { loadAuthProfileStore } from "./auth-profiles/store.js";
-import { markAuthProfileFailure } from "./auth-profiles/order.js";
-import { resolveLearningSession } from "./command/session.js";
 
 async function makeTempDir(name: string): Promise<string> {
   return await fs.mkdtemp(path.join(os.tmpdir(), `${name}-`));
 }
 
-test("session resolution creates a stable session entry", async () => {
+void test("session resolution creates a stable session entry", async () => {
   const dataDir = await makeTempDir("agent-session");
   const first = await resolveLearningSession({
     sessionKey: "default/main",
@@ -36,7 +36,7 @@ test("session resolution creates a stable session entry", async () => {
   assert.equal(first.transcriptPath, second.transcriptPath);
 });
 
-test("embedded runner writes user/tool/assistant messages", async () => {
+void test("embedded runner writes user/tool/assistant messages", async () => {
   const dataDir = await makeTempDir("agent-run");
   const handle = runLearningAgentCommand({
     runId: "run-1",
@@ -48,11 +48,14 @@ test("embedded runner writes user/tool/assistant messages", async () => {
   assert.equal(result.status, "ok");
   const transcript = await loadLearningTranscript(result.sessionId, dataDir);
   assert.equal(transcript[0]?.role, "user");
-  assert.equal(transcript.some((message) => message.role === "tool"), true);
+  assert.equal(
+    transcript.some((message) => message.role === "tool"),
+    true,
+  );
   assert.equal(transcript.at(-1)?.role, "assistant");
 });
 
-test("model fallback advances after simulated rate limit", async () => {
+void test("model fallback advances after simulated rate limit", async () => {
   const dataDir = await makeTempDir("agent-fallback");
   const handle = runLearningAgentCommand({
     runId: "run-2",
@@ -67,7 +70,7 @@ test("model fallback advances after simulated rate limit", async () => {
   assert.equal(result.attempts[1]?.ok, true);
 });
 
-test("auth profile order respects cooldown and preferred profile", async () => {
+void test("auth profile order respects cooldown and preferred profile", async () => {
   const dataDir = await makeTempDir("agent-auth");
   const store = await loadAuthProfileStore(dataDir);
   markAuthProfileFailure({
@@ -85,7 +88,7 @@ test("auth profile order respects cooldown and preferred profile", async () => {
   assert.equal(order.cooledDownProfileIds.includes("primary"), true);
 });
 
-test("workspace skill snapshot ignores paths outside the root", async () => {
+void test("workspace skill snapshot ignores paths outside the root", async () => {
   const root = await makeTempDir("agent-skills");
   const skillDir = path.join(root, "demo-skill");
   await fs.mkdir(skillDir, { recursive: true });
@@ -101,7 +104,7 @@ test("workspace skill snapshot ignores paths outside the root", async () => {
   assert.equal(snapshot.entries[0]?.name, "demo-skill");
 });
 
-test("waitForLearningAgentRun returns terminal state", async () => {
+void test("waitForLearningAgentRun returns terminal state", async () => {
   const dataDir = await makeTempDir("agent-wait");
   void runLearningAgentCommand({
     runId: "run-3",
@@ -114,7 +117,7 @@ test("waitForLearningAgentRun returns terminal state", async () => {
   assert.equal(result?.status, "ok");
 });
 
-test("memory_write tool stores a note in daily memory", async () => {
+void test("memory_write tool stores a note in daily memory", async () => {
   const dataDir = await makeTempDir("agent-memory-write");
   const workspaceDir = await makeTempDir("agent-memory-workspace");
   const handle = runLearningAgentCommand({
@@ -132,7 +135,7 @@ test("memory_write tool stores a note in daily memory", async () => {
   assert.equal(memory.text.includes("我喜欢乌龙茶"), true);
 });
 
-test("memory_search returns chunks from curated memory", async () => {
+void test("memory_search returns chunks from curated memory", async () => {
   const dataDir = await makeTempDir("agent-memory-search");
   const workspaceDir = await makeTempDir("agent-memory-search-workspace");
   await fs.writeFile(
@@ -151,7 +154,7 @@ test("memory_search returns chunks from curated memory", async () => {
   assert.equal(results[0]?.text.includes("jasmine tea"), true);
 });
 
-test("pre-compaction memory flush writes recent transcript summary", async () => {
+void test("pre-compaction memory flush writes recent transcript summary", async () => {
   const dataDir = await makeTempDir("agent-memory-flush");
   const workspaceDir = await makeTempDir("agent-memory-flush-workspace");
   for (let index = 0; index < 4; index += 1) {
@@ -172,7 +175,7 @@ test("pre-compaction memory flush writes recent transcript summary", async () =>
   assert.equal(memory.text.includes("Session default/main neared compaction"), true);
 });
 
-test("plugin-design registry can provide memory runtime and gateway method to agent tools", async () => {
+void test("plugin-design registry can provide memory runtime and gateway method to agent tools", async () => {
   const dataDir = await makeTempDir("agent-plugin-runtime");
   await loadLearningPlugins();
   const handle = runLearningAgentCommand({

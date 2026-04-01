@@ -1,8 +1,8 @@
+import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { createHash } from "node:crypto";
-import { listLearningMemoryFiles, readLearningMemoryFile } from "./workspace-memory.js";
 import { resolveLearningSessionMemoryDataDir } from "./session-store.js";
+import { listLearningMemoryFiles, readLearningMemoryFile } from "./workspace-memory.js";
 
 export type LearningMemoryChunk = {
   id: string;
@@ -55,7 +55,10 @@ export async function buildLearningMemoryIndex(params: {
     }
     chunks.push(...extractChunks(filePath, text));
   }
-  const indexPath = path.join(resolveLearningSessionMemoryDataDir(params.dataDir), "memory-index.json");
+  const indexPath = path.join(
+    resolveLearningSessionMemoryDataDir(params.dataDir),
+    "memory-index.json",
+  );
   await fs.mkdir(path.dirname(indexPath), { recursive: true });
   await fs.writeFile(indexPath, JSON.stringify(chunks, null, 2), "utf-8");
   return chunks;
@@ -81,7 +84,7 @@ export async function searchLearningMemory(params: {
       }, 0),
     }))
     .filter((entry) => entry.score > 0)
-    .sort((a, b) => b.score - a.score)
+    .toSorted((a, b) => b.score - a.score)
     .slice(0, params.maxResults ?? 5)
     .map((entry) => entry.chunk);
 }

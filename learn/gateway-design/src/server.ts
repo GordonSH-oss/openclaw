@@ -1,12 +1,12 @@
 import { createServer } from "node:http";
-import { createGatewayRuntimeState } from "./server-runtime-state.js";
+import { launchGatewayAgentRun } from "./methods/agent.js";
 import { resolveAgentRoute } from "./routing.js";
 import type { BindingRule } from "./routing.js";
-import { bootstrapGatewayChannels } from "./server-plugin-bootstrap.js";
 import { createCoreGatewayRouter } from "./server-methods.js";
+import { bootstrapGatewayChannels } from "./server-plugin-bootstrap.js";
+import { createGatewayRuntimeState } from "./server-runtime-state.js";
 import { attachGatewayWsHandlers } from "./server-ws-runtime.js";
 import { getOrCreateSession } from "./session-store.js";
-import { launchGatewayAgentRun } from "./methods/agent.js";
 
 export type GatewayConfig = {
   port?: number;
@@ -61,19 +61,25 @@ export async function createGateway(config: GatewayConfig = {}) {
     );
   };
 
-  await channelRegistry.startAll(onChannelMessage as Parameters<typeof channelRegistry.startAll>[0]);
+  await channelRegistry.startAll(
+    onChannelMessage as Parameters<typeof channelRegistry.startAll>[0],
+  );
 
   const router = createCoreGatewayRouter();
   for (const method of pluginRegistry.gatewayMethods) {
-    router.register(method.name, async ({ request, respond }) => {
-      const payload =
-        typeof request.params === "object" && request.params !== null
-          ? (request.params as Record<string, unknown>)
-          : {};
-      respond(true, await method.handle(payload));
-    }, {
-      description: `Plugin gateway method from ${method.name}`,
-    });
+    router.register(
+      method.name,
+      async ({ request, respond }) => {
+        const payload =
+          typeof request.params === "object" && request.params !== null
+            ? (request.params as Record<string, unknown>)
+            : {};
+        respond(true, await method.handle(payload));
+      },
+      {
+        description: `Plugin gateway method from ${method.name}`,
+      },
+    );
   }
   const httpServer = createServer((req, res) => {
     if (req.url === "/health") {

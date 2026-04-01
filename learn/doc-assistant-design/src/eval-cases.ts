@@ -35,10 +35,14 @@ export const DOC_ASSISTANT_EVAL_CASES: DocAssistantEvalCase[] = [
   },
   {
     id: "concept-nexconn-insufficient",
-    title: "Entity-definition questions without a real definition page should say docs are insufficient",
+    title:
+      "Entity-definition questions without a real definition page should say docs are insufficient",
     question: "what is Nexconn",
     expectedSummaryKeywords: ["no relevant documentation found"],
-    expectedAnswerKeywords: ["i couldn't find reliable local documentation", "instead of defining the concept itself"],
+    expectedAnswerKeywords: [
+      "i couldn't find reliable local documentation",
+      "instead of defining the concept itself",
+    ],
     discouragedAnswerKeywords: ["definition", "Disconnect and disable push"],
     topK: 3,
   },
@@ -110,7 +114,8 @@ export const DOC_ASSISTANT_EVAL_CASES: DocAssistantEvalCase[] = [
   },
   {
     id: "chat-channel-kind-clarify",
-    title: "Generic channel-creation question should clarify channel kind instead of forcing group/community/server docs",
+    title:
+      "Generic channel-creation question should clarify channel kind instead of forcing group/community/server docs",
     question: "How to create a channel?",
     expectedPathSuffixes: [
       "docs/chatsdk-android/direct-system-channels/retrieving-channels.md",
@@ -142,7 +147,8 @@ export const DOC_ASSISTANT_EVAL_CASES: DocAssistantEvalCase[] = [
   },
   {
     id: "community-channel-mixed",
-    title: "Mixed community-channel questions should answer the definition first and then partial creation steps",
+    title:
+      "Mixed community-channel questions should answer the definition first and then partial creation steps",
     question: "What is community channel ?How to create a community channel?",
     expectedPathSuffixes: [
       "docs/chatsdk-android/community-channels/overview.md",
@@ -158,7 +164,8 @@ export const DOC_ASSISTANT_EVAL_CASES: DocAssistantEvalCase[] = [
   },
   {
     id: "community-channel-mixed-pronoun",
-    title: "Mixed pronoun follow-ups should keep the community-channel topic instead of drifting to generic direct-channel get pages",
+    title:
+      "Mixed pronoun follow-ups should keep the community-channel topic instead of drifting to generic direct-channel get pages",
     question: "What is community channel? How to get it?",
     expectedPathSuffixes: ["docs/chatsdk-android/community-channels/overview.md"],
     discouragedPathSuffixes: [
@@ -167,10 +174,15 @@ export const DOC_ASSISTANT_EVAL_CASES: DocAssistantEvalCase[] = [
     ],
     expectedHeadingKeywords: ["community channel overview"],
     expectedSummaryKeywords: ["platform clarification required"],
-    expectedAnswerKeywords: ["definition", "community channel", "create a community channel or subchannel"],
+    expectedAnswerKeywords: [
+      "definition",
+      "community channel",
+      "create a community channel or subchannel",
+    ],
     discouragedAnswerKeywords: ["start a direct chat", "DirectChannel"],
     topK: 6,
-    notes: "The second half is underspecified, but the answer must not drift into direct-chat setup.",
+    notes:
+      "The second half is underspecified, but the answer must not drift into direct-chat setup.",
   },
   {
     id: "community-channel-mixed-followup-android",
@@ -199,7 +211,8 @@ export const DOC_ASSISTANT_EVAL_CASES: DocAssistantEvalCase[] = [
   },
   {
     id: "chat-direct-channel-explicit",
-    title: "Explicit direct-channel creation should prefer direct-channel docs over community private subchannels",
+    title:
+      "Explicit direct-channel creation should prefer direct-channel docs over community private subchannels",
     question: "How to create a direct channel?",
     expectedPathSuffixes: [
       "docs/chatsdk-android/direct-system-channels/retrieving-channels.md",
@@ -228,7 +241,8 @@ export const DOC_ASSISTANT_EVAL_CASES: DocAssistantEvalCase[] = [
   },
   {
     id: "chat-connect-server-clarify",
-    title: "Connect-to-chat-server questions should prefer SDK connection docs and clarify platform",
+    title:
+      "Connect-to-chat-server questions should prefer SDK connection docs and clarify platform",
     question: "How to connect to the chat server?",
     expectedPathSuffixes: [
       "docs/chatsdk-android/connection/connect.md",
@@ -243,7 +257,8 @@ export const DOC_ASSISTANT_EVAL_CASES: DocAssistantEvalCase[] = [
   },
   {
     id: "platform-webhook-setup",
-    title: "Generic webhook setup wording should land on webhook overview and produce a setup guide",
+    title:
+      "Generic webhook setup wording should land on webhook overview and produce a setup guide",
     question: "How to set up Webhook?",
     expectedPathSuffixes: ["docs/platform-chat-api/webhook/overview.md"],
     discouragedPathSuffixes: [
@@ -258,7 +273,8 @@ export const DOC_ASSISTANT_EVAL_CASES: DocAssistantEvalCase[] = [
   },
   {
     id: "platform-webhook-implement",
-    title: "Webhook implementation wording should ignore filler text and still land on the overview guide",
+    title:
+      "Webhook implementation wording should ignore filler text and still land on the overview guide",
     question: "Just let me know how to implement webhook",
     expectedPathSuffixes: ["docs/platform-chat-api/webhook/overview.md"],
     discouragedPathSuffixes: [
@@ -325,10 +341,7 @@ export const DOC_ASSISTANT_EVAL_CASES: DocAssistantEvalCase[] = [
     id: "chat-web-direct-guide",
     title: "Web direct-chat question should produce a guided answer",
     question: "How to start a direct chat on Web?",
-    expectedPathSuffixes: [
-      "docs/chatsdk-web/quickstart.md",
-      "docs/chatsdk-web/message/send.md",
-    ],
+    expectedPathSuffixes: ["docs/chatsdk-web/quickstart.md", "docs/chatsdk-web/message/send.md"],
     discouragedPathSuffixes: ["docs/platform-chat-api/"],
     expectedHeadingKeywords: ["send a message", "message"],
     expectedSummaryKeywords: ["guided answer"],
@@ -402,7 +415,8 @@ export const DOC_ASSISTANT_EVAL_CASES: DocAssistantEvalCase[] = [
   {
     id: "ios-chat-summary-message",
     title: "iOS chat-summary questions should land on the chat integration page",
-    question: "How do I insert the call summary message into the chat conversation after an iOS call ends?",
+    question:
+      "How do I insert the call summary message into the chat conversation after an iOS call ends?",
     expectedPathSuffixes: ["docs/callsdk-ios/callplus-integration-to-chat.md"],
     discouragedPathSuffixes: ["docs/callsdk-web/callplus-integration-to-chat.md"],
     expectedHeadingKeywords: ["chat", "message", "conversation", "summary"],
@@ -453,16 +467,13 @@ export const DOC_ASSISTANT_EVAL_CASES: DocAssistantEvalCase[] = [
     topK: 4,
   },
   {
-    id: "archive-fallback-allowed",
-    title: "Provisioning-profile detail may still use archive as fallback evidence",
+    id: "primary-voip-provisioning",
+    title: "Provisioning-profile detail should come from the primary iOS VoIP doc",
     question: "Which provisioning profile should I use for VoIP push in iOS CallPlus?",
-    expectedPathSuffixes: [
-      "docs/callsdk-ios/callplus-voip.md",
-      "docs/.archive/zh-source/ios-callplus-zh-source/callplus-voip.md",
-    ],
+    expectedPathSuffixes: ["docs/callsdk-ios/callplus-voip.md"],
     expectedHeadingKeywords: ["provisioning", "voip"],
     topK: 5,
-    notes: "Primary docs should rank ahead, but archive fallback is acceptable in top results.",
+    notes: "Archive docs should be skipped during indexing, so only the primary doc is valid.",
   },
   {
     id: "no-hit-kubernetes",

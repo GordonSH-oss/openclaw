@@ -20,9 +20,10 @@ function toAnswerPreview(answer: string, maxLength = 220): string {
   return `${compact.slice(0, maxLength - 1)}…`;
 }
 
-export function summarizeQuestionOutcome(
-  terminal: DocsTerminalResult,
-): { answered: boolean; answerOutcome: DocQuestionAnswerOutcome } {
+export function summarizeQuestionOutcome(terminal: DocsTerminalResult): {
+  answered: boolean;
+  answerOutcome: DocQuestionAnswerOutcome;
+} {
   if (terminal.status === "cancelled") {
     return { answered: false, answerOutcome: "cancelled" };
   }
@@ -120,9 +121,11 @@ export async function loadQuestionHistory(
     .map((line) => line.trim())
     .filter(Boolean)
     .map((line) => JSON.parse(line) as DocQuestionHistoryEntry)
-    .reverse()
+    .toReversed()
     .filter((entry) => (params?.userId ? entry.userId === params.userId : true))
-    .filter((entry) => (params?.answered === undefined ? true : entry.answered === params.answered));
+    .filter((entry) =>
+      params?.answered === undefined ? true : entry.answered === params.answered,
+    );
 
   return entries.slice(0, params?.limit ?? 100);
 }

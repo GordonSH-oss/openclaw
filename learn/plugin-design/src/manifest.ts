@@ -31,16 +31,10 @@ export function validateLearningPluginManifest(input: unknown): LearningPluginMa
   const version = typeof record.version === "string" ? record.version.trim() : "";
   const entry = typeof record.entry === "string" ? record.entry.trim() : "";
   const capabilities = Array.isArray(record.capabilities)
-    ? record.capabilities.filter((value): value is LearningPluginCapability =>
-        typeof value === "string" &&
-        [
-          "provider",
-          "channel",
-          "tool",
-          "gatewayMethod",
-          "hook",
-          "memoryRuntime",
-        ].includes(value),
+    ? record.capabilities.filter(
+        (value): value is LearningPluginCapability =>
+          typeof value === "string" &&
+          ["provider", "channel", "tool", "gatewayMethod", "hook", "memoryRuntime"].includes(value),
       )
     : [];
   if (!id || !name || !version || !entry) {

@@ -1,6 +1,7 @@
 import { runLearningAgentCommand } from "../../agent-design/src/index.js";
 import { detectAnswerLanguage, type AnswerLanguage } from "./answer-language.js";
 import { planDocQuestion, type DocQuestionPlan } from "./doc-search.js";
+import { answerWithOpenAICompatible } from "./openai-compatible.js";
 import type {
   DocAnswerReviewStatus,
   DocAnswerSource,
@@ -11,7 +12,6 @@ import type {
   DocsTerminalResult,
   OpenAICompatibleConfig,
 } from "./protocol/index.js";
-import { answerWithOpenAICompatible } from "./openai-compatible.js";
 import { resolveDocAssistantAgentScratchDataDir } from "./session-store.js";
 
 export type DocAnswerResult = {
@@ -82,10 +82,7 @@ function renderSourcesAppendix(citations: DocCitation[]): string {
   if (citations.length === 0) {
     return "Sources:\n- none";
   }
-  return [
-    "Sources:",
-    ...citations.map((citation) => `- ${citationLabel(citation)}`),
-  ].join("\n");
+  return ["Sources:", ...citations.map((citation) => `- ${citationLabel(citation)}`)].join("\n");
 }
 
 function sectionLabel(
@@ -365,14 +362,14 @@ function classifyHitRole(hit: DocSearchHit): AnswerRole {
   }
 
   if (
-    ((!webhookPage && normalized.includes("platform chat api")) ||
+    (((!webhookPage && normalized.includes("platform chat api")) ||
       normalized.includes("server api")) &&
-    !(
-      normalizedHeadingPath.includes("creating community channels") ||
-      normalizedHeadingPath.includes("creating community channel") ||
-      normalizedHeadingPath.includes("creating channel") ||
-      normalizedBody.includes("does not provide client side apis")
-    ) ||
+      !(
+        normalizedHeadingPath.includes("creating community channels") ||
+        normalizedHeadingPath.includes("creating community channel") ||
+        normalizedHeadingPath.includes("creating channel") ||
+        normalizedBody.includes("does not provide client side apis")
+      )) ||
     normalized.includes("query history") ||
     normalized.includes("cloud message history") ||
     normalized.includes("sync to sender") ||
@@ -430,11 +427,17 @@ function classifyHitRole(hit: DocSearchHit): AnswerRole {
     return "connect";
   }
 
-  if (normalizedHeadingPath.includes("direct channel") || normalizedBody.includes("direct channel")) {
+  if (
+    normalizedHeadingPath.includes("direct channel") ||
+    normalizedBody.includes("direct channel")
+  ) {
     return "start_chat";
   }
 
-  if (normalizedHeadingPath.includes("channel overview") || normalizedHeadingPath.includes("overview")) {
+  if (
+    normalizedHeadingPath.includes("channel overview") ||
+    normalizedHeadingPath.includes("overview")
+  ) {
     return "platform";
   }
 
@@ -459,7 +462,10 @@ function extractConceptFocusTerms(question: string): string[] {
   for (const marker of CONCEPT_MARKER_TERMS) {
     stripped = stripped.replace(marker, " ");
   }
-  stripped = stripped.replace(/\bis\b/g, " ").replace(/\bare\b/g, " ").trim();
+  stripped = stripped
+    .replace(/\bis\b/g, " ")
+    .replace(/\bare\b/g, " ")
+    .trim();
   const tokens = tokenizeLike(stripped);
   return tokens.filter((token) => token.length >= 4 || /[\u4e00-\u9fff]{2,}/.test(token));
 }
@@ -495,7 +501,8 @@ function looksLikeDefinitionEvidence(question: string, hit: AnalyzedHit): boolea
     normalizedBody.includes(" used for ") ||
     normalizedBody.includes(" is a ") ||
     normalizedBody.includes(" refers to ");
-  const hasOverviewFocusSignal = normalizedHeadingPath.includes("overview") && hasFocusInHeadingPath;
+  const hasOverviewFocusSignal =
+    normalizedHeadingPath.includes("overview") && hasFocusInHeadingPath;
 
   if (!hasFocusInVisibleText) {
     return false;
@@ -509,7 +516,10 @@ function looksLikeDefinitionEvidence(question: string, hit: AnalyzedHit): boolea
   return (hasDefinitionSignal || hasOverviewFocusSignal) && hasFocusInHeadingPath;
 }
 
-function analyzeHits(question: string, hits: DocSearchHit[]): {
+function analyzeHits(
+  question: string,
+  hits: DocSearchHit[],
+): {
   explicitPlatform?: DocPlatform;
   explicitChannelKind?: DocChannelKind;
   selectedPlatform?: DocPlatform;
@@ -526,9 +536,12 @@ function analyzeHits(question: string, hits: DocSearchHit[]): {
   const explicitChannelKind = detectQuestionChannelKind(question);
   const analyzedHits = hits.map((hit) => ({
     ...hit,
-    platform: detectPlatform(hit.path) ?? detectPlatform(hit.heading ?? "") ?? detectPlatform(hit.text),
+    platform:
+      detectPlatform(hit.path) ?? detectPlatform(hit.heading ?? "") ?? detectPlatform(hit.text),
     channelKind:
-      detectChannelKind(hit.path) ?? detectChannelKind(hit.heading ?? "") ?? detectChannelKind(hit.text),
+      detectChannelKind(hit.path) ??
+      detectChannelKind(hit.heading ?? "") ??
+      detectChannelKind(hit.text),
     role: classifyHitRole(hit),
   }));
   const relevantHits = analyzedHits.filter((hit) => hit.role !== "server_irrelevant");
@@ -546,9 +559,7 @@ function analyzeHits(question: string, hits: DocSearchHit[]): {
     normalizedQuestion.includes("create") &&
     (normalizedQuestion.includes("channel") || normalizedQuestion.includes("conversation"));
   const shouldClarifyChannelKind =
-    !explicitChannelKind &&
-    mentionsChannelCreationTopic &&
-    foundChannelKinds.length > 1;
+    !explicitChannelKind && mentionsChannelCreationTopic && foundChannelKinds.length > 1;
 
   let selectedChannelKind = explicitChannelKind;
   if (!selectedChannelKind && isChannelFocusedQuestion(question) && foundChannelKinds.length > 0) {
@@ -606,9 +617,10 @@ function analyzeHits(question: string, hits: DocSearchHit[]): {
       .toSorted((left, right) => right.score - left.score)[0]?.platform;
   }
 
-  const usedHits = (selectedPlatform
-    ? channelScopedHits.filter((hit) => hit.platform === selectedPlatform || !hit.platform)
-    : channelScopedHits
+  const usedHits = (
+    selectedPlatform
+      ? channelScopedHits.filter((hit) => hit.platform === selectedPlatform || !hit.platform)
+      : channelScopedHits
   ).toSorted((left, right) => right.score - left.score);
 
   return {
@@ -660,9 +672,12 @@ function buildClarificationAnswer(
     }
   }
   const citations = dedupeCitations(Array.from(bestByPlatform.values()));
-  const platformText = analysis.foundPlatforms.map((platform) => formatPlatform(platform)).join(" / ");
+  const platformText = analysis.foundPlatforms
+    .map((platform) => formatPlatform(platform))
+    .join(" / ");
   const examples = Array.from(bestByPlatform.entries()).map(
-    ([platform, hit]) => `- ${formatPlatform(platform)}: ${hit.heading ?? hit.path} ${inlineCitation(hit)}`,
+    ([platform, hit]) =>
+      `- ${formatPlatform(platform)}: ${hit.heading ?? hit.path} ${inlineCitation(hit)}`,
   );
 
   return {
@@ -672,7 +687,9 @@ function buildClarificationAnswer(
         ? `This question depends on the target platform. Choose ${platformText}, and the answer can be narrowed to the matching implementation steps.`
         : `这是一个和平台相关的问题。请告诉我你要看 ${platformText} 中的哪一个平台，我会按对应平台整理开始聊天的步骤。`,
       examples.length > 0
-        ? [(language === "en" ? "Relevant doc entry points:" : "相关文档入口："), ...examples].join("\n")
+        ? [language === "en" ? "Relevant doc entry points:" : "相关文档入口：", ...examples].join(
+            "\n",
+          )
         : "",
       renderSourcesAppendix(citations),
     ]
@@ -699,7 +716,8 @@ function buildChannelClarificationAnswer(
   const citations = dedupeCitations(Array.from(bestByChannelKind.values()));
   const kindText = analysis.foundChannelKinds.map((kind) => formatChannelKind(kind)).join(" / ");
   const examples = Array.from(bestByChannelKind.entries()).map(
-    ([kind, hit]) => `- ${formatChannelKind(kind)}: ${hit.heading ?? hit.path} ${inlineCitation(hit)}`,
+    ([kind, hit]) =>
+      `- ${formatChannelKind(kind)}: ${hit.heading ?? hit.path} ${inlineCitation(hit)}`,
   );
 
   return {
@@ -709,7 +727,9 @@ function buildChannelClarificationAnswer(
         ? `In these docs, "channel" can mean ${kindText}. Specify which one you need, and the answer can be narrowed to the matching implementation steps.`
         : `这个问题里的 channel 可能指 ${kindText}。请告诉我你要看哪一类，我再按对应文档整理开发步骤。`,
       examples.length > 0
-        ? [(language === "en" ? "Relevant doc entry points:" : "相关文档入口："), ...examples].join("\n")
+        ? [language === "en" ? "Relevant doc entry points:" : "相关文档入口：", ...examples].join(
+            "\n",
+          )
         : "",
       renderSourcesAppendix(citations),
     ]
@@ -753,9 +773,13 @@ function buildGuideIntro(params: {
 }): string {
   const citation = params.overviewHit ? ` ${inlineCitation(params.overviewHit)}` : "";
   const platformText = params.platform ? formatPlatform(params.platform) : undefined;
-  const webhookGuide = [params.overviewHit, params.setupHit, params.connectHit, params.channelHit, params.sendHit].some(
-    (hit) => isWebhookHit(hit),
-  );
+  const webhookGuide = [
+    params.overviewHit,
+    params.setupHit,
+    params.connectHit,
+    params.channelHit,
+    params.sendHit,
+  ].some((hit) => isWebhookHit(hit));
   if (params.language === "en") {
     if (webhookGuide) {
       return `Use the documented flow below to configure webhooks.${citation}`;
@@ -802,7 +826,9 @@ function buildNeedLine(hit: AnalyzedHit, language: AnswerLanguage): string {
       : `- 先把 Chat SDK 依赖接入项目。${inlineCitation(hit)}`;
   }
   if (normalized.includes("initialize")) {
-    const term = extractCodeTerms(hit.text).find((value) => value.includes("initialize")) ?? "NCEngine.initialize()";
+    const term =
+      extractCodeTerms(hit.text).find((value) => value.includes("initialize")) ??
+      "NCEngine.initialize()";
     return language === "en"
       ? `- Call \`${term}\` during app startup.${inlineCitation(hit)}`
       : `- 在应用启动阶段调用 \`${term}\` 完成初始化。${inlineCitation(hit)}`;
@@ -826,8 +852,10 @@ function buildStepLine(hit: AnalyzedHit, language: AnswerLanguage): string {
   const normalized = normalizeAnswerText([hit.path, hit.heading ?? "", hit.text].join("\n"));
   const codeTerms = extractCodeTerms([hit.heading ?? "", hit.text].join("\n"));
   const directChannel =
-    codeTerms.find((value) => value.includes("DirectChannel"))?.replace(/\(.*/, "") ?? "DirectChannel";
-  const initialize = codeTerms.find((value) => value.includes("initialize")) ?? "NCEngine.initialize()";
+    codeTerms.find((value) => value.includes("DirectChannel"))?.replace(/\(.*/, "") ??
+    "DirectChannel";
+  const initialize =
+    codeTerms.find((value) => value.includes("initialize")) ?? "NCEngine.initialize()";
   const sendParams =
     codeTerms.find((value) => value.includes("SendTextMessageParams"))?.replace(/\(.*/, "") ??
     "SendTextMessageParams";
@@ -835,8 +863,10 @@ function buildStepLine(hit: AnalyzedHit, language: AnswerLanguage): string {
     codeTerms.find((value) => value.includes("sendMessage")) ?? "channel.sendMessage(...)";
   const initializeCall =
     codeTerms.find((value) => value.includes("NCEngine.initialize")) ?? initialize;
-  const connectCall = codeTerms.find((value) => value.includes("connect")) ?? "NCEngine.connect(...)";
-  const targetedField = codeTerms.find((value) => value.includes("directedUserIds")) ?? "directedUserIds";
+  const connectCall =
+    codeTerms.find((value) => value.includes("connect")) ?? "NCEngine.connect(...)";
+  const targetedField =
+    codeTerms.find((value) => value.includes("directedUserIds")) ?? "directedUserIds";
 
   if (isWebhookHit(hit)) {
     if (
@@ -923,17 +953,29 @@ function buildStepLine(hit: AnalyzedHit, language: AnswerLanguage): string {
 
 function buildConceptKeyPoint(hit: AnalyzedHit, language: AnswerLanguage): string {
   const normalized = normalizeAnswerText([hit.heading ?? "", hit.text].join("\n"));
-  if (normalized.includes("retain") || normalized.includes("retention") || normalized.includes("7 days")) {
+  if (
+    normalized.includes("retain") ||
+    normalized.includes("retention") ||
+    normalized.includes("7 days")
+  ) {
     return language === "en"
       ? `- The server retains undelivered messages while the user is offline. Use the documented retention window to understand how long those messages can still be delivered.${inlineCitation(hit)}`
       : `- 服务端会在离线期间保留未投递消息；如果文档提到了保留时长或窗口期，可以按该配置理解消息补投行为。${inlineCitation(hit)}`;
   }
-  if (normalized.includes("reconnect") || normalized.includes("come online") || normalized.includes("online")) {
+  if (
+    normalized.includes("reconnect") ||
+    normalized.includes("come online") ||
+    normalized.includes("online")
+  ) {
     return language === "en"
       ? `- When the user reconnects within that retention window, Nexconn pushes the queued offline messages back to the client.${inlineCitation(hit)}`
       : `- 当用户重新上线并在保留窗口内 reconnect 时，Nexconn 会把这段离线期间积压的消息补发给客户端。${inlineCitation(hit)}`;
   }
-  if (normalized.includes("console") || normalized.includes("setting") || normalized.includes("retention period")) {
+  if (
+    normalized.includes("console") ||
+    normalized.includes("setting") ||
+    normalized.includes("retention period")
+  ) {
     return language === "en"
       ? `- This behavior is usually paired with console-side retention settings, such as the offline message cloud retention period.${inlineCitation(hit)}`
       : `- 这个能力通常还伴随控制台侧的保留策略配置，例如离线消息云端保留时长。${inlineCitation(hit)}`;
@@ -1033,13 +1075,15 @@ function buildConceptAnswer(
   return {
     mode: "extractive",
     answer: [
-      [sectionLabel(language, "definition"), `- ${definitionHit.snippet}${inlineCitation(definitionHit)}`].join(
-        "\n",
-      ),
+      [
+        sectionLabel(language, "definition"),
+        `- ${definitionHit.snippet}${inlineCitation(definitionHit)}`,
+      ].join("\n"),
       supportingHits.length > 0
-        ? [sectionLabel(language, "keyPoints"), ...supportingHits.map((hit) => buildConceptKeyPoint(hit, language))].join(
-            "\n",
-          )
+        ? [
+            sectionLabel(language, "keyPoints"),
+            ...supportingHits.map((hit) => buildConceptKeyPoint(hit, language)),
+          ].join("\n")
         : "",
       noteLines.length > 0 ? [sectionLabel(language, "notes"), ...noteLines].join("\n") : "",
       renderSourcesAppendix(citations),
@@ -1136,9 +1180,8 @@ function buildGuideAnswer(
     return buildNoHitAnswer(question, language);
   }
 
-  const importHit = pickBestHitByPredicate(
-    effectiveHits,
-    (_hit, normalizedHeadingPath) => normalizedHeadingPath.includes("import"),
+  const importHit = pickBestHitByPredicate(effectiveHits, (_hit, normalizedHeadingPath) =>
+    normalizedHeadingPath.includes("import"),
   );
   const initializeHit = pickBestHitByPredicate(
     effectiveHits,
@@ -1160,7 +1203,9 @@ function buildGuideAnswer(
   const channelHit = pickBestHit(effectiveHits, ["start_chat", "platform"]);
   const sendHit = pickBestHit(effectiveHits, ["send_first_message"]);
   const overviewHit = pickBestHit(effectiveHits, ["platform", "start_chat", "setup"]);
-  const webhookGuide = normalizeAnswerText(question).includes("webhook") || effectiveHits.some((hit) => isWebhookHit(hit));
+  const webhookGuide =
+    normalizeAnswerText(question).includes("webhook") ||
+    effectiveHits.some((hit) => isWebhookHit(hit));
   const webhookStepHits = webhookGuide
     ? effectiveHits.filter((hit) => {
         const normalizedHeadingPath = normalizeAnswerText([hit.path, hit.heading ?? ""].join("\n"));
@@ -1184,13 +1229,18 @@ function buildGuideAnswer(
         (hit): hit is AnalyzedHit => Boolean(hit),
       );
   const stepHits = webhookGuide
-    ? (webhookStepHits.length > 0 ? webhookStepHits : effectiveHits.filter((hit) => isWebhookHit(hit)).slice(0, 3))
+    ? webhookStepHits.length > 0
+      ? webhookStepHits
+      : effectiveHits.filter((hit) => isWebhookHit(hit)).slice(0, 3)
     : [importHit, initializeHit, connectHit, navigationHit, channelHit, sendHit].filter(
         (hit, index, all): hit is AnalyzedHit => Boolean(hit) && all.indexOf(hit) === index,
       );
   const autoSharedRule = buildCommunityCreationServerRule(question, effectiveHits, language);
   const prependStepLines = Array.from(
-    new Set([...(autoSharedRule ? [autoSharedRule.line] : []), ...(options?.prependStepLines ?? [])]),
+    new Set([
+      ...(autoSharedRule ? [autoSharedRule.line] : []),
+      ...(options?.prependStepLines ?? []),
+    ]),
   );
   const prependStepHits = [
     ...(autoSharedRule?.hit ? [autoSharedRule.hit] : []),
@@ -1206,14 +1256,15 @@ function buildGuideAnswer(
     new Set(
       citedHits
         .flatMap((hit) => extractCodeTerms([hit.heading ?? "", hit.text].join("\n")))
-        .filter((term) =>
-          term.includes("Channel") ||
-          term.includes("Message") ||
-          term.includes("NCEngine") ||
-          term.includes("sendMessage") ||
-          term.includes("initialize") ||
-          term.includes("directedUserIds") ||
-          term.includes("intent-filter"),
+        .filter(
+          (term) =>
+            term.includes("Channel") ||
+            term.includes("Message") ||
+            term.includes("NCEngine") ||
+            term.includes("sendMessage") ||
+            term.includes("initialize") ||
+            term.includes("directedUserIds") ||
+            term.includes("intent-filter"),
         ),
     ),
   ).slice(0, 6);
@@ -1265,7 +1316,10 @@ function buildGuideAnswer(
     noteLines.push(...options.appendNoteLines);
   }
 
-  const combinedStepLines = [...prependStepLines, ...stepHits.map((hit) => buildStepLine(hit, language))];
+  const combinedStepLines = [
+    ...prependStepLines,
+    ...stepHits.map((hit) => buildStepLine(hit, language)),
+  ];
   const selectedPlatform =
     analysis.shouldClarifyPlatform && options?.allowClarificationOnly === false
       ? undefined
@@ -1285,12 +1339,16 @@ function buildGuideAnswer(
         sendHit,
       }),
       needHits.length > 0
-        ? [sectionLabel(language, "need"), ...needHits.map((hit) => buildNeedLine(hit, language))].join("\n")
+        ? [
+            sectionLabel(language, "need"),
+            ...needHits.map((hit) => buildNeedLine(hit, language)),
+          ].join("\n")
         : "",
       combinedStepLines.length > 0
-        ? [sectionLabel(language, "steps"), ...combinedStepLines.map((line, index) => `${index + 1}. ${line}`)].join(
-            "\n",
-          )
+        ? [
+            sectionLabel(language, "steps"),
+            ...combinedStepLines.map((line, index) => `${index + 1}. ${line}`),
+          ].join("\n")
         : "",
       apiTerms.length > 0
         ? [sectionLabel(language, "apis"), ...apiTerms.map((term) => `- \`${term}\``)].join("\n")
@@ -1308,13 +1366,21 @@ function buildGuideAnswer(
     answerSource: "generated",
     reviewStatus: "not_applicable",
     pendingClarificationQuestion:
-      analysis.shouldClarifyPlatform && options?.allowClarificationOnly === false ? question : undefined,
+      analysis.shouldClarifyPlatform && options?.allowClarificationOnly === false
+        ? question
+        : undefined,
     clarificationHits:
-      analysis.shouldClarifyPlatform && options?.allowClarificationOnly === false ? effectiveHits : undefined,
+      analysis.shouldClarifyPlatform && options?.allowClarificationOnly === false
+        ? effectiveHits
+        : undefined,
   };
 }
 
-function buildMixedAnswer(question: string, hits: DocSearchHit[], language: AnswerLanguage): DocAnswerResult {
+function buildMixedAnswer(
+  question: string,
+  hits: DocSearchHit[],
+  language: AnswerLanguage,
+): DocAnswerResult {
   const plan = planDocQuestion(question);
   const conceptQuestion = pickPlanStepQuestion(plan, "concept", question);
   const proceduralQuestion = pickPlanStepQuestion(plan, "procedural", question);
@@ -1324,7 +1390,11 @@ function buildMixedAnswer(question: string, hits: DocSearchHit[], language: Answ
     proceduralQuestion,
     proceduralHits.length > 0 ? proceduralHits : hits,
   ).relevantHits;
-  const sharedRule = buildCommunityCreationServerRule(proceduralQuestion, proceduralAnalyzedHits, language);
+  const sharedRule = buildCommunityCreationServerRule(
+    proceduralQuestion,
+    proceduralAnalyzedHits,
+    language,
+  );
 
   const definition = buildConceptAnswer(
     conceptQuestion,
@@ -1370,8 +1440,13 @@ function buildMixedAnswer(question: string, hits: DocSearchHit[], language: Answ
 
   return {
     mode: "extractive",
-    answer: [definitionBlock, stepsBlock, renderSourcesAppendix(combinedCitations)].filter(Boolean).join("\n\n"),
-    summary: procedural.summary === "platform clarification required" ? procedural.summary : "mixed answer from documentation chunks",
+    answer: [definitionBlock, stepsBlock, renderSourcesAppendix(combinedCitations)]
+      .filter(Boolean)
+      .join("\n\n"),
+    summary:
+      procedural.summary === "platform clarification required"
+        ? procedural.summary
+        : "mixed answer from documentation chunks",
     citations: combinedCitations,
     answerSource: "generated",
     reviewStatus: "not_applicable",
@@ -1414,10 +1489,12 @@ function buildAgentPrompt(question: string, groundedAnswer: string, hits: DocSea
         .map(([group, groupHits]) =>
           [
             `Evidence Group: ${group}`,
-            ...groupHits.slice(0, 2).map(
-              (hit, index) =>
-                `Source ${index + 1}\nPath: ${hit.path}\nHeading: ${hit.heading ?? "(none)"}\nLines: ${hit.startLine}-${hit.endLine}\nSnippet: ${hit.snippet}`,
-            ),
+            ...groupHits
+              .slice(0, 2)
+              .map(
+                (hit, index) =>
+                  `Source ${index + 1}\nPath: ${hit.path}\nHeading: ${hit.heading ?? "(none)"}\nLines: ${hit.startLine}-${hit.endLine}\nSnippet: ${hit.snippet}`,
+              ),
           ].join("\n\n"),
         )
         .join("\n\n---\n\n")
@@ -1506,9 +1583,7 @@ export async function buildDocAnswer(params: {
   }
   if (
     params.openAICompatible &&
-    (!params.provider ||
-      params.provider === "openai" ||
-      params.provider === "openai-compatible")
+    (!params.provider || params.provider === "openai" || params.provider === "openai-compatible")
   ) {
     const remote = await answerWithOpenAICompatible({
       config: {
@@ -1563,7 +1638,8 @@ export async function buildDocAnswer(params: {
     },
   });
   const terminal = await agentRun.completion;
-  const terminalAnswer = sliceBetweenSentinels(terminal.reply ?? "") || lastVisible || grounded.answer;
+  const terminalAnswer =
+    sliceBetweenSentinels(terminal.reply ?? "") || lastVisible || grounded.answer;
   return {
     ...grounded,
     mode: "agent",

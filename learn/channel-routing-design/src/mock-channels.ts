@@ -5,16 +5,21 @@ export type LearningMockChannel = {
   normalize: (input: Record<string, unknown>) => LearningInboundContext;
 };
 
+function stringValue(value: unknown, fallback: string): string {
+  return typeof value === "string" ? value : fallback;
+}
+
 export function createMockTelegramChannel(): LearningMockChannel {
   return {
     id: "telegram",
     normalize(input) {
       return normalizeLearningInboundContext({
         channel: "telegram",
-        accountId: String(input.accountId ?? "default"),
-        peerId: String(input.chatId ?? input.peerId ?? "unknown"),
+        accountId: stringValue(input.accountId, "default"),
+        peerId:
+          typeof input.chatId === "string" ? input.chatId : stringValue(input.peerId, "unknown"),
         chatType: (input.chatType as LearningInboundContext["chatType"] | undefined) ?? "direct",
-        text: String(input.text ?? ""),
+        text: stringValue(input.text, ""),
         senderId: typeof input.senderId === "string" ? input.senderId : undefined,
         mentioned: Boolean(input.mentioned),
       });
@@ -28,11 +33,14 @@ export function createMockDiscordChannel(): LearningMockChannel {
     normalize(input) {
       return normalizeLearningInboundContext({
         channel: "discord",
-        accountId: String(input.accountId ?? "default"),
-        peerId: String(input.channelId ?? input.peerId ?? "unknown"),
+        accountId: stringValue(input.accountId, "default"),
+        peerId:
+          typeof input.channelId === "string"
+            ? input.channelId
+            : stringValue(input.peerId, "unknown"),
         parentPeerId: typeof input.threadParentId === "string" ? input.threadParentId : undefined,
         chatType: (input.chatType as LearningInboundContext["chatType"] | undefined) ?? "channel",
-        text: String(input.content ?? input.text ?? ""),
+        text: typeof input.content === "string" ? input.content : stringValue(input.text, ""),
         senderId: typeof input.senderId === "string" ? input.senderId : undefined,
         mentioned: Boolean(input.mentioned),
         guildId: typeof input.guildId === "string" ? input.guildId : undefined,

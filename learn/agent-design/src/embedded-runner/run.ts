@@ -1,18 +1,23 @@
 import { ModelFallbackError } from "../model-fallback.js";
+import { detectToolCall, executeTool } from "../tools/runtime.js";
 import {
   appendTranscriptMessage,
   getTranscriptPath,
   loadLearningTranscript,
 } from "../transcript/store.js";
-import { detectToolCall, executeTool } from "../tools/runtime.js";
-import { loadBootstrapMemory } from "../workspace-memory/files.js";
-import { maybeFlushSessionMemory } from "../workspace-memory/flush.js";
 import type {
   LearningAgentCommandParams,
   LearningAgentResult,
   ModelCandidate,
   SkillSnapshot,
 } from "../types.js";
+import { loadBootstrapMemory } from "../workspace-memory/files.js";
+import { maybeFlushSessionMemory } from "../workspace-memory/flush.js";
+
+function inputString(input: Record<string, unknown>, key: string): string {
+  const value = input[key];
+  return typeof value === "string" ? value : "";
+}
 
 function maybeSimulateProviderFailure(params: {
   message: string;
@@ -20,7 +25,12 @@ function maybeSimulateProviderFailure(params: {
   attempt: number;
 }): void {
   if (params.message.includes("[simulate:timeout]") && params.attempt === 0) {
-    throw new ModelFallbackError("simulated timeout", "timeout", params.candidate.provider, params.candidate.model);
+    throw new ModelFallbackError(
+      "simulated timeout",
+      "timeout",
+      params.candidate.provider,
+      params.candidate.model,
+    );
   }
   if (params.message.includes("[simulate:rate-limit]") && params.attempt === 0) {
     throw new ModelFallbackError(
@@ -31,7 +41,12 @@ function maybeSimulateProviderFailure(params: {
     );
   }
   if (params.message.includes("[simulate:auth]") && params.attempt === 0) {
-    throw new ModelFallbackError("simulated auth failure", "auth", params.candidate.provider, params.candidate.model);
+    throw new ModelFallbackError(
+      "simulated auth failure",
+      "auth",
+      params.candidate.provider,
+      params.candidate.model,
+    );
   }
 }
 
@@ -173,7 +188,7 @@ export async function runEmbeddedBackend(params: {
         runId: params.command.runId,
         action: "write",
         path: toolOutput.split("\n")[0]?.replace("Memory written to ", "") ?? "",
-        note: String(toolCall.input.note ?? ""),
+        note: inputString(toolCall.input, "note"),
       });
     }
     const toolResult = await appendTranscriptMessage({

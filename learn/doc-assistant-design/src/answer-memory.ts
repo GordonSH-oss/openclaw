@@ -1,16 +1,16 @@
+import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { randomUUID } from "node:crypto";
 import {
-  tokenize,
-} from "./doc-index.js";
-import { isMemoryEntryEligibleForLookup, isTerminalResultCacheable } from "./answer-cache-policy.js";
+  isMemoryEntryEligibleForLookup,
+  isTerminalResultCacheable,
+} from "./answer-cache-policy.js";
+import { tokenize } from "./doc-index.js";
 import type {
   AnswerMemoryEntry,
   AnswerMemoryMatch,
   DocAnswerReviewStatus,
   DocAnswerSource,
-  DocCitation,
   DocMemoryEntryStatus,
   DocsAdminMemoryApproveParams,
   DocsAdminMemoryListParams,
@@ -71,12 +71,17 @@ export function normalizeMemoryQuestion(question: string): string {
     .trim();
 }
 
-function getNormalizedVariants(question: string, questionVariants?: string[]): {
+function getNormalizedVariants(
+  question: string,
+  questionVariants?: string[],
+): {
   questions: string[];
   normalizedQuestions: string[];
 } {
   const questions = uniqueStrings([question, ...(questionVariants ?? [])]);
-  const normalizedQuestions = uniqueStrings(questions.map((value) => normalizeMemoryQuestion(value)));
+  const normalizedQuestions = uniqueStrings(
+    questions.map((value) => normalizeMemoryQuestion(value)),
+  );
   return { questions, normalizedQuestions };
 }
 
@@ -85,7 +90,9 @@ function getStrongTokens(tokens: string[]): string[] {
 }
 
 function toIndexItem(entry: AnswerMemoryEntry): AnswerMemoryIndexItem {
-  const tokens = uniqueStrings(entry.normalizedQuestionVariants.flatMap((value) => tokenize(value)));
+  const tokens = uniqueStrings(
+    entry.normalizedQuestionVariants.flatMap((value) => tokenize(value)),
+  );
   return {
     entryId: entry.entryId,
     reviewStatus: entry.reviewStatus,
@@ -96,10 +103,7 @@ function toIndexItem(entry: AnswerMemoryEntry): AnswerMemoryIndexItem {
   };
 }
 
-async function persistAnswerMemory(
-  entries: AnswerMemoryEntry[],
-  dataDir?: string,
-): Promise<void> {
+async function persistAnswerMemory(entries: AnswerMemoryEntry[], dataDir?: string): Promise<void> {
   const root = resolveDocAssistantDataDir(dataDir);
   await fs.mkdir(root, { recursive: true });
   await fs.writeFile(
@@ -118,14 +122,17 @@ export async function replaceAnswerMemoryEntries(
   await persistAnswerMemory(sortEntries(entries), dataDir);
 }
 
-async function appendReviewQueueEvent(dataDir: string | undefined, event: ReviewQueueEvent): Promise<void> {
+async function appendReviewQueueEvent(
+  dataDir: string | undefined,
+  event: ReviewQueueEvent,
+): Promise<void> {
   const queuePath = getReviewQueuePath(dataDir);
   await fs.mkdir(path.dirname(queuePath), { recursive: true });
   await fs.appendFile(queuePath, `${JSON.stringify(event)}\n`, "utf-8");
 }
 
 function sortEntries(entries: AnswerMemoryEntry[]): AnswerMemoryEntry[] {
-  return entries.slice().sort((left, right) => right.updatedAt - left.updatedAt);
+  return entries.toSorted((left, right) => right.updatedAt - left.updatedAt);
 }
 
 export async function loadAnswerMemoryEntries(dataDir?: string): Promise<AnswerMemoryEntry[]> {
@@ -163,7 +170,10 @@ function scoreNormalizedQuestion(query: string, candidate: string): number {
   const queryTokens = tokenize(query);
   const candidateTokens = tokenize(candidate);
   const overlap = countOverlap(queryTokens, candidateTokens);
-  const strongOverlap = countOverlap(getStrongTokens(queryTokens), getStrongTokens(candidateTokens));
+  const strongOverlap = countOverlap(
+    getStrongTokens(queryTokens),
+    getStrongTokens(candidateTokens),
+  );
   const union = new Set([...queryTokens, ...candidateTokens]).size || 1;
   const coverage = overlap / union;
   score += overlap * 28;
@@ -208,7 +218,7 @@ export async function findAnswerMemoryMatch(params: {
       score: scoreNormalizedQuestion(normalizedQuestion, candidate),
       matchedQuestion: entry.questionVariants[index] ?? entry.question,
     }));
-    const topVariant = scoredVariants.sort((left, right) => right.score - left.score)[0];
+    const topVariant = scoredVariants.toSorted((left, right) => right.score - left.score)[0];
     if (!topVariant) {
       continue;
     }
@@ -244,7 +254,7 @@ function findExistingEntryForEnqueue(
     }
     const score = entry.normalizedQuestionVariants
       .map((candidate) => scoreNormalizedQuestion(normalizedQuestion, candidate))
-      .sort((left, right) => right - left)[0];
+      .toSorted((left, right) => right - left)[0];
     if (!score) {
       continue;
     }
@@ -321,7 +331,10 @@ export async function enqueueGeneratedAnswerMemory(params: {
         return entry;
       }
       if (entry.reviewStatus === "pending_review") {
-        const variants = getNormalizedVariants(params.question, [...entry.questionVariants, params.question]);
+        const variants = getNormalizedVariants(params.question, [
+          ...entry.questionVariants,
+          params.question,
+        ]);
         return {
           ...entry,
           questionVariants: variants.questions,
@@ -346,7 +359,8 @@ export async function enqueueGeneratedAnswerMemory(params: {
       };
     });
     await persistAnswerMemory(updatedEntries, params.dataDir);
-    const refreshed = updatedEntries.find((entry) => entry.entryId === existing.entry.entryId) ?? existing.entry;
+    const refreshed =
+      updatedEntries.find((entry) => entry.entryId === existing.entry.entryId) ?? existing.entry;
     await appendReviewQueueEvent(params.dataDir, {
       id: randomUUID(),
       entryId: refreshed.entryId,
@@ -389,9 +403,11 @@ export async function enqueueGeneratedAnswerMemory(params: {
   return entry;
 }
 
-export async function listAnswerMemory(params?: DocsAdminMemoryListParams & {
-  dataDir?: string;
-}): Promise<AnswerMemoryEntry[]> {
+export async function listAnswerMemory(
+  params?: DocsAdminMemoryListParams & {
+    dataDir?: string;
+  },
+): Promise<AnswerMemoryEntry[]> {
   const entries = await loadAnswerMemoryEntries(params?.dataDir);
   const normalizedQuery = params?.query ? normalizeMemoryQuestion(params.query) : "";
   const filtered = entries
@@ -446,9 +462,11 @@ async function mutateAnswerMemoryEntry(params: {
   return updatedEntry;
 }
 
-export async function approveAnswerMemoryEntry(params: DocsAdminMemoryApproveParams & {
-  dataDir?: string;
-}): Promise<AnswerMemoryEntry | null> {
+export async function approveAnswerMemoryEntry(
+  params: DocsAdminMemoryApproveParams & {
+    dataDir?: string;
+  },
+): Promise<AnswerMemoryEntry | null> {
   return await mutateAnswerMemoryEntry({
     dataDir: params.dataDir,
     entryId: params.entryId,
@@ -474,9 +492,11 @@ export async function approveAnswerMemoryEntry(params: DocsAdminMemoryApprovePar
   });
 }
 
-export async function rejectAnswerMemoryEntry(params: DocsAdminMemoryRejectParams & {
-  dataDir?: string;
-}): Promise<AnswerMemoryEntry | null> {
+export async function rejectAnswerMemoryEntry(
+  params: DocsAdminMemoryRejectParams & {
+    dataDir?: string;
+  },
+): Promise<AnswerMemoryEntry | null> {
   return await mutateAnswerMemoryEntry({
     dataDir: params.dataDir,
     entryId: params.entryId,
@@ -491,9 +511,11 @@ export async function rejectAnswerMemoryEntry(params: DocsAdminMemoryRejectParam
   });
 }
 
-export async function updateAnswerMemoryEntry(params: DocsAdminMemoryUpdateParams & {
-  dataDir?: string;
-}): Promise<AnswerMemoryEntry | null> {
+export async function updateAnswerMemoryEntry(
+  params: DocsAdminMemoryUpdateParams & {
+    dataDir?: string;
+  },
+): Promise<AnswerMemoryEntry | null> {
   return await mutateAnswerMemoryEntry({
     dataDir: params.dataDir,
     entryId: params.entryId,
@@ -527,7 +549,8 @@ export async function getAnswerMemoryCounts(dataDir?: string): Promise<{
   return {
     memoryEntries: entries.length,
     pendingReviewEntries: entries.filter((entry) => entry.reviewStatus === "pending_review").length,
-    approvedStandardEntries: entries.filter((entry) => entry.reviewStatus === "approved_standard").length,
+    approvedStandardEntries: entries.filter((entry) => entry.reviewStatus === "approved_standard")
+      .length,
   };
 }
 

@@ -63,7 +63,6 @@ export async function runWithModelFallback<T>(params: {
   attempts: Array<{ provider: string; model: string; ok: boolean; reason?: string }>;
 }> {
   const attempts: Array<{ provider: string; model: string; ok: boolean; reason?: string }> = [];
-  let lastError: unknown;
 
   for (const [index, candidate] of params.candidates.entries()) {
     try {
@@ -75,7 +74,6 @@ export async function runWithModelFallback<T>(params: {
       });
       return { result, selected: candidate, attempts };
     } catch (error) {
-      lastError = error;
       attempts.push({
         provider: candidate.provider,
         model: candidate.model,

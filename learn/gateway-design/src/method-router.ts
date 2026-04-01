@@ -103,7 +103,7 @@ export class MethodRouter {
       requiredScopes: opts?.requiredScopes,
       description: opts?.description,
     });
-    return this;  // 支持链式调用
+    return this; // 支持链式调用
   }
 
   /**
@@ -123,19 +123,13 @@ export class MethodRouter {
 
     // ── 未知方法 ────────────────────────────────────────────────────
     if (!registered) {
-      respond(
-        false,
-        undefined,
-        makeError("NOT_FOUND", `未知方法: "${method}"`),
-      );
+      respond(false, undefined, makeError("NOT_FOUND", `未知方法: "${method}"`));
       return;
     }
 
     // ── 权限检查 ────────────────────────────────────────────────────
     if (registered.requiredScopes && registered.requiredScopes.length > 0) {
-      const hasScope = registered.requiredScopes.every((scope) =>
-        client.scopes.includes(scope),
-      );
+      const hasScope = registered.requiredScopes.every((scope) => client.scopes.includes(scope));
       if (!hasScope) {
         respond(
           false,
@@ -154,11 +148,7 @@ export class MethodRouter {
       await registered.handler(ctx);
     } catch (err) {
       console.error(`[router] 方法 ${method} 执行出错:`, err);
-      respond(
-        false,
-        undefined,
-        makeError("UNAVAILABLE", String(err)),
-      );
+      respond(false, undefined, makeError("UNAVAILABLE", String(err)));
     }
   }
 
@@ -195,16 +185,24 @@ export function requireString(params: unknown, key: string): string {
 }
 
 export function optionalString(params: unknown, key: string): string | undefined {
-  if (typeof params !== "object" || params === null) return undefined;
+  if (typeof params !== "object" || params === null) {
+    return undefined;
+  }
   const value = (params as Record<string, unknown>)[key];
-  if (typeof value !== "string") return undefined;
+  if (typeof value !== "string") {
+    return undefined;
+  }
   const trimmed = value.trim();
   return trimmed || undefined;
 }
 
 export function optionalNumber(params: unknown, key: string): number | undefined {
-  if (typeof params !== "object" || params === null) return undefined;
+  if (typeof params !== "object" || params === null) {
+    return undefined;
+  }
   const value = (params as Record<string, unknown>)[key];
-  if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return undefined;
+  }
   return value;
 }

@@ -6,7 +6,7 @@
   "main": "src/index.ts",
   "scripts": {
     "dev": "node --import ../gateway-design/node_modules/tsx/dist/loader.mjs src/index.ts",
-    "typecheck": "tsc --noEmit",
-    "test": "node --import ../gateway-design/node_modules/tsx/dist/loader.mjs --test src/*.test.ts"
+    "test": "node --import ../gateway-design/node_modules/tsx/dist/loader.mjs --test src/*.test.ts",
+    "typecheck": "tsc --noEmit"
   }
 }

@@ -1,24 +1,20 @@
-import test from "node:test";
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { randomUUID } from "node:crypto";
-import { resolveDefaultDocsRoot } from "./doc-index.js";
-import { buildDocAnswer } from "./doc-answer.js";
+import test from "node:test";
 import { replaceAnswerMemoryEntries } from "./answer-memory.js";
-import { detectGreetingIntent } from "./greeting-intent.js";
+import { buildDocAnswer } from "./doc-answer.js";
+import { resolveDefaultDocsRoot } from "./doc-index.js";
+import { planDocQuestion, searchDocs } from "./doc-search.js";
 import {
   detectClarificationFollowUpQuestion,
   rewriteClarificationQuestion,
   shouldReuseClarificationHits,
   updateClarificationStateAfterAnswer,
 } from "./follow-up-context.js";
-import { executeDocQuestion } from "./question-execution.js";
-import { planDocQuestion, searchDocs } from "./doc-search.js";
-import { createDocAssistantRouter } from "./server-methods.js";
-import { createDocAssistantRuntimeState } from "./server-runtime-state.js";
-import { handleConnection } from "./ws-connection.js";
+import { detectGreetingIntent } from "./greeting-intent.js";
 import type {
   AnswerMemoryEntry,
   DocAssistantEvent,
@@ -26,6 +22,10 @@ import type {
   DocsAcceptedResult,
   DocsTerminalResult,
 } from "./protocol/index.js";
+import { executeDocQuestion } from "./question-execution.js";
+import { createDocAssistantRouter } from "./server-methods.js";
+import { createDocAssistantRuntimeState } from "./server-runtime-state.js";
+import { handleConnection } from "./ws-connection.js";
 
 async function makeTempDir(name: string): Promise<string> {
   return await fs.mkdtemp(path.join(os.tmpdir(), `${name}-`));
@@ -422,12 +422,9 @@ async function createWebhookFixtureDocs(): Promise<string> {
   );
   await fs.writeFile(
     path.join(docsRoot, "docs", "chatsdk-web", "message", "delete.md"),
-    [
-      "# Delete messages",
-      "",
-      "Delete a message for yourself or for all participants.",
-      "",
-    ].join("\n"),
+    ["# Delete messages", "", "Delete a message for yourself or for all participants.", ""].join(
+      "\n",
+    ),
     "utf-8",
   );
   return docsRoot;
@@ -441,7 +438,9 @@ function makeMemoryEntry(params: {
   questionVariants?: string[];
 }): AnswerMemoryEntry {
   const now = Date.now();
-  const questionVariants = Array.from(new Set([params.question, ...(params.questionVariants ?? [])]));
+  const questionVariants = Array.from(
+    new Set([params.question, ...(params.questionVariants ?? [])]),
+  );
   const normalize = (value: string) =>
     value
       .toLowerCase()
@@ -536,7 +535,8 @@ class RpcClient {
       }
       this.events.push(frame);
       const matched = this.waiters.find(
-        (waiter) => waiter.event === frame.event && (waiter.predicate ? waiter.predicate(frame) : true),
+        (waiter) =>
+          waiter.event === frame.event && (waiter.predicate ? waiter.predicate(frame) : true),
       );
       if (!matched) {
         return;
@@ -685,7 +685,7 @@ function eventData<T>(event: DocAssistantEvent): T {
   return event.data as T;
 }
 
-test("docs.user.create returns unique ids and stable session keys", async (t) => {
+void test("docs.user.create returns unique ids and stable session keys", async (t) => {
   const dataDir = await makeTempDir("doc-assistant-users");
   const { client } = await createHarness({ dataDir });
   t.after(() => client.close());
@@ -702,7 +702,7 @@ test("docs.user.create returns unique ids and stable session keys", async (t) =>
   assert.equal(second.sessionKey, `temp/${second.userId}`);
 });
 
-test("docs.search.preview returns heading-based citations from local docs", async (t) => {
+void test("docs.search.preview returns heading-based citations from local docs", async (t) => {
   const dataDir = await makeTempDir("doc-assistant-search");
   const { client } = await createHarness({ dataDir });
   t.after(() => client.close());
@@ -715,22 +715,37 @@ test("docs.search.preview returns heading-based citations from local docs", asyn
   );
 
   assert.equal(result.hits.length > 0, true);
-  assert.equal(result.hits.some((hit) => hit.path === "docs/install/node.md"), true);
+  assert.equal(
+    result.hits.some((hit) => hit.path === "docs/install/node.md"),
+    true,
+  );
   const nodeHit = result.hits.find((hit) => hit.path === "docs/install/node.md");
   assert.equal((nodeHit?.startLine ?? 0) > 0, true);
   assert.equal((nodeHit?.endLine ?? 0) >= (nodeHit?.startLine ?? 0), true);
 });
 
-test("docs.methods and docs.status expose supported control-plane surfaces", async (t) => {
+void test("docs.methods and docs.status expose supported control-plane surfaces", async (t) => {
   const dataDir = await makeTempDir("doc-assistant-methods");
   const { client } = await createHarness({ dataDir });
   t.after(() => client.close());
 
   const methods = responseResult<MethodsResult>(await client.request("docs.methods"));
-  assert.equal(methods.methods.some((entry) => entry.method === "docs.ask"), true);
-  assert.equal(methods.methods.some((entry) => entry.method === "docs.run.wait"), true);
-  assert.equal(methods.methods.some((entry) => entry.method === "docs.search.preview"), true);
-  assert.equal(methods.methods.some((entry) => entry.method === "docs.history.list"), true);
+  assert.equal(
+    methods.methods.some((entry) => entry.method === "docs.ask"),
+    true,
+  );
+  assert.equal(
+    methods.methods.some((entry) => entry.method === "docs.run.wait"),
+    true,
+  );
+  assert.equal(
+    methods.methods.some((entry) => entry.method === "docs.search.preview"),
+    true,
+  );
+  assert.equal(
+    methods.methods.some((entry) => entry.method === "docs.history.list"),
+    true,
+  );
 
   const status = responseResult<StatusResult>(await client.request("docs.status"));
   assert.equal(status.status, "running");
@@ -742,7 +757,7 @@ test("docs.methods and docs.status expose supported control-plane surfaces", asy
   assert.equal(status.questionHistoryEntries, 0);
 });
 
-test("search prefers matching platform docs over archive and other platforms", async () => {
+void test("search skips archive docs and prefers matching platform docs over other platforms", async () => {
   const docsRoot = await makeTempDir("doc-assistant-ranking");
   await fs.mkdir(path.join(docsRoot, "callsdk-ios"), { recursive: true });
   await fs.mkdir(path.join(docsRoot, "callsdk-web"), { recursive: true });
@@ -772,10 +787,13 @@ test("search prefers matching platform docs over archive and other platforms", a
 
   assert.equal(hits[0]?.path.endsWith("callsdk-ios/one-to-one-call.md"), true);
   assert.equal(hits[1]?.path.endsWith("callsdk-web/one-to-one-call.md"), true);
-  assert.equal(hits[2]?.path.endsWith(".archive/ios/one-to-one-call.md"), true);
+  assert.equal(
+    hits.some((hit) => hit.path.includes(".archive/")),
+    false,
+  );
 });
 
-test("search downweights partial docs when a product page matches", async () => {
+void test("search downweights partial docs when a product page matches", async () => {
   const docsRoot = await makeTempDir("doc-assistant-partials");
   await fs.mkdir(path.join(docsRoot, "callsdk-ios"), { recursive: true });
   await fs.mkdir(path.join(docsRoot, "partials", "shared"), { recursive: true });
@@ -800,7 +818,7 @@ test("search downweights partial docs when a product page matches", async () => 
   assert.equal(hits[0]?.path.endsWith("callsdk-ios/push-config.md"), true);
 });
 
-test("search prefers primary docs over archive when the basename matches", async () => {
+void test("search skips archive docs when the basename matches a primary doc", async () => {
   const docsRoot = await makeTempDir("doc-assistant-archive-tier");
   await fs.mkdir(path.join(docsRoot, "callsdk-ios"), { recursive: true });
   await fs.mkdir(path.join(docsRoot, ".archive", "zh-source", "ios-callplus"), { recursive: true });
@@ -823,13 +841,15 @@ test("search prefers primary docs over archive when the basename matches", async
   });
 
   assert.equal(hits[0]?.path.endsWith("callsdk-ios/callplus-voip.md"), true);
-  assert.equal(hits.some((hit) => hit.path.includes(".archive/")), true);
-  const archiveIndex = hits.findIndex((hit) => hit.path.includes(".archive/"));
   const primaryIndex = hits.findIndex((hit) => hit.path.endsWith("callsdk-ios/callplus-voip.md"));
-  assert.equal(primaryIndex !== -1 && archiveIndex !== -1 && primaryIndex < archiveIndex, true);
+  assert.equal(primaryIndex !== -1, true);
+  assert.equal(
+    hits.some((hit) => hit.path.includes(".archive/")),
+    false,
+  );
 });
 
-test("search boosts requirement-oriented headings for requirement questions", async () => {
+void test("search boosts requirement-oriented headings for requirement questions", async () => {
   const docsRoot = await makeTempDir("doc-assistant-heading-intent");
   await fs.mkdir(path.join(docsRoot, "callsdk-ios"), { recursive: true });
 
@@ -862,7 +882,7 @@ test("search boosts requirement-oriented headings for requirement questions", as
   assert.equal(hits[1]?.heading, "When to use VoIP PushKit");
 });
 
-test("search downranks server sync docs for direct chat quickstart questions", async () => {
+void test("search downranks server sync docs for direct chat quickstart questions", async () => {
   const docsRoot = await makeTempDir("doc-assistant-direct-chat-ranking");
   await fs.mkdir(path.join(docsRoot, "platform-chat-api", "message"), { recursive: true });
   await fs.mkdir(path.join(docsRoot, "chatsdk-android"), { recursive: true });
@@ -926,10 +946,13 @@ test("search downranks server sync docs for direct chat quickstart questions", a
 
   assert.equal(hits[0]?.path.includes("chatsdk-"), true);
   assert.equal(hits[0]?.path.includes("platform-chat-api"), false);
-  assert.equal(hits.slice(0, 3).every((hit) => !hit.path.includes("platform-chat-api")), true);
+  assert.equal(
+    hits.slice(0, 3).every((hit) => !hit.path.includes("platform-chat-api")),
+    true,
+  );
 });
 
-test("search keeps direct and group channel docs ahead of server and community noise for generic channel creation questions", async () => {
+void test("search keeps direct and group channel docs ahead of server and community noise for generic channel creation questions", async () => {
   const docsRoot = await makeTempDir("doc-assistant-channel-creation-ranking");
   await fs.mkdir(path.join(docsRoot, "platform-chat-api", "message"), { recursive: true });
   await fs.mkdir(path.join(docsRoot, "chatsdk-android", "direct-system-channels"), {
@@ -957,7 +980,7 @@ test("search keeps direct and group channel docs ahead of server and community n
       "",
       "## Get a specific channel",
       "",
-      "Create `DirectChannel(\"userId\")` and call `reload()` to get the latest direct channel state.",
+      'Create `DirectChannel("userId")` and call `reload()` to get the latest direct channel state.',
       "",
     ].join("\n"),
     "utf-8",
@@ -1010,7 +1033,7 @@ test("search keeps direct and group channel docs ahead of server and community n
   assert.equal(directHits[0]?.path.includes("community-channel"), false);
 });
 
-test("search treats chat server connection questions as client SDK connection, not server API catalog", async () => {
+void test("search treats chat server connection questions as client SDK connection, not server API catalog", async () => {
   const docsRoot = await createClientConnectFixtureDocs();
 
   const hits = await searchDocs({
@@ -1021,11 +1044,14 @@ test("search treats chat server connection questions as client SDK connection, n
 
   assert.equal(hits[0]?.path.includes("chatsdk-android/connection/connect.md"), true);
   assert.equal(hits[0]?.path.includes("platform-chat-api"), false);
-  assert.equal(hits.slice(0, 2).every((hit) => hit.path.includes("/connection/connect.md")), true);
+  assert.equal(
+    hits.slice(0, 2).every((hit) => hit.path.includes("/connection/connect.md")),
+    true,
+  );
   assert.equal(hits[0]?.heading, "Connect");
 });
 
-test("search prefers webhook overview for generic webhook setup wording", async () => {
+void test("search prefers webhook overview for generic webhook setup wording", async () => {
   const docsRoot = await createWebhookFixtureDocs();
 
   const hits = await searchDocs({
@@ -1036,10 +1062,13 @@ test("search prefers webhook overview for generic webhook setup wording", async 
 
   assert.equal(hits[0]?.path.endsWith("docs/platform-chat-api/webhook/overview.md"), true);
   assert.equal(hits[0]?.heading, "Set up webhooks");
-  assert.equal(hits.slice(0, 2).some((hit) => hit.path.includes("group-member-manager.md")), false);
+  assert.equal(
+    hits.slice(0, 2).some((hit) => hit.path.includes("group-member-manager.md")),
+    false,
+  );
 });
 
-test("search ignores filler wording and still prefers webhook overview", async () => {
+void test("search ignores filler wording and still prefers webhook overview", async () => {
   const docsRoot = await createWebhookFixtureDocs();
 
   const hits = await searchDocs({
@@ -1050,10 +1079,13 @@ test("search ignores filler wording and still prefers webhook overview", async (
 
   assert.equal(hits[0]?.path.endsWith("docs/platform-chat-api/webhook/overview.md"), true);
   assert.equal(hits[0]?.heading, "Set up webhooks");
-  assert.equal(hits.slice(0, 2).some((hit) => hit.path.endsWith("/message/delete.md")), false);
+  assert.equal(
+    hits.slice(0, 2).some((hit) => hit.path.endsWith("/message/delete.md")),
+    false,
+  );
 });
 
-test("buildDocAnswer asks for platform clarification when multiple SDK platforms match", async () => {
+void test("buildDocAnswer asks for platform clarification when multiple SDK platforms match", async () => {
   const result = await buildDocAnswer({
     runId: "clarify-1",
     question: "How to start a direct chat?",
@@ -1099,7 +1131,7 @@ test("buildDocAnswer asks for platform clarification when multiple SDK platforms
   assert.equal(result.answer.includes("我不应该直接猜平台"), false);
 });
 
-test("buildDocAnswer asks for channel clarification when direct and group channel tracks compete", async () => {
+void test("buildDocAnswer asks for channel clarification when direct and group channel tracks compete", async () => {
   const result = await buildDocAnswer({
     runId: "clarify-channel-1",
     question: "How to create a channel?",
@@ -1110,8 +1142,8 @@ test("buildDocAnswer asks for channel clarification when direct and group channe
         heading: "Get a specific channel",
         startLine: 14,
         endLine: 40,
-        snippet: "Create `DirectChannel(\"userId\")` and call `reload()` to load the direct channel.",
-        text: "Create `DirectChannel(\"userId\")` and call `reload()` to load the direct channel.",
+        snippet: 'Create `DirectChannel("userId")` and call `reload()` to load the direct channel.',
+        text: 'Create `DirectChannel("userId")` and call `reload()` to load the direct channel.',
         score: 92,
       },
       {
@@ -1142,7 +1174,7 @@ test("buildDocAnswer asks for channel clarification when direct and group channe
   assert.equal(result.answer.includes("Relevant doc entry points"), true);
 });
 
-test("buildDocAnswer asks for platform clarification on chat-server connection questions when SDK connection docs span platforms", async () => {
+void test("buildDocAnswer asks for platform clarification on chat-server connection questions when SDK connection docs span platforms", async () => {
   const result = await buildDocAnswer({
     runId: "clarify-connect-1",
     question: "How to connect to the chat server?",
@@ -1186,7 +1218,7 @@ test("buildDocAnswer asks for platform clarification on chat-server connection q
   assert.equal(result.answer.includes("subchannel"), false);
 });
 
-test("buildDocAnswer turns explicit-platform chat questions into a step guide", async () => {
+void test("buildDocAnswer turns explicit-platform chat questions into a step guide", async () => {
   const result = await buildDocAnswer({
     runId: "guide-1",
     question: "How to start a direct chat on Android?",
@@ -1206,7 +1238,8 @@ test("buildDocAnswer turns explicit-platform chat questions into a step guide", 
         heading: "Initialize the SDK",
         startLine: 1,
         endLine: 24,
-        snippet: "Call `NCEngine.initialize()` before you connect to the server or use messaging features.",
+        snippet:
+          "Call `NCEngine.initialize()` before you connect to the server or use messaging features.",
         text: "Call `NCEngine.initialize()` before you connect to the server or use messaging features.",
         score: 91,
       },
@@ -1216,7 +1249,7 @@ test("buildDocAnswer turns explicit-platform chat questions into a step guide", 
         startLine: 20,
         endLine: 34,
         snippet: "A direct channel enables one-to-one messaging between two users.",
-        text: "A direct channel enables one-to-one messaging between two users. Create a `DirectChannel(\"userId\")` instance.",
+        text: 'A direct channel enables one-to-one messaging between two users. Create a `DirectChannel("userId")` instance.',
         score: 90,
       },
       {
@@ -1241,7 +1274,7 @@ test("buildDocAnswer turns explicit-platform chat questions into a step guide", 
   assert.equal(result.answer.includes("sendMessage"), true);
 });
 
-test("search prefers community overview docs for concept questions", async () => {
+void test("search prefers community overview docs for concept questions", async () => {
   const docsRoot = await createCommunityChannelFixtureDocs();
 
   const hits = await searchDocs({
@@ -1264,7 +1297,7 @@ test("search prefers community overview docs for concept questions", async () =>
   assert.equal(dndIndex === -1 || overviewIndex < dndIndex, true);
 });
 
-test("search prefers open channel overview docs for open-channel concept questions", async () => {
+void test("search prefers open channel overview docs for open-channel concept questions", async () => {
   const docsRoot = await createOpenChannelFixtureDocs();
 
   const hits = await searchDocs({
@@ -1284,7 +1317,7 @@ test("search prefers open channel overview docs for open-channel concept questio
   assert.equal(communityOverviewIndex === -1 || openOverviewIndex < communityOverviewIndex, true);
 });
 
-test("search keeps creation workflow docs ahead of overview for procedural community queries", async () => {
+void test("search keeps creation workflow docs ahead of overview for procedural community queries", async () => {
   const docsRoot = await createCommunityChannelFixtureDocs();
 
   const hits = await searchDocs({
@@ -1301,7 +1334,7 @@ test("search keeps creation workflow docs ahead of overview for procedural commu
   );
 });
 
-test("mixed community queries preserve both concept and procedural retrieval buckets", async () => {
+void test("mixed community queries preserve both concept and procedural retrieval buckets", async () => {
   const docsRoot = await createCommunityChannelFixtureDocs();
 
   const hits = await searchDocs({
@@ -1310,8 +1343,14 @@ test("mixed community queries preserve both concept and procedural retrieval buc
     maxResults: 5,
   });
 
-  assert.equal(hits.some((hit) => hit.retrievalBucket === "concept"), true);
-  assert.equal(hits.some((hit) => hit.retrievalBucket === "procedural"), true);
+  assert.equal(
+    hits.some((hit) => hit.retrievalBucket === "concept"),
+    true,
+  );
+  assert.equal(
+    hits.some((hit) => hit.retrievalBucket === "procedural"),
+    true,
+  );
   assert.equal(
     hits.some(
       (hit) =>
@@ -1328,7 +1367,7 @@ test("mixed community queries preserve both concept and procedural retrieval buc
   );
 });
 
-test("planDocQuestion carries the first concept referent into a later pronoun step", () => {
+void test("planDocQuestion carries the first concept referent into a later pronoun step", () => {
   const plan = planDocQuestion("What is community channel? How to get it?");
 
   assert.equal(plan.kind, "mixed");
@@ -1337,7 +1376,7 @@ test("planDocQuestion carries the first concept referent into a later pronoun st
   assert.equal(plan.steps[1]?.intent, "procedural");
 });
 
-test("mixed pronoun queries keep community docs ahead of generic channel get pages", async () => {
+void test("mixed pronoun queries keep community docs ahead of generic channel get pages", async () => {
   const docsRoot = await createCommunityChannelFixtureDocs();
 
   const hits = await searchDocs({
@@ -1354,7 +1393,9 @@ test("mixed pronoun queries keep community docs ahead of generic channel get pag
         hit.path.endsWith("docs/chatsdk-web/community-channels/creating-channel.md") ||
         hit.path.endsWith("docs/chatsdk-android/community-channels/overview.md")),
   );
-  const directGetIndex = hits.findIndex((hit) => hit.path.endsWith("docs/chatsdk-ios/channel/get.md"));
+  const directGetIndex = hits.findIndex((hit) =>
+    hit.path.endsWith("docs/chatsdk-ios/channel/get.md"),
+  );
 
   assert.equal(communityProceduralIndex !== -1, true);
   assert.equal(directGetIndex === -1 || communityProceduralIndex < directGetIndex, true);
@@ -1364,7 +1405,7 @@ test("mixed pronoun queries keep community docs ahead of generic channel get pag
   );
 });
 
-test("buildDocAnswer turns webhook questions into a direct configuration guide", async () => {
+void test("buildDocAnswer turns webhook questions into a direct configuration guide", async () => {
   const result = await buildDocAnswer({
     runId: "guide-webhook-1",
     question: "Just let me know how to implement webhook",
@@ -1377,8 +1418,7 @@ test("buildDocAnswer turns webhook questions into a direct configuration guide",
         endLine: 6,
         snippet:
           "Open the Nexconn Console, go to Webhooks, click Config, enter the webhook URL, select the events, and save.",
-        text:
-          "Open the Nexconn Console, go to Webhooks, click Config, enter the webhook URL, select the events, and save.",
+        text: "Open the Nexconn Console, go to Webhooks, click Config, enter the webhook URL, select the events, and save.",
         score: 120,
       },
       {
@@ -1394,14 +1434,17 @@ test("buildDocAnswer turns webhook questions into a direct configuration guide",
   });
 
   assert.equal(result.summary.startsWith("guided answer from "), true);
-  assert.equal(result.answer.includes("Use the documented flow below to configure webhooks."), true);
+  assert.equal(
+    result.answer.includes("Use the documented flow below to configure webhooks."),
+    true,
+  );
   assert.equal(result.answer.includes("Open the Webhooks settings, click Config"), true);
   assert.equal(result.answer.includes("Verify the webhook signature"), true);
   assert.equal(result.answer.includes("token acquisition"), false);
   assert.equal(result.answer.includes("send-message example"), false);
 });
 
-test("buildDocAnswer uses open channel evidence instead of community definitions", async () => {
+void test("buildDocAnswer uses open channel evidence instead of community definitions", async () => {
   const result = await buildDocAnswer({
     runId: "concept-open-channel-1",
     question: "what about open channel?",
@@ -1414,8 +1457,7 @@ test("buildDocAnswer uses open channel evidence instead of community definitions
         endLine: 12,
         snippet:
           "Open channels provide high-concurrency messaging for unlimited online participants.",
-        text:
-          "Open channels provide high-concurrency messaging for unlimited online participants. They do not support offline push, and local messages are cleared when the user leaves the channel.",
+        text: "Open channels provide high-concurrency messaging for unlimited online participants. They do not support offline push, and local messages are cleared when the user leaves the channel.",
         score: 120,
       },
       {
@@ -1425,8 +1467,7 @@ test("buildDocAnswer uses open channel evidence instead of community definitions
         endLine: 12,
         snippet:
           "Community channels are designed for large-scale communication with subchannels and app-server-managed membership.",
-        text:
-          "Community channels are designed for large-scale communication with subchannels and app-server-managed membership. They support private subchannels and user groups.",
+        text: "Community channels are designed for large-scale communication with subchannels and app-server-managed membership. They support private subchannels and user groups.",
         score: 116,
       },
     ],
@@ -1440,7 +1481,7 @@ test("buildDocAnswer uses open channel evidence instead of community definitions
   );
 });
 
-test("buildDocAnswer turns concept questions into an explanation instead of a step guide", async () => {
+void test("buildDocAnswer turns concept questions into an explanation instead of a step guide", async () => {
   const result = await buildDocAnswer({
     runId: "concept-1",
     question: "what's offline messages?",
@@ -1453,8 +1494,7 @@ test("buildDocAnswer turns concept questions into an explanation instead of a st
         endLine: 25,
         snippet:
           "An offline message is a message received while the user is not online. The server automatically retains messages during the user's offline period.",
-        text:
-          "An offline message is a message received while the user is not online. The Nexconn server automatically retains messages received during the user's offline period.",
+        text: "An offline message is a message received while the user is not online. The Nexconn server automatically retains messages received during the user's offline period.",
         score: 98,
       },
       {
@@ -1464,8 +1504,7 @@ test("buildDocAnswer turns concept questions into an explanation instead of a st
         endLine: 211,
         snippet:
           "Messages delivered to a user while they were not connected. Nexconn retains undelivered messages for 7 days.",
-        text:
-          "Messages delivered to a user while they were not connected. Nexconn retains undelivered messages for 7 days. When the recipient reconnects within that window, Nexconn pushes the messages on reconnection.",
+        text: "Messages delivered to a user while they were not connected. Nexconn retains undelivered messages for 7 days. When the recipient reconnects within that window, Nexconn pushes the messages on reconnection.",
         score: 95,
       },
       {
@@ -1475,8 +1514,7 @@ test("buildDocAnswer turns concept questions into an explanation instead of a st
         endLine: 35,
         snippet:
           "You can modify the offline message cloud retention period in the Nexconn Console.",
-        text:
-          "You can modify the offline message cloud retention period in the Nexconn Console. This setting controls how long messages are kept while a user is offline.",
+        text: "You can modify the offline message cloud retention period in the Nexconn Console. This setting controls how long messages are kept while a user is offline.",
         score: 90,
       },
     ],
@@ -1485,13 +1523,16 @@ test("buildDocAnswer turns concept questions into an explanation instead of a st
   assert.equal(result.summary.startsWith("concept answer from "), true);
   assert.equal(result.answer.includes("Definition"), true);
   assert.equal(result.answer.includes("Key points"), true);
-  assert.equal(result.answer.includes("offline message is a message received while the user is not online"), true);
+  assert.equal(
+    result.answer.includes("offline message is a message received while the user is not online"),
+    true,
+  );
   assert.equal(result.answer.includes("retains") || result.answer.includes("retention"), true);
   assert.equal(result.answer.includes("Steps"), false);
   assert.equal(result.answer.includes("What you need"), false);
 });
 
-test("buildDocAnswer refuses concept answers when docs only mention the term incidentally", async () => {
+void test("buildDocAnswer refuses concept answers when docs only mention the term incidentally", async () => {
   const result = await buildDocAnswer({
     runId: "concept-weak-1",
     question: "what is Nexconn",
@@ -1504,8 +1545,7 @@ test("buildDocAnswer refuses concept answers when docs only mention the term inc
         endLine: 96,
         snippet:
           "Use this when signing out or switching app user accounts. Disconnecting with push disabled prevents push notifications from being delivered to the signed-out account.",
-        text:
-          "Use this when signing out or switching app user accounts. Disconnecting with push disabled prevents push notifications from being delivered to the signed-out account. Nexconn uses this behavior when a user signs out.",
+        text: "Use this when signing out or switching app user accounts. Disconnecting with push disabled prevents push notifications from being delivered to the signed-out account. Nexconn uses this behavior when a user signs out.",
         score: 88,
       },
     ],
@@ -1513,11 +1553,14 @@ test("buildDocAnswer refuses concept answers when docs only mention the term inc
 
   assert.equal(result.summary, "no relevant documentation found");
   assert.equal(result.citations.length, 0);
-  assert.equal(result.answer.includes("I couldn't find reliable local documentation that directly defines"), true);
+  assert.equal(
+    result.answer.includes("I couldn't find reliable local documentation that directly defines"),
+    true,
+  );
   assert.equal(result.answer.includes("Disconnect and disable push"), false);
 });
 
-test("buildDocAnswer accepts overview pages as concept evidence", async () => {
+void test("buildDocAnswer accepts overview pages as concept evidence", async () => {
   const result = await buildDocAnswer({
     runId: "concept-community-overview-1",
     question: "What is community channel?",
@@ -1528,9 +1571,9 @@ test("buildDocAnswer accepts overview pages as concept evidence", async () => {
         heading: "Community channel overview",
         startLine: 1,
         endLine: 8,
-        snippet: "Community channels are for large-scale real-time communication with no member limit.",
-        text:
-          "Community channels are for large-scale real-time communication with no member limit. They support subchannels, including public and private subchannels. Create community channels by using the Server API from your app server instead of a client-side SDK create call.",
+        snippet:
+          "Community channels are for large-scale real-time communication with no member limit.",
+        text: "Community channels are for large-scale real-time communication with no member limit. They support subchannels, including public and private subchannels. Create community channels by using the Server API from your app server instead of a client-side SDK create call.",
         score: 120,
         retrievalBucket: "concept",
       },
@@ -1543,7 +1586,7 @@ test("buildDocAnswer accepts overview pages as concept evidence", async () => {
   assert.equal(result.answer.includes("Sources:"), true);
 });
 
-test("buildDocAnswer does not turn mixed community pronoun questions into a direct-chat guide", async () => {
+void test("buildDocAnswer does not turn mixed community pronoun questions into a direct-chat guide", async () => {
   const docsRoot = await createCommunityChannelFixtureDocs();
   const hits = await searchDocs({
     query: "What is community channel? How to get it?",
@@ -1562,10 +1605,13 @@ test("buildDocAnswer does not turn mixed community pronoun questions into a dire
   assert.equal(result.answer.includes("Definition"), true);
   assert.equal(result.answer.includes("start a direct chat"), false);
   assert.equal(result.answer.includes("DirectChannel"), false);
-  assert.equal(result.answer.includes("Community channels are for large-scale real-time communication"), true);
+  assert.equal(
+    result.answer.includes("Community channels are for large-scale real-time communication"),
+    true,
+  );
 });
 
-test("buildDocAnswer returns definition first and partial steps for mixed community questions", async () => {
+void test("buildDocAnswer returns definition first and partial steps for mixed community questions", async () => {
   const result = await buildDocAnswer({
     runId: "mixed-community-1",
     question: "What is community channel ?How to create a community channel?",
@@ -1576,9 +1622,9 @@ test("buildDocAnswer returns definition first and partial steps for mixed commun
         heading: "Community channel overview",
         startLine: 1,
         endLine: 6,
-        snippet: "Community channels are for large-scale real-time communication with no member limit.",
-        text:
-          "Community channels are for large-scale real-time communication with no member limit. They support subchannels, including public and private subchannels.",
+        snippet:
+          "Community channels are for large-scale real-time communication with no member limit.",
+        text: "Community channels are for large-scale real-time communication with no member limit. They support subchannels, including public and private subchannels.",
         score: 130,
         retrievalBucket: "concept",
       },
@@ -1589,8 +1635,7 @@ test("buildDocAnswer returns definition first and partial steps for mixed commun
         endLine: 8,
         snippet:
           "The Android Chat SDK does not provide client-side APIs for creating community channels or subchannels. Use Server API from your app server.",
-        text:
-          "The Android Chat SDK does not provide client-side APIs for creating community channels or subchannels. Use Server API from your app server to create the community channel, then return the channel information to the client.",
+        text: "The Android Chat SDK does not provide client-side APIs for creating community channels or subchannels. Use Server API from your app server to create the community channel, then return the channel information to the client.",
         score: 125,
         retrievalBucket: "procedural",
       },
@@ -1601,8 +1646,7 @@ test("buildDocAnswer returns definition first and partial steps for mixed commun
         endLine: 8,
         snippet:
           "The iOS Chat SDK does not provide client-side APIs for creating community channels or subchannels. Use Server API from your app server.",
-        text:
-          "The iOS Chat SDK does not provide client-side APIs for creating community channels or subchannels. Use Server API from your app server to create the community channel, then return the channel information to the client.",
+        text: "The iOS Chat SDK does not provide client-side APIs for creating community channels or subchannels. Use Server API from your app server to create the community channel, then return the channel information to the client.",
         score: 118,
         retrievalBucket: "procedural",
       },
@@ -1612,13 +1656,19 @@ test("buildDocAnswer returns definition first and partial steps for mixed commun
   assert.equal(result.summary, "platform clarification required");
   assert.equal(result.answer.includes("Definition"), true);
   assert.equal(result.answer.includes("Steps"), true);
-  assert.equal(result.answer.includes("Community channels are for large-scale real-time communication"), true);
-  assert.equal(result.answer.includes("Community channels and subchannels are created via Server API"), true);
+  assert.equal(
+    result.answer.includes("Community channels are for large-scale real-time communication"),
+    true,
+  );
+  assert.equal(
+    result.answer.includes("Community channels and subchannels are created via Server API"),
+    true,
+  );
   assert.equal(result.answer.includes("Choose Android / iOS"), true);
   assert.equal(result.answer.includes("no relevant documentation found"), false);
 });
 
-test("detectGreetingIntent only intercepts narrow greeting and small-talk inputs", () => {
+void test("detectGreetingIntent only intercepts narrow greeting and small-talk inputs", () => {
   assert.equal(detectGreetingIntent("你好")?.kind, "greeting");
   assert.equal(detectGreetingIntent("Hello")?.kind, "greeting");
   assert.equal(detectGreetingIntent("Hi")?.kind, "greeting");
@@ -1629,7 +1679,7 @@ test("detectGreetingIntent only intercepts narrow greeting and small-talk inputs
   assert.equal(detectGreetingIntent("你好，Android 怎么初始化 Chat SDK？"), null);
 });
 
-test("clarification follow-up detection only intercepts short platform-only replies", () => {
+void test("clarification follow-up detection only intercepts short platform-only replies", () => {
   assert.deepEqual(detectClarificationFollowUpQuestion("Android"), { platform: "android" });
   assert.deepEqual(detectClarificationFollowUpQuestion("我要找android的"), { platform: "android" });
   assert.deepEqual(detectClarificationFollowUpQuestion("那 Android 呢"), { platform: "android" });
@@ -1640,7 +1690,7 @@ test("clarification follow-up detection only intercepts short platform-only repl
   assert.equal(rewriteClarificationQuestion("How to chat?", "android"), "How to chat on Android?");
 });
 
-test("clarification reuse heuristic only reuses when the prior retrieval has enough platform hits", async () => {
+void test("clarification reuse heuristic only reuses when the prior retrieval has enough platform hits", async () => {
   const reuseDocs = await createClarificationReuseFixtureDocs();
   const reuseHits = await searchDocs({
     query: "How to chat?",
@@ -1658,7 +1708,7 @@ test("clarification reuse heuristic only reuses when the prior retrieval has eno
   assert.equal(shouldReuseClarificationHits(rewriteHits, "android"), false);
 });
 
-test("docs.ask greeting inputs skip retrieval and return a guided welcome answer", async (t) => {
+void test("docs.ask greeting inputs skip retrieval and return a guided welcome answer", async (t) => {
   const docsRoot = await createGreetingFixtureDocs();
   const dataDir = await makeTempDir("doc-assistant-greeting");
   const { client } = await createHarness({ docsRoot, dataDir });
@@ -1706,7 +1756,10 @@ test("docs.ask greeting inputs skip retrieval and return a guided welcome answer
   );
   assert.equal(transcript.messages[0]?.role, "user");
   assert.equal(transcript.messages.at(-1)?.role, "assistant");
-  assert.equal(String(transcript.messages.at(-1)?.content).includes("我是你的 Nexconn 文档助手"), true);
+  assert.equal(
+    String(transcript.messages.at(-1)?.content).includes("我是你的 Nexconn 文档助手"),
+    true,
+  );
 
   const history = responseResult<{
     total: number;
@@ -1722,7 +1775,7 @@ test("docs.ask greeting inputs skip retrieval and return a guided welcome answer
   assert.equal(history.entries[0]?.citationCount, 0);
 });
 
-test("docs.ask English greeting inputs return an English guided welcome answer", async (t) => {
+void test("docs.ask English greeting inputs return an English guided welcome answer", async (t) => {
   const docsRoot = await createGreetingFixtureDocs();
   const dataDir = await makeTempDir("doc-assistant-greeting-en");
   const { client } = await createHarness({ docsRoot, dataDir });
@@ -1747,7 +1800,9 @@ test("docs.ask English greeting inputs return an English guided welcome answer",
   assert.equal(terminal.summary, "guided greeting");
   assert.equal(terminal.answer.includes("I'm your Nexconn documentation assistant"), true);
   assert.equal(
-    terminal.answer.includes("How do I integrate and initialize the Android, iOS, or Web Chat SDK?"),
+    terminal.answer.includes(
+      "How do I integrate and initialize the Android, iOS, or Web Chat SDK?",
+    ),
     true,
   );
   assert.equal(
@@ -1757,7 +1812,7 @@ test("docs.ask English greeting inputs return an English guided welcome answer",
   assert.equal(terminal.answer.includes("For example:"), true);
 });
 
-test("docs.ask in extractive mode accepts immediately, completes, and persists transcript", async (t) => {
+void test("docs.ask in extractive mode accepts immediately, completes, and persists transcript", async (t) => {
   const docsRoot = await createLifecycleFixtureDocs();
   const dataDir = await makeTempDir("doc-assistant-extractive");
   const { client } = await createHarness({ docsRoot, dataDir });
@@ -1776,10 +1831,14 @@ test("docs.ask in extractive mode accepts immediately, completes, and persists t
   assert.equal(accepted.status, "accepted");
 
   const retrieval = eventData<{ runId: string; hits: unknown[] }>(
-    await client.waitForEvent("docs.retrieval", (frame) => {
-      const data = eventData<{ runId: string }>(frame);
-      return data.runId === "extractive-run-1";
-    }, 25_000),
+    await client.waitForEvent(
+      "docs.retrieval",
+      (frame) => {
+        const data = eventData<{ runId: string }>(frame);
+        return data.runId === "extractive-run-1";
+      },
+      25_000,
+    ),
   );
   assert.equal(retrieval.runId, "extractive-run-1");
   assert.equal(retrieval.hits.length > 0, true);
@@ -1794,7 +1853,10 @@ test("docs.ask in extractive mode accepts immediately, completes, and persists t
   assert.equal(terminal.mode, "extractive");
   assert.equal(terminal.answer.includes("Sources:"), true);
   assert.equal(terminal.answer.toLowerCase().includes("node"), true);
-  assert.equal(terminal.citations.some((citation) => citation.path.endsWith("node.md")), true);
+  assert.equal(
+    terminal.citations.some((citation) => citation.path.endsWith("node.md")),
+    true,
+  );
 
   const transcript = responseResult<TranscriptResult>(
     await client.request("docs.session.transcript.get", { userId: user.userId }),
@@ -1818,7 +1880,7 @@ test("docs.ask in extractive mode accepts immediately, completes, and persists t
   assert.equal(history.entries[0]?.answerOutcome, "answered");
 });
 
-test("docs.ask continues a clarification with an Android follow-up by reusing prior retrieval", async (t) => {
+void test("docs.ask continues a clarification with an Android follow-up by reusing prior retrieval", async (t) => {
   const docsRoot = await createClarificationReuseFixtureDocs();
   const dataDir = await makeTempDir("doc-assistant-followup-reuse");
   const { client } = await createHarness({ docsRoot, dataDir });
@@ -1884,7 +1946,7 @@ test("docs.ask continues a clarification with an Android follow-up by reusing pr
   assert.equal(history.entries[0]?.answered, true);
 });
 
-test("docs.ask can continue a clarification by rewriting the question and rerunning retrieval", async (t) => {
+void test("docs.ask can continue a clarification by rewriting the question and rerunning retrieval", async (t) => {
   const docsRoot = await createClarificationRewriteFixtureDocs();
   const dataDir = await makeTempDir("doc-assistant-followup-rewrite");
   const { client } = await createHarness({ docsRoot, dataDir });
@@ -1931,7 +1993,7 @@ test("docs.ask can continue a clarification by rewriting the question and rerunn
   assert.equal(terminal.answer.includes("我没有在本地 Markdown 文档库里找到"), false);
 });
 
-test("mixed community clarification keeps the definition and resumes only the procedural half", async () => {
+void test("mixed community clarification keeps the definition and resumes only the procedural half", async () => {
   const docsRoot = await createCommunityChannelFixtureDocs();
   const dataDir = await makeTempDir("doc-assistant-mixed-community-followup");
   const sessionId = "mixed-community-session";
@@ -1980,7 +2042,7 @@ test("mixed community clarification keeps the definition and resumes only the pr
   assert.equal(second.answer.answer.includes("Server API"), true);
 });
 
-test("mixed community clarification also resumes from a Chinese Android follow-up", async () => {
+void test("mixed community clarification also resumes from a Chinese Android follow-up", async () => {
   const docsRoot = await createCommunityChannelFixtureDocs();
   const dataDir = await makeTempDir("doc-assistant-mixed-community-followup-zh");
   const sessionId = "mixed-community-session-zh";
@@ -2021,7 +2083,7 @@ test("mixed community clarification also resumes from a Chinese Android follow-u
   assert.equal(second.answer.answer.includes("Server API"), true);
 });
 
-test("docs.ask ignores contaminated clarification memory and continues to a platform guide", async (t) => {
+void test("docs.ask ignores contaminated clarification memory and continues to a platform guide", async (t) => {
   const docsRoot = await createClarificationReuseFixtureDocs();
   const dataDir = await makeTempDir("doc-assistant-followup-contaminated-memory");
   await replaceAnswerMemoryEntries(
@@ -2081,7 +2143,7 @@ test("docs.ask ignores contaminated clarification memory and continues to a plat
   assert.equal(terminal.answer.includes("Steps"), true);
 });
 
-test("short platform-only queries do not bind stale or missing clarification context", async (t) => {
+void test("short platform-only queries do not bind stale or missing clarification context", async (t) => {
   const docsRoot = await createClarificationRewriteFixtureDocs();
   const dataDir = await makeTempDir("doc-assistant-followup-stale");
   const { client } = await createHarness({ docsRoot, dataDir });
@@ -2154,7 +2216,7 @@ test("short platform-only queries do not bind stale or missing clarification con
   assert.equal(stale.rewrittenQuestion, undefined);
 });
 
-test("invalid stored clarification context is ignored and replaced by the next valid clarification", async (t) => {
+void test("invalid stored clarification context is ignored and replaced by the next valid clarification", async (t) => {
   const docsRoot = await createClarificationReuseFixtureDocs();
   const dataDir = await makeTempDir("doc-assistant-followup-invalid-context");
   await fs.writeFile(
@@ -2225,7 +2287,7 @@ test("invalid stored clarification context is ignored and replaced by the next v
   assert.equal(terminal.answer.includes("Steps"), true);
 });
 
-test("docs.ask in agent mode emits delta and returns selected model metadata", async (t) => {
+void test("docs.ask in agent mode emits delta and returns selected model metadata", async (t) => {
   const docsRoot = await createLifecycleFixtureDocs();
   const dataDir = await makeTempDir("doc-assistant-agent");
   const { client } = await createHarness({
@@ -2249,19 +2311,27 @@ test("docs.ask in agent mode emits delta and returns selected model metadata", a
     }),
   );
 
-  await client.waitForEvent("docs.retrieval", (frame) => {
-    const data = eventData<{ runId: string }>(frame);
-    return data.runId === "agent-run-1";
-  }, 25_000);
+  await client.waitForEvent(
+    "docs.retrieval",
+    (frame) => {
+      const data = eventData<{ runId: string }>(frame);
+      return data.runId === "agent-run-1";
+    },
+    25_000,
+  );
   await client.waitForEvent("docs.delta", (frame) => {
     const data = eventData<{ runId: string }>(frame);
     return data.runId === "agent-run-1";
   });
   const terminal = eventData<DocsTerminalResult>(
-    await client.waitForEvent("docs.completed", (frame) => {
-      const data = eventData<{ runId: string }>(frame);
-      return data.runId === "agent-run-1";
-    }, 10_000),
+    await client.waitForEvent(
+      "docs.completed",
+      (frame) => {
+        const data = eventData<{ runId: string }>(frame);
+        return data.runId === "agent-run-1";
+      },
+      10_000,
+    ),
   );
   assert.equal(terminal.status, "ok");
   assert.equal(terminal.mode, "agent");
@@ -2272,7 +2342,7 @@ test("docs.ask in agent mode emits delta and returns selected model metadata", a
   assert.equal(terminal.citations.length > 0, true);
 });
 
-test("docs.run.wait returns the terminal result and docs.run.status exposes terminal state", async (t) => {
+void test("docs.run.wait returns the terminal result and docs.run.status exposes terminal state", async (t) => {
   const docsRoot = await createLifecycleFixtureDocs();
   const dataDir = await makeTempDir("doc-assistant-run-wait");
   const { client } = await createHarness({ docsRoot, dataDir });
@@ -2297,7 +2367,10 @@ test("docs.run.wait returns the terminal result and docs.run.status exposes term
   assert.equal(waited.status, "ok");
   assert.equal(waited.runId, "wait-run-1");
   assert.equal(waited.answer.toLowerCase().includes("node"), true);
-  assert.equal(waited.citations.some((citation) => citation.path.endsWith("node.md")), true);
+  assert.equal(
+    waited.citations.some((citation) => citation.path.endsWith("node.md")),
+    true,
+  );
 
   const status = responseResult<DocsTerminalResult>(
     await client.request("docs.run.status", { runId: accepted.runId }),
@@ -2306,7 +2379,7 @@ test("docs.run.wait returns the terminal result and docs.run.status exposes term
   assert.equal(status.runId, accepted.runId);
 });
 
-test("repeated docs.ask with the same idempotencyKey returns cached terminal result", async (t) => {
+void test("repeated docs.ask with the same idempotencyKey returns cached terminal result", async (t) => {
   const docsRoot = await createLifecycleFixtureDocs();
   const dataDir = await makeTempDir("doc-assistant-dedupe");
   const { client } = await createHarness({ docsRoot, dataDir });
@@ -2341,7 +2414,7 @@ test("repeated docs.ask with the same idempotencyKey returns cached terminal res
   assert.equal(cached.runId, "dedupe-run-1");
 });
 
-test("no-hit queries return ok with empty citations", async (t) => {
+void test("no-hit queries return ok with empty citations", async (t) => {
   const docsRoot = await makeTempDir("doc-assistant-custom-docs");
   await fs.writeFile(
     path.join(docsRoot, "only.md"),
@@ -2392,7 +2465,7 @@ test("no-hit queries return ok with empty citations", async (t) => {
   assert.equal(history.entries[0]?.citationCount, 0);
 });
 
-test("agent mode can use openai-compatible backend", async (t) => {
+void test("agent mode can use openai-compatible backend", async (t) => {
   const originalFetch = globalThis.fetch;
   t.after(() => {
     globalThis.fetch = originalFetch;
@@ -2444,7 +2517,7 @@ test("agent mode can use openai-compatible backend", async (t) => {
   assert.equal(result.answer.includes("Sources:"), true);
 });
 
-test("approved memory answers are served before retrieval and beat pending drafts", async (t) => {
+void test("approved memory answers are served before retrieval and beat pending drafts", async (t) => {
   const docsRoot = await createGreetingFixtureDocs();
   const dataDir = await makeTempDir("doc-assistant-memory-standard");
   await replaceAnswerMemoryEntries(
@@ -2496,7 +2569,7 @@ test("approved memory answers are served before retrieval and beat pending draft
   assert.equal(history.entries[0]?.reviewStatus, "approved_standard");
 });
 
-test("pending memory drafts stay review-only and do not answer user questions directly", async (t) => {
+void test("pending memory drafts stay review-only and do not answer user questions directly", async (t) => {
   const docsRoot = await createPushFixtureDocs();
   const dataDir = await makeTempDir("doc-assistant-memory-draft");
   await replaceAnswerMemoryEntries(
@@ -2529,11 +2602,14 @@ test("pending memory drafts stay review-only and do not answer user questions di
     }),
   );
   assert.notEqual(terminal.answerSource, "memory_draft");
-  assert.equal(terminal.citations.some((citation) => citation.path.endsWith("push-config.md")), true);
+  assert.equal(
+    terminal.citations.some((citation) => citation.path.endsWith("push-config.md")),
+    true,
+  );
   assert.equal(client.getEvents("docs.retrieval").length > 0, true);
 });
 
-test("generated answers are enqueued into memory and can be approved through admin RPC", async (t) => {
+void test("generated answers are enqueued into memory and can be approved through admin RPC", async (t) => {
   const docsRoot = await createLifecycleFixtureDocs();
   const dataDir = await makeTempDir("doc-assistant-memory-generate");
   const adminToken = "secret-admin-token";
@@ -2555,10 +2631,14 @@ test("generated answers are enqueued into memory and can be approved through adm
     }),
   );
   const terminal = eventData<DocsTerminalResult>(
-    await client.waitForEvent("docs.completed", (frame) => {
-      const data = eventData<{ runId: string }>(frame);
-      return data.runId === "memory-generate-run-1";
-    }, 25_000),
+    await client.waitForEvent(
+      "docs.completed",
+      (frame) => {
+        const data = eventData<{ runId: string }>(frame);
+        return data.runId === "memory-generate-run-1";
+      },
+      25_000,
+    ),
   );
   assert.equal(terminal.answerSource, "generated");
   assert.equal(terminal.reviewStatus, "pending_review");

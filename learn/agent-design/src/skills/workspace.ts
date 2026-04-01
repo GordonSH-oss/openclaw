@@ -91,24 +91,24 @@ export async function buildWorkspaceSkillSnapshot(params: {
     }
   }
 
-  collected.sort((a, b) => a.name.localeCompare(b.name));
+  const orderedCollected = collected.toSorted((a, b) => a.name.localeCompare(b.name));
 
   // prompt 字段让你可以很直观地看到：
   // “加载出的技能最终是如何被压缩成一段可注入模型上下文的文本”。
   const prompt =
-    collected.length === 0
+    orderedCollected.length === 0
       ? "No workspace skills are active for this run."
       : [
           "Workspace skills available to this run:",
-          ...collected.map(
+          ...orderedCollected.map(
             (entry) => `- ${entry.name}: ${entry.summary} (${entry.filePath})`,
           ),
         ].join("\n");
 
   return {
-    version: `skills:${collected.length}`,
+    version: `skills:${orderedCollected.length}`,
     roots: Array.from(roots),
-    entries: collected,
-      prompt,
+    entries: orderedCollected,
+    prompt,
   };
 }

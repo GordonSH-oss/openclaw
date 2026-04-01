@@ -1,5 +1,10 @@
-import type { LearningAgentCommandParams, LearningAgentResult, ModelCandidate, SkillSnapshot } from "../types.js";
 import { appendTranscriptMessage, getTranscriptPath } from "../transcript/store.js";
+import type {
+  LearningAgentCommandParams,
+  LearningAgentResult,
+  ModelCandidate,
+  SkillSnapshot,
+} from "../types.js";
 
 export async function runCliBackend(params: {
   command: LearningAgentCommandParams;

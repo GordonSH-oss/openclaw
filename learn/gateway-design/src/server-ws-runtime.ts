@@ -1,8 +1,8 @@
 import type { Server as HttpServer } from "node:http";
 import { WebSocketServer } from "ws";
-import { handleConnection, parseUrlQuery } from "./ws-connection.js";
-import type { GatewayRuntimeState } from "./server-runtime-state.js";
 import type { MethodRouter } from "./method-router.js";
+import type { GatewayRuntimeState } from "./server-runtime-state.js";
+import { handleConnection, parseUrlQuery } from "./ws-connection.js";
 
 export function attachGatewayWsHandlers(params: {
   httpServer: HttpServer;

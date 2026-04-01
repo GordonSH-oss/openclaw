@@ -1,6 +1,11 @@
 import fs from "node:fs/promises";
-import { deleteLearningSession, getLearningTranscriptPath, loadLearningSessionStore, saveLearningSessionStore } from "./session-store.js";
 import type { LearningSessionEventHub } from "./events.js";
+import {
+  deleteLearningSession,
+  getLearningTranscriptPath,
+  loadLearningSessionStore,
+  saveLearningSessionStore,
+} from "./session-store.js";
 
 export async function runLearningSessionMaintenance(params: {
   dataDir?: string;
@@ -10,7 +15,7 @@ export async function runLearningSessionMaintenance(params: {
   events?: LearningSessionEventHub;
 }): Promise<{ prunedKeys: string[]; rotatedSessionIds: string[] }> {
   const store = await loadLearningSessionStore(params.dataDir);
-  const entries = Object.entries(store).sort((a, b) => a[1].updatedAt - b[1].updatedAt);
+  const entries = Object.entries(store).toSorted((a, b) => a[1].updatedAt - b[1].updatedAt);
   const prunedKeys: string[] = [];
   const staleBeforeTs = params.staleBeforeTs;
   if (typeof staleBeforeTs === "number") {
@@ -30,7 +35,9 @@ export async function runLearningSessionMaintenance(params: {
   }
 
   const refreshedStore = await loadLearningSessionStore(params.dataDir);
-  const refreshedEntries = Object.entries(refreshedStore).sort((a, b) => b[1].updatedAt - a[1].updatedAt);
+  const refreshedEntries = Object.entries(refreshedStore).toSorted(
+    (a, b) => b[1].updatedAt - a[1].updatedAt,
+  );
   if (params.maxEntries && refreshedEntries.length > params.maxEntries) {
     for (const [key, entry] of refreshedEntries.slice(params.maxEntries)) {
       await deleteLearningSession(key, params.dataDir);

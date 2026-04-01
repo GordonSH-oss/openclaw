@@ -1,14 +1,20 @@
 import { readFile } from "node:fs/promises";
+import type { IncomingMessage, ServerResponse } from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { IncomingMessage, ServerResponse } from "node:http";
 
 const publicDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../public");
 
 const assetMap = new Map<string, { filePath: string; contentType: string }>([
   ["/", { filePath: path.join(publicDir, "index.html"), contentType: "text/html; charset=utf-8" }],
-  ["/ui", { filePath: path.join(publicDir, "index.html"), contentType: "text/html; charset=utf-8" }],
-  ["/embed", { filePath: path.join(publicDir, "index.html"), contentType: "text/html; charset=utf-8" }],
+  [
+    "/ui",
+    { filePath: path.join(publicDir, "index.html"), contentType: "text/html; charset=utf-8" },
+  ],
+  [
+    "/embed",
+    { filePath: path.join(publicDir, "index.html"), contentType: "text/html; charset=utf-8" },
+  ],
   [
     "/assets/doc-assistant-ui.js",
     {

@@ -1,5 +1,5 @@
-import type { DocCitation, DocSearchHit } from "./protocol/index.js";
 import { buildDocIndex, tokenize, type DocIndexChunk } from "./doc-index.js";
+import type { DocCitation, DocSearchHit } from "./protocol/index.js";
 
 const PLATFORM_TOKENS = [
   "ios",
@@ -27,7 +27,7 @@ const PRODUCT_TOKENS = [
   "server",
 ];
 
-type DocTier = "primary" | "partial" | "archive";
+type DocTier = "primary" | "partial";
 type QueryIntent =
   | "start"
   | "connect"
@@ -309,7 +309,10 @@ export function planDocQuestion(question: string): DocQuestionPlan {
   };
 }
 
-function detectQuerySignals(query: string, tokens: string[]): {
+function detectQuerySignals(
+  query: string,
+  tokens: string[],
+): {
   platforms: string[];
   products: string[];
   channelKinds: QueryChannelKind[];
@@ -547,9 +550,6 @@ function detectQueryIntents(normalizedQuery: string, normalizedTokens: string[])
 }
 
 function detectDocTier(pathText: string): DocTier {
-  if (pathText.includes("/.archive/")) {
-    return "archive";
-  }
   if (pathText.includes("/partials/")) {
     return "partial";
   }
@@ -560,10 +560,7 @@ function getTierWeight(tier: DocTier): number {
   if (tier === "primary") {
     return 3;
   }
-  if (tier === "partial") {
-    return 2;
-  }
-  return 1;
+  return 2;
 }
 
 function getBasenameStem(pathText: string): string {
@@ -634,7 +631,10 @@ function scoreBasenameSemantics(
       score -= 14;
     }
   }
-  if (signals.normalizedQuery.includes("push settings") || signals.normalizedQuery.includes("push config")) {
+  if (
+    signals.normalizedQuery.includes("push settings") ||
+    signals.normalizedQuery.includes("push config")
+  ) {
     if (basenameStem.includes("push config")) {
       score += 22;
     }
@@ -698,7 +698,12 @@ function scoreHeadingIntent(
   boost("start", ["start", "make first", "begin"], 18, 6);
   boost("connect", ["connect", "connection", "login", "log in", "sign in", "authenticate"], 22, 8);
   boost("accept", ["accept", "answer", "receive and accept"], 18, 6);
-  boost("configure", ["configure", "config", "settings", "properties", "field descriptions"], 16, 5);
+  boost(
+    "configure",
+    ["configure", "config", "settings", "properties", "field descriptions"],
+    16,
+    5,
+  );
   boost("require", ["requirements", "required", "prerequisites", "provisioning"], 24, 10);
   boost("require", ["enable"], 12, 5);
   boost("require", ["when to use"], 8, 3);
@@ -785,9 +790,6 @@ function scorePathSemantics(
   }
 
   const tier = detectDocTier(pathText);
-  if (tier === "archive") {
-    score -= 18;
-  }
   if (tier === "partial") {
     score -= 12;
   }
@@ -852,7 +854,10 @@ function scorePathSemantics(
   ) {
     score -= 42;
   }
-  if (!signals.normalizedQuery.includes("open channel") && normalizedPath.includes("open channel")) {
+  if (
+    !signals.normalizedQuery.includes("open channel") &&
+    normalizedPath.includes("open channel")
+  ) {
     score -= 24;
   }
   if (!signals.normalizedQuery.includes("robot") && normalizedPath.includes("robot")) {
@@ -908,10 +913,16 @@ function scoreWebhookSemantics(
   if (normalizedPath.includes("platform chat api") && normalizedPath.includes("webhook")) {
     score += 30;
   }
-  if (normalizedHeading.includes("set up webhook") || normalizedHeading.includes("set up webhooks")) {
+  if (
+    normalizedHeading.includes("set up webhook") ||
+    normalizedHeading.includes("set up webhooks")
+  ) {
     score += 34;
   }
-  if (normalizedHeading.includes("verify signature") || normalizedHeading.includes("verify signatures")) {
+  if (
+    normalizedHeading.includes("verify signature") ||
+    normalizedHeading.includes("verify signatures")
+  ) {
     score += 16;
   }
   if (normalizedBody.includes("register a single endpoint")) {
@@ -976,7 +987,10 @@ function scoreClientChatStartSemantics(
   if (normalizedPath.includes("platform chat api")) {
     score -= 44;
   }
-  if (!signals.normalizedQuery.includes("open channel") && normalizedPath.includes("open channel")) {
+  if (
+    !signals.normalizedQuery.includes("open channel") &&
+    normalizedPath.includes("open channel")
+  ) {
     score -= 30;
   }
   if (normalizedPath.includes("query history")) {
@@ -1004,7 +1018,10 @@ function scoreClientChatStartSemantics(
   if (normalizedHeading.includes("initialize") || normalizedHeading.includes("import")) {
     score += 16;
   }
-  if (normalizedHeading.includes("direct channel") || normalizedHeading.includes("channel overview")) {
+  if (
+    normalizedHeading.includes("direct channel") ||
+    normalizedHeading.includes("channel overview")
+  ) {
     score += 18;
   }
   if (
@@ -1045,7 +1062,10 @@ function scoreClientChatStartSemantics(
   }
   if (
     (signals.intents.includes("install") || signals.intents.includes("initialize")) &&
-    (normalizedPath.includes("/import") || normalizedPath.includes("/init") || normalizedHeading.includes("initialize") || normalizedHeading.includes("import"))
+    (normalizedPath.includes("/import") ||
+      normalizedPath.includes("/init") ||
+      normalizedHeading.includes("initialize") ||
+      normalizedHeading.includes("import"))
   ) {
     score += 24;
   }
@@ -1073,7 +1093,10 @@ function scoreClientChatStartSemantics(
   if (normalizedBody.includes("isechotosender") || normalizedBody.includes("issyncsender")) {
     score -= 28;
   }
-  if (normalizedBody.includes("sync to the sender") || normalizedBody.includes("sync the message")) {
+  if (
+    normalizedBody.includes("sync to the sender") ||
+    normalizedBody.includes("sync the message")
+  ) {
     score -= 20;
   }
 
@@ -1120,7 +1143,10 @@ function scoreClientConnectionSemantics(
   if (normalizedPath.includes("chat server api list")) {
     score -= 64;
   }
-  if (normalizedHeading.includes("default behaviors") || normalizedHeading.includes("channel management")) {
+  if (
+    normalizedHeading.includes("default behaviors") ||
+    normalizedHeading.includes("channel management")
+  ) {
     score -= 28;
   }
   if (normalizedBody.includes("server api")) {
@@ -1194,7 +1220,10 @@ function scoreChannelCreationSemantics(
   }
 
   if (wantsCommunity) {
-    if (normalizedPath.includes("community channel") || normalizedPath.includes("community channels")) {
+    if (
+      normalizedPath.includes("community channel") ||
+      normalizedPath.includes("community channels")
+    ) {
       score += 34;
     }
     if (normalizedPath.includes("creating-channel")) {
@@ -1243,7 +1272,10 @@ function scoreChannelCreationSemantics(
     if (normalizedPath.includes("group channels")) {
       score -= 18;
     }
-    if (normalizedPath.includes("community channel") || normalizedHeading.includes("private subchannel")) {
+    if (
+      normalizedPath.includes("community channel") ||
+      normalizedHeading.includes("private subchannel")
+    ) {
       score -= 44;
     }
   }
@@ -1319,7 +1351,10 @@ function scoreConceptSemantics(
   }
 
   if (signals.channelKinds.includes("community")) {
-    if (normalizedPath.includes("community channel") || normalizedPath.includes("community channels")) {
+    if (
+      normalizedPath.includes("community channel") ||
+      normalizedPath.includes("community channels")
+    ) {
       score += 18;
     }
     if (normalizedPath.includes("community-channels/overview")) {
@@ -1370,7 +1405,10 @@ function scoreSharedChunk(
   const basenameStem = getBasenameStem(pathText);
 
   let score = 0;
-  if (query && (pathText.includes(query) || headingText.includes(query) || bodyText.includes(query))) {
+  if (
+    query &&
+    (pathText.includes(query) || headingText.includes(query) || bodyText.includes(query))
+  ) {
     score += 8;
   }
   for (const token of tokens) {
@@ -1456,7 +1494,8 @@ function scoreBucketedEntries(params: {
   const scoringTokens = tokens.filter((token) => !GENERIC_QUERY_TOKENS.has(token));
   const strongTokens = getStrongQueryTokens(tokens);
   const signals = detectQuerySignals(query, tokens);
-  const scoreChunkForBucket = params.bucket === "concept" ? scoreConceptChunk : scoreProceduralChunk;
+  const scoreChunkForBucket =
+    params.bucket === "concept" ? scoreConceptChunk : scoreProceduralChunk;
   const scored = params.chunks
     .map((chunk) => {
       const pathText = chunk.relativePath.toLowerCase();
@@ -1478,14 +1517,18 @@ function scoreBucketedEntries(params: {
         return getTierWeight(candidate.tier) > getTierWeight(best) ? candidate.tier : best;
       }, entry.tier);
       const tierGap = getTierWeight(bestTierForBasename) - getTierWeight(entry.tier);
-      const bestPlatformMatchForBasename = all.reduce((best, candidate) => {
-        if (candidate.basenameStem !== entry.basenameStem || candidate.score <= 0) {
-          return best;
-        }
-        return Math.max(best, countMatchingPlatforms(candidate.pathPlatforms, signals.platforms));
-      }, countMatchingPlatforms(entry.pathPlatforms, signals.platforms));
+      const bestPlatformMatchForBasename = all.reduce(
+        (best, candidate) => {
+          if (candidate.basenameStem !== entry.basenameStem || candidate.score <= 0) {
+            return best;
+          }
+          return Math.max(best, countMatchingPlatforms(candidate.pathPlatforms, signals.platforms));
+        },
+        countMatchingPlatforms(entry.pathPlatforms, signals.platforms),
+      );
       const platformGap =
-        bestPlatformMatchForBasename - countMatchingPlatforms(entry.pathPlatforms, signals.platforms);
+        bestPlatformMatchForBasename -
+        countMatchingPlatforms(entry.pathPlatforms, signals.platforms);
       return {
         ...entry,
         score:

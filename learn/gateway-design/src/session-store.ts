@@ -41,7 +41,10 @@ export async function getOrCreateSession(
 
 export async function updateSessionEntry(
   sessionKey: string,
-  patchOrEntry: Partial<SessionEntry> | SessionEntry | ((current: SessionEntry | undefined) => SessionEntry),
+  patchOrEntry:
+    | Partial<SessionEntry>
+    | SessionEntry
+    | ((current: SessionEntry | undefined) => SessionEntry),
 ): Promise<SessionEntry> {
   const store = await loadSessionStore();
   const current = store[sessionKey];

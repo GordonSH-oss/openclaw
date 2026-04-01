@@ -1,4 +1,5 @@
 import { runLearningAgentCommand } from "../../../agent-design/src/index.js";
+import type { MethodHandler } from "../method-router.js";
 import {
   makeError,
   validateAgentParams,
@@ -8,19 +9,18 @@ import {
   type ConnectedClient,
   type GatewayError,
 } from "../protocol/index.js";
+import { completeChatRun, registerChatRun } from "../server-chat.js";
 import {
   setDedupeEntry,
   broadcastSessionsChanged,
   broadcastSessionMessage,
   type GatewayRuntimeState,
 } from "../server-runtime-state.js";
-import { completeChatRun, registerChatRun } from "../server-chat.js";
 import {
   getOrCreateSession,
   updateSessionEntry,
   resolveGatewayAgentDataDir,
 } from "../session-store.js";
-import type { MethodHandler } from "../method-router.js";
 
 export function launchGatewayAgentRun(params: {
   state: GatewayRuntimeState;
@@ -195,10 +195,7 @@ export const agentHandler: MethodHandler = async ({ request, respond, client, st
       ts: Date.now(),
       ok: terminal.status !== "error",
       payload: terminal,
-      error:
-        terminal.status === "error"
-          ? makeError("UNAVAILABLE", terminal.summary)
-          : undefined,
+      error: terminal.status === "error" ? makeError("UNAVAILABLE", terminal.summary) : undefined,
     });
     broadcastSessionsChanged(state, {
       sessionKey,
@@ -214,11 +211,9 @@ export const agentHandler: MethodHandler = async ({ request, respond, client, st
       updatedAt: Date.now(),
     });
     respond(
-      terminal.status === "error" ? false : true,
+      terminal.status !== "error",
       terminal,
-      terminal.status === "error"
-        ? makeError("UNAVAILABLE", terminal.summary)
-        : undefined,
+      terminal.status === "error" ? makeError("UNAVAILABLE", terminal.summary) : undefined,
     );
   });
 };

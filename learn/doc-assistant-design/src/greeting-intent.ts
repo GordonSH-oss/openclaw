@@ -1,7 +1,7 @@
-import { buildDocIndex, type DocIndexChunk } from "./doc-index.js";
 import { detectQuestionLanguage, type AnswerLanguage } from "./answer-language.js";
-import type { DocAssistantMode } from "./protocol/index.js";
 import type { DocAnswerResult } from "./doc-answer.js";
+import { buildDocIndex, type DocIndexChunk } from "./doc-index.js";
+import type { DocAssistantMode } from "./protocol/index.js";
 
 type GreetingIntentKind = "greeting" | "assistant_intro" | "small_talk";
 
@@ -102,7 +102,8 @@ function hasTechnicalSignals(question: string, normalizedQuestion: string): bool
     return true;
   }
   return TECHNICAL_KEYWORDS.some(
-    (keyword) => normalizedQuestion.includes(keyword) && !SMALL_TALK_PHRASES.has(normalizedQuestion),
+    (keyword) =>
+      normalizedQuestion.includes(keyword) && !SMALL_TALK_PHRASES.has(normalizedQuestion),
   );
 }
 

@@ -295,9 +295,7 @@ Gateway 启动的主链路可以概括为：
 - `learn/session-memory-design`
 - `learn/plugin-design`
 
-这样更接近真实 OpenClaw 的控制面位置：它是消费这些边界的装配中心，而不是把所有能力都自己重写一遍。
-7. 运行中的事件通过 broadcaster / tool event recipient / session 更新机制继续向外传播
-8. 客户端可通过 `poll`、`agent.wait`、session 订阅等方式继续观察执行结果
+这样更接近真实 OpenClaw 的控制面位置：它是消费这些边界的装配中心，而不是把所有能力都自己重写一遍。7. 运行中的事件通过 broadcaster / tool event recipient / session 更新机制继续向外传播 8. 客户端可通过 `poll`、`agent.wait`、session 订阅等方式继续观察执行结果
 
 这个链路能反映出 `src/gateway` 的本质：它是控制平面，不是模型执行器本身。真正执行仍由 `src/agents` 承担，但 Gateway 负责把这件事以协议化、可订阅、可管理的方式暴露出来。
 

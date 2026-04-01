@@ -16,7 +16,8 @@ export function evaluateLearningChannelPolicy(params: {
     allowlist.size === 0 ||
     allowlist.has("*") ||
     (params.context.senderId ? allowlist.has(params.context.senderId) : false);
-  const needsMention = params.context.chatType !== "direct" && params.requireMentionInGroups !== false;
+  const needsMention =
+    params.context.chatType !== "direct" && params.requireMentionInGroups !== false;
   const shouldReply = senderAllowed && (!needsMention || params.context.mentioned === true);
   return {
     allowed: senderAllowed,

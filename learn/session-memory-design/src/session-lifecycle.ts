@@ -1,10 +1,10 @@
+import type { LearningSessionEventHub } from "./events.js";
 import {
   deleteLearningSession,
   resolveLearningSession,
   updateLearningSession,
   type LearningSessionEntry,
 } from "./session-store.js";
-import type { LearningSessionEventHub } from "./events.js";
 
 export async function createLearningSessionLifecycle(params: {
   sessionKey: string;

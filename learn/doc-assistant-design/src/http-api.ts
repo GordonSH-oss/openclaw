@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { resolveScopesFromToken } from "./auth.js";
+import type { MethodRouter } from "./method-router.js";
 import {
   makeError,
   type ConnectedClient,
@@ -7,8 +9,6 @@ import {
   type DocAssistantRequest,
   type DocAssistantResponse,
 } from "./protocol/index.js";
-import { resolveScopesFromToken } from "./auth.js";
-import type { MethodRouter } from "./method-router.js";
 import type { DocAssistantRuntimeState } from "./server-runtime-state.js";
 
 const API_BASE_PATH = "/api/doc-assistant";
@@ -89,14 +89,17 @@ function writeCorsHeaders(
   if (!origin) {
     return;
   }
-  const effectiveAllowedOrigins = Array.from(new Set([...DEFAULT_ALLOWED_ORIGINS, ...(allowedOrigins ?? [])]));
-  const allowAny = effectiveAllowedOrigins.includes("*");
-  if (!allowAny && !effectiveAllowedOrigins.includes(origin)) {
+  const effectiveAllowedOrigins = new Set([...DEFAULT_ALLOWED_ORIGINS, ...(allowedOrigins ?? [])]);
+  const allowAny = effectiveAllowedOrigins.has("*");
+  if (!allowAny && !effectiveAllowedOrigins.has(origin)) {
     return;
   }
   res.setHeader("Access-Control-Allow-Origin", allowAny ? "*" : origin);
   res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Doc-Assistant-Client-Id");
+  res.setHeader(
+    "Access-Control-Allow-Headers",
+    "Content-Type, Authorization, X-Doc-Assistant-Client-Id",
+  );
   res.setHeader("Vary", "Origin");
 }
 
@@ -169,10 +172,17 @@ async function handleApiRequest(params: {
     try {
       body = await readJsonBody(params.req);
     } catch (error) {
-      const docError = isRecord(error) && typeof error.code === "string" && typeof error.message === "string"
-        ? (error as DocAssistantError)
-        : makeError("INVALID_REQUEST", String(error));
-      writeJson(params.req, params.res, mapErrorStatus(docError), { ok: false, error: docError }, params.allowedOrigins);
+      const docError =
+        isRecord(error) && typeof error.code === "string" && typeof error.message === "string"
+          ? (error as DocAssistantError)
+          : makeError("INVALID_REQUEST", String(error));
+      writeJson(
+        params.req,
+        params.res,
+        mapErrorStatus(docError),
+        { ok: false, error: docError },
+        params.allowedOrigins,
+      );
       return true;
     }
   }
@@ -220,7 +230,13 @@ async function handleApiRequest(params: {
     const userId = url.searchParams.get("userId") ?? undefined;
     const answeredRaw = url.searchParams.get("answered");
     const answered =
-      answeredRaw === null ? undefined : answeredRaw.toLowerCase() === "true" ? true : answeredRaw.toLowerCase() === "false" ? false : answeredRaw;
+      answeredRaw === null
+        ? undefined
+        : answeredRaw.toLowerCase() === "true"
+          ? true
+          : answeredRaw.toLowerCase() === "false"
+            ? false
+            : answeredRaw;
     const limitRaw = url.searchParams.get("limit");
     const limit = limitRaw ? Number(limitRaw) : undefined;
     response = await dispatchRouter({
@@ -230,7 +246,11 @@ async function handleApiRequest(params: {
       method: "docs.history.list",
       requestParams: {
         ...(userId ? { userId } : {}),
-        ...(typeof answered === "boolean" ? { answered } : answeredRaw !== null ? { answered } : {}),
+        ...(typeof answered === "boolean"
+          ? { answered }
+          : answeredRaw !== null
+            ? { answered }
+            : {}),
         ...(limit ? { limit } : {}),
       },
     });
@@ -259,7 +279,11 @@ async function handleApiRequest(params: {
       method: "docs.admin.memory.get",
       requestParams: { entryId },
     });
-  } else if (params.req.method === "GET" && subPath.startsWith("/runs/") && subPath.endsWith("/wait")) {
+  } else if (
+    params.req.method === "GET" &&
+    subPath.startsWith("/runs/") &&
+    subPath.endsWith("/wait")
+  ) {
     const runId = decodeURIComponent(subPath.slice("/runs/".length, -"/wait".length));
     const timeoutRaw = url.searchParams.get("timeoutMs");
     const timeoutMs = timeoutRaw ? Number(timeoutRaw) : undefined;
@@ -291,10 +315,12 @@ async function handleApiRequest(params: {
       method: "docs.session.transcript.get",
       requestParams: { userId },
     });
-  } else if (params.req.method === "POST" && subPath.startsWith("/admin/memory/") && subPath.endsWith("/approve")) {
-    const entryId = decodeURIComponent(
-      subPath.slice("/admin/memory/".length, -"/approve".length),
-    );
+  } else if (
+    params.req.method === "POST" &&
+    subPath.startsWith("/admin/memory/") &&
+    subPath.endsWith("/approve")
+  ) {
+    const entryId = decodeURIComponent(subPath.slice("/admin/memory/".length, -"/approve".length));
     response = await dispatchRouter({
       router: params.router,
       state: params.state,
@@ -302,10 +328,12 @@ async function handleApiRequest(params: {
       method: "docs.admin.memory.approve",
       requestParams: isRecord(body) ? { ...body, entryId } : { entryId },
     });
-  } else if (params.req.method === "POST" && subPath.startsWith("/admin/memory/") && subPath.endsWith("/reject")) {
-    const entryId = decodeURIComponent(
-      subPath.slice("/admin/memory/".length, -"/reject".length),
-    );
+  } else if (
+    params.req.method === "POST" &&
+    subPath.startsWith("/admin/memory/") &&
+    subPath.endsWith("/reject")
+  ) {
+    const entryId = decodeURIComponent(subPath.slice("/admin/memory/".length, -"/reject".length));
     response = await dispatchRouter({
       router: params.router,
       state: params.state,
@@ -313,10 +341,12 @@ async function handleApiRequest(params: {
       method: "docs.admin.memory.reject",
       requestParams: isRecord(body) ? { ...body, entryId } : { entryId },
     });
-  } else if (params.req.method === "POST" && subPath.startsWith("/admin/memory/") && subPath.endsWith("/update")) {
-    const entryId = decodeURIComponent(
-      subPath.slice("/admin/memory/".length, -"/update".length),
-    );
+  } else if (
+    params.req.method === "POST" &&
+    subPath.startsWith("/admin/memory/") &&
+    subPath.endsWith("/update")
+  ) {
+    const entryId = decodeURIComponent(subPath.slice("/admin/memory/".length, -"/update".length));
     response = await dispatchRouter({
       router: params.router,
       state: params.state,
@@ -329,14 +359,23 @@ async function handleApiRequest(params: {
       params.req,
       params.res,
       404,
-      { ok: false, error: makeError("NOT_FOUND", `未知 HTTP API: ${params.req.method} ${subPath}`) },
+      {
+        ok: false,
+        error: makeError("NOT_FOUND", `未知 HTTP API: ${params.req.method} ${subPath}`),
+      },
       params.allowedOrigins,
     );
     return true;
   }
 
   if (response.ok) {
-    writeJson(params.req, params.res, 200, { ok: true, result: response.result }, params.allowedOrigins);
+    writeJson(
+      params.req,
+      params.res,
+      200,
+      { ok: true, result: response.result },
+      params.allowedOrigins,
+    );
     return true;
   }
 

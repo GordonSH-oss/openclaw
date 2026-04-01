@@ -32,9 +32,9 @@ export function detectAnswerLanguage(
 
   const evidenceSample = [
     questionText,
-    ...hits.slice(0, 4).map((hit) =>
-      [hit.path, hit.heading ?? "", hit.snippet, hit.text.slice(0, 180)].join(" "),
-    ),
+    ...hits
+      .slice(0, 4)
+      .map((hit) => [hit.path, hit.heading ?? "", hit.snippet, hit.text.slice(0, 180)].join(" ")),
   ].join(" ");
   const latinCount = countMatches(evidenceSample, /[A-Za-z]/g);
   const cjkCount = countMatches(evidenceSample, /[\u4e00-\u9fff]/g);

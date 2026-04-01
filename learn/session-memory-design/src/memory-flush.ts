@@ -1,6 +1,6 @@
-import { appendLearningDailyMemoryEntry } from "./workspace-memory.js";
-import type { LearningTranscriptMessage } from "./transcript-store.js";
 import type { LearningSessionEventHub } from "./events.js";
+import type { LearningTranscriptMessage } from "./transcript-store.js";
+import { appendLearningDailyMemoryEntry } from "./workspace-memory.js";
 
 function renderMessage(message: LearningTranscriptMessage): string {
   const content =

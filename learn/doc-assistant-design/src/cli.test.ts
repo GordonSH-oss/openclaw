@@ -1,9 +1,9 @@
-import test from "node:test";
 import assert from "node:assert/strict";
 import process from "node:process";
+import test from "node:test";
 import { parseCliArgs } from "./cli.js";
 
-test("parseCliArgs uses DOC_ASSISTANT_DOCS_ROOT when --docs-root is omitted", () => {
+void test("parseCliArgs uses DOC_ASSISTANT_DOCS_ROOT when --docs-root is omitted", () => {
   const previous = process.env.DOC_ASSISTANT_DOCS_ROOT;
   process.env.DOC_ASSISTANT_DOCS_ROOT = "/tmp/doc-assistant-env-docs";
 
@@ -19,7 +19,7 @@ test("parseCliArgs uses DOC_ASSISTANT_DOCS_ROOT when --docs-root is omitted", ()
   }
 });
 
-test("parseCliArgs lets --docs-root override DOC_ASSISTANT_DOCS_ROOT", () => {
+void test("parseCliArgs lets --docs-root override DOC_ASSISTANT_DOCS_ROOT", () => {
   const previous = process.env.DOC_ASSISTANT_DOCS_ROOT;
   process.env.DOC_ASSISTANT_DOCS_ROOT = "/tmp/doc-assistant-env-docs";
 

@@ -1,6 +1,6 @@
+import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { randomUUID } from "node:crypto";
 
 export type LearningSessionEntry = {
   sessionId: string;
@@ -105,11 +105,13 @@ export async function updateLearningSession(params: {
   return next;
 }
 
-export async function listLearningSessions(dataDir?: string): Promise<Array<{ key: string; entry: LearningSessionEntry }>> {
+export async function listLearningSessions(
+  dataDir?: string,
+): Promise<Array<{ key: string; entry: LearningSessionEntry }>> {
   const store = await loadLearningSessionStore(dataDir);
   return Object.entries(store)
     .map(([key, entry]) => ({ key, entry }))
-    .sort((a, b) => b.entry.updatedAt - a.entry.updatedAt);
+    .toSorted((a, b) => b.entry.updatedAt - a.entry.updatedAt);
 }
 
 export async function deleteLearningSession(sessionKey: string, dataDir?: string): Promise<void> {

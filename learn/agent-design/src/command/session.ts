@@ -1,8 +1,8 @@
-import type { LearningAgentSessionEntry } from "../types.js";
 import {
   resolveLearningSession as sharedResolveLearningSession,
   updateLearningSession as sharedUpdateLearningSession,
 } from "../../../session-memory-design/src/index.js";
+import type { LearningAgentSessionEntry } from "../types.js";
 
 export async function resolveLearningSession(params: {
   sessionKey: string;
@@ -17,9 +17,7 @@ export async function updateLearningSession(params: {
   dataDir?: string;
   update:
     | Partial<LearningAgentSessionEntry>
-    | ((
-        current: LearningAgentSessionEntry,
-      ) => LearningAgentSessionEntry);
+    | ((current: LearningAgentSessionEntry) => LearningAgentSessionEntry);
 }): Promise<LearningAgentSessionEntry> {
   return await sharedUpdateLearningSession(params);
 }

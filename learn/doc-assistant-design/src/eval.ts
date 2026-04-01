@@ -1,5 +1,5 @@
-import process from "node:process";
 import fs from "node:fs/promises";
+import process from "node:process";
 import { pathToFileURL } from "node:url";
 import { parseCliArgs } from "./cli.js";
 import { loadDocAssistantDotEnv } from "./env.js";
@@ -89,7 +89,9 @@ export function evaluateRetrievalCase(params: {
   }
 
   if (params.caseDef.expectedPathSuffixes?.length) {
-    const matched = topHits.some((hit) => pathMatches(hit.path, params.caseDef.expectedPathSuffixes ?? []));
+    const matched = topHits.some((hit) =>
+      pathMatches(hit.path, params.caseDef.expectedPathSuffixes ?? []),
+    );
     if (!matched) {
       reasons.push(
         `Top ${String(topK)} did not include any expected path: ${params.caseDef.expectedPathSuffixes.join(", ")}`,
@@ -227,7 +229,9 @@ async function main(): Promise<void> {
     return;
   }
   if (options.mode === "agent" && (!options.baseURL || !options.apiKey)) {
-    console.error("Agent eval requires DOC_ASSISTANT_BASE_URL and DOC_ASSISTANT_API_KEY, or explicit flags.");
+    console.error(
+      "Agent eval requires DOC_ASSISTANT_BASE_URL and DOC_ASSISTANT_API_KEY, or explicit flags.",
+    );
     process.exitCode = 1;
     return;
   }
@@ -254,7 +258,9 @@ async function main(): Promise<void> {
     if (result.passed) {
       passedCount += 1;
     }
-    console.log(`${result.passed ? "PASS" : "FAIL"} ${result.caseDef.id} - ${result.caseDef.title}`);
+    console.log(
+      `${result.passed ? "PASS" : "FAIL"} ${result.caseDef.id} - ${result.caseDef.title}`,
+    );
     console.log(
       `Question: ${
         result.caseDef.turns && result.caseDef.turns.length > 0

@@ -66,11 +66,7 @@ export type DocSearchHit = DocCitation & {
   retrievalBucket?: "concept" | "procedural";
 };
 
-export type DocAnswerSource =
-  | "memory_standard"
-  | "memory_draft"
-  | "generated"
-  | "greeting";
+export type DocAnswerSource = "memory_standard" | "memory_draft" | "generated" | "greeting";
 
 export type DocAnswerReviewStatus =
   | "not_applicable"
@@ -78,15 +74,9 @@ export type DocAnswerReviewStatus =
   | "approved_standard"
   | "rejected";
 
-export type DocFollowUpSource =
-  | "none"
-  | "clarification_reuse"
-  | "clarification_rewrite";
+export type DocFollowUpSource = "none" | "clarification_reuse" | "clarification_rewrite";
 
-export type DocMemoryEntryStatus =
-  | "pending_review"
-  | "approved_standard"
-  | "rejected";
+export type DocMemoryEntryStatus = "pending_review" | "approved_standard" | "rejected";
 
 export type DocsUserCreateParams = {
   displayLabel?: string;
@@ -305,7 +295,9 @@ export function validateDocsAskParams(params: unknown): params is DocsAskParams 
     params.idempotencyKey.trim().length > 0 &&
     (params.mode === undefined || params.mode === "extractive" || params.mode === "agent") &&
     (params.maxResults === undefined ||
-      (typeof params.maxResults === "number" && Number.isFinite(params.maxResults) && params.maxResults > 0)) &&
+      (typeof params.maxResults === "number" &&
+        Number.isFinite(params.maxResults) &&
+        params.maxResults > 0)) &&
     (params.backend === undefined || params.backend === "embedded" || params.backend === "cli") &&
     (params.provider === undefined || typeof params.provider === "string") &&
     (params.model === undefined || typeof params.model === "string")
@@ -320,7 +312,9 @@ export function validateDocsRunWaitParams(params: unknown): params is DocsRunWai
     typeof params.runId === "string" &&
     params.runId.trim().length > 0 &&
     (params.timeoutMs === undefined ||
-      (typeof params.timeoutMs === "number" && Number.isFinite(params.timeoutMs) && params.timeoutMs > 0))
+      (typeof params.timeoutMs === "number" &&
+        Number.isFinite(params.timeoutMs) &&
+        params.timeoutMs > 0))
   );
 }
 
@@ -338,7 +332,9 @@ export function validateDocsTranscriptParams(params: unknown): params is DocsTra
   return typeof params.userId === "string" && params.userId.trim().length > 0;
 }
 
-export function validateDocsSearchPreviewParams(params: unknown): params is DocsSearchPreviewParams {
+export function validateDocsSearchPreviewParams(
+  params: unknown,
+): params is DocsSearchPreviewParams {
   if (!isRecord(params)) {
     return false;
   }
@@ -346,7 +342,9 @@ export function validateDocsSearchPreviewParams(params: unknown): params is Docs
     typeof params.query === "string" &&
     params.query.trim().length > 0 &&
     (params.maxResults === undefined ||
-      (typeof params.maxResults === "number" && Number.isFinite(params.maxResults) && params.maxResults > 0))
+      (typeof params.maxResults === "number" &&
+        Number.isFinite(params.maxResults) &&
+        params.maxResults > 0))
   );
 }
 
@@ -365,7 +363,9 @@ export function validateDocsHistoryListParams(params: unknown): params is DocsHi
   );
 }
 
-export function validateDocsAdminMemoryListParams(params: unknown): params is DocsAdminMemoryListParams {
+export function validateDocsAdminMemoryListParams(
+  params: unknown,
+): params is DocsAdminMemoryListParams {
   if (params === undefined) {
     return true;
   }
@@ -383,7 +383,9 @@ export function validateDocsAdminMemoryListParams(params: unknown): params is Do
   );
 }
 
-export function validateDocsAdminMemoryGetParams(params: unknown): params is DocsAdminMemoryGetParams {
+export function validateDocsAdminMemoryGetParams(
+  params: unknown,
+): params is DocsAdminMemoryGetParams {
   if (!isRecord(params)) {
     return false;
   }

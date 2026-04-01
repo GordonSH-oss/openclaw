@@ -1,7 +1,7 @@
+import type { Dirent } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { Dirent } from "node:fs";
 import {
   LEARNING_PLUGIN_MANIFEST_FILE,
   readLearningPluginManifest,
@@ -22,9 +22,14 @@ function isPathInside(root: string, candidate: string): boolean {
 export async function discoverLearningPlugins(params?: {
   roots?: string[];
 }): Promise<LearningPluginCandidate[]> {
-  const defaultRoot = path.join(path.dirname(fileURLToPath(import.meta.url)), "fixtures", "plugins");
-  const roots = (params?.roots?.length ? params.roots : [defaultRoot])
-    .map((value) => path.resolve(value));
+  const defaultRoot = path.join(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "fixtures",
+    "plugins",
+  );
+  const roots = (params?.roots?.length ? params.roots : [defaultRoot]).map((value) =>
+    path.resolve(value),
+  );
   const candidates: LearningPluginCandidate[] = [];
   for (const root of roots) {
     let entries: Dirent[] = [];
@@ -55,5 +60,5 @@ export async function discoverLearningPlugins(params?: {
       });
     }
   }
-  return candidates.sort((a, b) => a.manifest.id.localeCompare(b.manifest.id));
+  return candidates.toSorted((a, b) => a.manifest.id.localeCompare(b.manifest.id));
 }

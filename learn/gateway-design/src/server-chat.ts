@@ -70,10 +70,7 @@ export function getMessageSubscriberConnIds(
   return state.sessionMessageSubscribers.get(sessionKey) ?? new Set<string>();
 }
 
-export function removeConnFromChatSubscriptions(
-  state: GatewayChatState,
-  connId: string,
-): void {
+export function removeConnFromChatSubscriptions(state: GatewayChatState, connId: string): void {
   for (const [sessionKey, subscribers] of state.sessionMessageSubscribers) {
     subscribers.delete(connId);
     if (subscribers.size === 0) {

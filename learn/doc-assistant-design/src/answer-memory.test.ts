@@ -1,8 +1,8 @@
-import test from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import fs from "node:fs/promises";
+import test from "node:test";
 import {
   approveAnswerMemoryEntry,
   enqueueGeneratedAnswerMemory,
@@ -59,7 +59,7 @@ function makeTerminal(runId: string, answer: string): DocsTerminalResult {
   };
 }
 
-test("findAnswerMemoryMatch prefers approved standards over pending drafts", async () => {
+void test("findAnswerMemoryMatch prefers approved standards over pending drafts", async () => {
   const dataDir = await makeTempDir("doc-assistant-memory-match");
   await replaceAnswerMemoryEntries(
     [
@@ -88,7 +88,7 @@ test("findAnswerMemoryMatch prefers approved standards over pending drafts", asy
   assert.equal(match?.entry.entryId, "approved-1");
 });
 
-test("enqueueGeneratedAnswerMemory dedupes near-identical pending questions but pending entries are not matched", async () => {
+void test("enqueueGeneratedAnswerMemory dedupes near-identical pending questions but pending entries are not matched", async () => {
   const dataDir = await makeTempDir("doc-assistant-memory-dedupe");
   const first = await enqueueGeneratedAnswerMemory({
     dataDir,
@@ -111,7 +111,7 @@ test("enqueueGeneratedAnswerMemory dedupes near-identical pending questions but 
   assert.equal(match, null);
 });
 
-test("findAnswerMemoryMatch ignores approved entries that are only clarification prompts", async () => {
+void test("findAnswerMemoryMatch ignores approved entries that are only clarification prompts", async () => {
   const dataDir = await makeTempDir("doc-assistant-memory-ignore-clarification");
   await replaceAnswerMemoryEntries(
     [
@@ -135,7 +135,7 @@ test("findAnswerMemoryMatch ignores approved entries that are only clarification
   assert.equal(match, null);
 });
 
-test("approve, update, and reject memory entries mutate review state", async () => {
+void test("approve, update, and reject memory entries mutate review state", async () => {
   const dataDir = await makeTempDir("doc-assistant-memory-review");
   await replaceAnswerMemoryEntries(
     [
@@ -156,7 +156,10 @@ test("approve, update, and reject memory entries mutate review state", async () 
     questionVariants: ["What Node version does OpenClaw require?"],
   });
   assert.equal(updated?.answer, "edited draft answer");
-  assert.equal(updated?.questionVariants.includes("What Node version does OpenClaw require?"), true);
+  assert.equal(
+    updated?.questionVariants.includes("What Node version does OpenClaw require?"),
+    true,
+  );
 
   const approved = await approveAnswerMemoryEntry({
     dataDir,

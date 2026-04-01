@@ -1,5 +1,5 @@
-import test from "node:test";
 import assert from "node:assert/strict";
+import test from "node:test";
 import {
   buildLearningSessionKey,
   createMockDiscordChannel,
@@ -10,7 +10,7 @@ import {
   resolveLearningDefaultAccount,
 } from "./index.js";
 
-test("route priority is peer > parent peer > account > channel > default", () => {
+void test("route priority is peer > parent peer > account > channel > default", () => {
   const route = resolveLearningRoute({
     context: normalizeLearningInboundContext({
       channel: "discord",
@@ -23,7 +23,10 @@ test("route priority is peer > parent peer > account > channel > default", () =>
     bindings: [
       { match: { channel: "discord" }, agentId: "fallback" },
       { match: { channel: "discord", accountId: "acct-1" }, agentId: "account" },
-      { match: { channel: "discord", parentPeer: { kind: "channel", id: "channel-1" } }, agentId: "parent" },
+      {
+        match: { channel: "discord", parentPeer: { kind: "channel", id: "channel-1" } },
+        agentId: "parent",
+      },
       { match: { channel: "discord", peer: { kind: "channel", id: "thread-1" } }, agentId: "peer" },
     ],
     defaultAgentId: "default",
@@ -31,7 +34,7 @@ test("route priority is peer > parent peer > account > channel > default", () =>
   assert.equal(route.agentId, "peer");
 });
 
-test("DM session scope variants build stable session keys", () => {
+void test("DM session scope variants build stable session keys", () => {
   const context = normalizeLearningInboundContext({
     channel: "telegram",
     accountId: "owner",
@@ -39,7 +42,10 @@ test("DM session scope variants build stable session keys", () => {
     chatType: "direct",
     text: "hi",
   });
-  assert.equal(buildLearningSessionKey({ agentId: "main", context, scope: "main" }), "agent:main:main");
+  assert.equal(
+    buildLearningSessionKey({ agentId: "main", context, scope: "main" }),
+    "agent:main:main",
+  );
   assert.equal(
     buildLearningSessionKey({ agentId: "main", context, scope: "per-peer" }),
     "agent:main:direct:user-1",
@@ -54,7 +60,7 @@ test("DM session scope variants build stable session keys", () => {
   );
 });
 
-test("account lookup and policy evaluation stay deterministic", () => {
+void test("account lookup and policy evaluation stay deterministic", () => {
   assert.equal(
     resolveLearningDefaultAccount({
       configuredAccounts: ["primary", "backup"],
@@ -82,7 +88,7 @@ test("account lookup and policy evaluation stay deterministic", () => {
   });
 });
 
-test("mock channels normalize different inbound shapes into a shared context", () => {
+void test("mock channels normalize different inbound shapes into a shared context", () => {
   const telegram = createMockTelegramChannel().normalize({
     accountId: "bot",
     chatId: "42",

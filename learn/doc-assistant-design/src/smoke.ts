@@ -1,6 +1,6 @@
-import { executeDocQuestion } from "./question-execution.js";
 import { updateClarificationStateAfterAnswer } from "./follow-up-context.js";
 import type { OpenAICompatibleConfig } from "./protocol/index.js";
+import { executeDocQuestion } from "./question-execution.js";
 
 export async function runDocAssistantSmoke(params: {
   docsRoot: string;
