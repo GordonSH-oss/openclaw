@@ -229,6 +229,59 @@ async function createClientConnectFixtureDocs(): Promise<string> {
   return docsRoot;
 }
 
+async function createSendMessageFixtureDocs(): Promise<string> {
+  const docsRoot = await makeTempDir("doc-assistant-send-docs");
+  const docsDir = path.join(docsRoot, "docs");
+  await fs.mkdir(path.join(docsDir, "chatsdk-android", "message"), { recursive: true });
+  await fs.mkdir(path.join(docsDir, "chatsdk-ios", "message"), { recursive: true });
+  await fs.mkdir(path.join(docsDir, "platform-chat-api", "message"), { recursive: true });
+
+  await fs.writeFile(
+    path.join(docsDir, "chatsdk-android", "message", "send.md"),
+    [
+      "# Send messages",
+      "",
+      "## Send a text message",
+      "",
+      "Build `SendTextMessageParams` and call `channel.sendMessage(...)` to send a text message on Android.",
+      "",
+      "## Send an image message",
+      "",
+      "Build `SendImageMessageParams` and call `channel.sendMessage(...)` to send an image message on Android.",
+      "",
+    ].join("\n"),
+    "utf-8",
+  );
+  await fs.writeFile(
+    path.join(docsDir, "chatsdk-ios", "message", "send.md"),
+    [
+      "# Send messages",
+      "",
+      "## Send a regular message",
+      "",
+      "Build `SendTextMessageParams` and call `channel.sendMessage(...)` to send a regular message on iOS.",
+      "",
+      "## Send a media message",
+      "",
+      "Build `SendImageMessageParams` and call `channel.sendMessage(...)` to send a media message on iOS.",
+      "",
+    ].join("\n"),
+    "utf-8",
+  );
+  await fs.writeFile(
+    path.join(docsDir, "platform-chat-api", "message", "how-to-sync-to-sender-client.md"),
+    [
+      "# Set the isEchoToSender parameter",
+      "",
+      "Use the server-side setting to sync the message back to the sender.",
+      "",
+    ].join("\n"),
+    "utf-8",
+  );
+
+  return docsRoot;
+}
+
 async function createCommunityChannelFixtureDocs(): Promise<string> {
   const docsRoot = await makeTempDir("doc-assistant-community-docs");
   const docsDir = path.join(docsRoot, "docs");
@@ -1085,6 +1138,29 @@ void test("search ignores filler wording and still prefers webhook overview", as
   );
 });
 
+void test("search prefers client send-message docs over sync-to-sender server docs", async () => {
+  const docsRoot = await createSendMessageFixtureDocs();
+
+  const hits = await searchDocs({
+    query: "How to send a message?",
+    docsRoot,
+    maxResults: 6,
+  });
+
+  const androidIndex = hits.findIndex((hit) =>
+    hit.path.endsWith("docs/chatsdk-android/message/send.md"),
+  );
+  const iosIndex = hits.findIndex((hit) => hit.path.endsWith("docs/chatsdk-ios/message/send.md"));
+  const serverIndex = hits.findIndex((hit) =>
+    hit.path.endsWith("docs/platform-chat-api/message/how-to-sync-to-sender-client.md"),
+  );
+
+  assert.equal(androidIndex !== -1, true);
+  assert.equal(iosIndex !== -1, true);
+  assert.equal(serverIndex === -1 || androidIndex < serverIndex, true);
+  assert.equal(serverIndex === -1 || iosIndex < serverIndex, true);
+});
+
 void test("buildDocAnswer asks for platform clarification when multiple SDK platforms match", async () => {
   const result = await buildDocAnswer({
     runId: "clarify-1",
@@ -1272,6 +1348,80 @@ void test("buildDocAnswer turns explicit-platform chat questions into a step gui
   assert.equal(result.answer.includes("当前命中的文档主要支持你"), false);
   assert.equal(result.answer.includes("`DirectChannel"), true);
   assert.equal(result.answer.includes("sendMessage"), true);
+});
+
+void test("buildDocAnswer keeps generic send-message questions as platform clarification answers", async () => {
+  const docsRoot = await createSendMessageFixtureDocs();
+  const hits = await searchDocs({
+    query: "How to send a message?",
+    docsRoot,
+    maxResults: 6,
+  });
+
+  const result = await buildDocAnswer({
+    runId: "send-clarify-1",
+    question: "How to send a message?",
+    mode: "extractive",
+    hits,
+  });
+
+  assert.equal(result.summary, "platform clarification required");
+  assert.equal(result.answer.includes("Android"), true);
+  assert.equal(result.answer.includes("iOS"), true);
+  assert.equal(result.answer.includes("Steps"), false);
+  assert.equal(result.answer.includes("DirectChannel"), false);
+  assert.equal(result.answer.includes("start a direct chat"), false);
+  assert.equal(result.answer.includes("import or initialization"), false);
+  assert.equal(result.answer.includes("token acquisition"), false);
+});
+
+void test("buildDocAnswer renders explicit-platform send-message questions as send guides instead of chat-start guides", async () => {
+  const docsRoot = await createSendMessageFixtureDocs();
+  const hits = await searchDocs({
+    query: "How to send a message on Android?",
+    docsRoot,
+    maxResults: 6,
+  });
+
+  const result = await buildDocAnswer({
+    runId: "send-android-1",
+    question: "How to send a message on Android?",
+    mode: "extractive",
+    hits,
+  });
+
+  assert.equal(result.summary.startsWith("guided answer from "), true);
+  assert.equal(result.answer.includes("send a message on Android"), true);
+  assert.equal(result.answer.includes("start a direct chat"), false);
+  assert.equal(result.answer.includes("DirectChannel"), false);
+  assert.equal(result.answer.includes("SendTextMessageParams"), true);
+  assert.equal(result.answer.includes("Steps"), true);
+});
+
+void test("buildDocAnswer keeps image-message answers subtype-specific", async () => {
+  const docsRoot = await createSendMessageFixtureDocs();
+  const hits = await searchDocs({
+    query: "How to send an image message on Android?",
+    docsRoot,
+    maxResults: 6,
+  });
+
+  const result = await buildDocAnswer({
+    runId: "send-image-1",
+    question: "How to send an image message on Android?",
+    mode: "extractive",
+    hits,
+  });
+
+  assert.equal(result.summary.startsWith("guided answer from "), true);
+  assert.equal(result.answer.includes("send an image message on Android"), true);
+  assert.equal(result.answer.includes("SendImageMessageParams"), true);
+  assert.equal(result.answer.includes("SendTextMessageParams"), false);
+  assert.equal(result.answer.includes("start a direct chat"), false);
+  assert.equal(
+    result.citations.some((citation) => citation.heading === "Send an image message"),
+    true,
+  );
 });
 
 void test("search prefers community overview docs for concept questions", async () => {
@@ -2342,6 +2492,36 @@ void test("docs.ask in agent mode emits delta and returns selected model metadat
   assert.equal(terminal.citations.length > 0, true);
 });
 
+void test("agent mode preserves clarification answers instead of letting the mock agent rewrite them", async () => {
+  const docsRoot = await createSendMessageFixtureDocs();
+  const hits = await searchDocs({
+    query: "How to send a message?",
+    docsRoot,
+    maxResults: 6,
+  });
+
+  const extractive = await buildDocAnswer({
+    runId: "send-agent-bypass-extractive",
+    question: "How to send a message?",
+    mode: "extractive",
+    hits,
+  });
+  const agent = await buildDocAnswer({
+    runId: "send-agent-bypass-agent",
+    question: "How to send a message?",
+    mode: "agent",
+    hits,
+    provider: "mock",
+    model: "learning-primary",
+  });
+
+  assert.equal(agent.mode, "agent");
+  assert.equal(agent.answer, extractive.answer);
+  assert.equal(agent.summary, extractive.summary);
+  assert.equal(agent.selectedModel, undefined);
+  assert.equal(agent.selectedProvider, undefined);
+});
+
 void test("docs.run.wait returns the terminal result and docs.run.status exposes terminal state", async (t) => {
   const docsRoot = await createLifecycleFixtureDocs();
   const dataDir = await makeTempDir("doc-assistant-run-wait");
@@ -2515,6 +2695,41 @@ void test("agent mode can use openai-compatible backend", async (t) => {
   assert.equal(result.selectedProvider, "openai-compatible");
   assert.equal(result.selectedModel, "gpt-test");
   assert.equal(result.answer.includes("Sources:"), true);
+});
+
+void test("agent mode bypasses openai-compatible calls for clarification-shaped grounded answers", async (t) => {
+  const originalFetch = globalThis.fetch;
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+  globalThis.fetch = (async () => {
+    throw new Error("fetch should not be called for clarification answers");
+  }) as typeof fetch;
+
+  const docsRoot = await createSendMessageFixtureDocs();
+  const hits = await searchDocs({
+    query: "How to send a message?",
+    docsRoot,
+    maxResults: 6,
+  });
+
+  const result = await buildDocAnswer({
+    runId: "send-agent-openai-bypass",
+    question: "How to send a message?",
+    mode: "agent",
+    hits,
+    provider: "openai-compatible",
+    openAICompatible: {
+      baseURL: "https://example.com/v1",
+      apiKey: "test-key",
+      model: "gpt-test",
+    },
+  });
+
+  assert.equal(result.summary, "platform clarification required");
+  assert.equal(result.answer.includes("Relevant doc entry points"), true);
+  assert.equal(result.selectedProvider, undefined);
+  assert.equal(result.selectedModel, undefined);
 });
 
 void test("approved memory answers are served before retrieval and beat pending drafts", async (t) => {

@@ -56,6 +56,24 @@ type AnalyzedHit = DocSearchHit & {
   role: AnswerRole;
 };
 
+type GroundedAnswerKind =
+  | "clarification"
+  | "concept"
+  | "send_message"
+  | "start_chat"
+  | "channel_creation"
+  | "generic_guide"
+  | "no_hit";
+
+type GuideAnswerKind = Exclude<GroundedAnswerKind, "clarification" | "concept" | "no_hit">;
+type AgentRewritePolicy = "rewrite_allowed" | "bypass_agent";
+type MessageSubtype = "text" | "image" | "file" | "voice" | "targeted" | "generic";
+
+type GroundedAnswerResult = DocAnswerResult & {
+  answerKind: GroundedAnswerKind;
+  agentPolicy: AgentRewritePolicy;
+};
+
 const CONCEPT_MARKER_TERMS = [
   "what",
   "what s",
@@ -244,6 +262,135 @@ function isChannelFocusedQuestion(question: string): boolean {
   );
 }
 
+function isSendMessageQuestion(question: string): boolean {
+  const normalized = normalizeAnswerText(question);
+  return (
+    normalized.includes("send") &&
+    (normalized.includes("message") ||
+      normalized.includes("text") ||
+      normalized.includes("image") ||
+      normalized.includes("file") ||
+      normalized.includes("voice") ||
+      normalized.includes("media") ||
+      normalized.includes("targeted"))
+  );
+}
+
+function isStartChatQuestion(question: string): boolean {
+  const normalized = normalizeAnswerText(question);
+  if (isSendMessageQuestion(question)) {
+    return false;
+  }
+  return (
+    (normalized.includes("start") ||
+      normalized.includes("begin") ||
+      normalized.includes("open") ||
+      normalized.includes("chat")) &&
+    (normalized.includes("chat") ||
+      normalized.includes("channel") ||
+      normalized.includes("conversation") ||
+      normalized.includes("direct channel"))
+  );
+}
+
+function isChannelCreationQuestion(question: string): boolean {
+  const normalized = normalizeAnswerText(question);
+  return (
+    normalized.includes("create") &&
+    (normalized.includes("channel") ||
+      normalized.includes("conversation") ||
+      normalized.includes("group") ||
+      normalized.includes("community") ||
+      normalized.includes("subchannel"))
+  );
+}
+
+function wantsEndToEndSdkFlow(question: string): boolean {
+  const normalized = normalizeAnswerText(question);
+  return (
+    normalized.includes("from scratch") ||
+    normalized.includes("quickstart") ||
+    normalized.includes("setup") ||
+    normalized.includes("set up") ||
+    normalized.includes("import") ||
+    normalized.includes("initialize") ||
+    normalized.includes("connect") ||
+    normalized.includes("start a direct chat") ||
+    normalized.includes("start chat")
+  );
+}
+
+function detectMessageSubtypeFromText(text: string): MessageSubtype {
+  const normalized = normalizeAnswerText(text);
+  if (normalized.includes("targeted message") || normalized.includes("directeduserids")) {
+    return "targeted";
+  }
+  if (normalized.includes("image message") || normalized.includes("photo message")) {
+    return "image";
+  }
+  if (normalized.includes("file message")) {
+    return "file";
+  }
+  if (normalized.includes("voice message") || normalized.includes("audio message")) {
+    return "voice";
+  }
+  if (normalized.includes("text message") || normalized.includes("regular message")) {
+    return "text";
+  }
+  return "generic";
+}
+
+function detectMessageSubtype(
+  question: string,
+  hit?: Pick<DocSearchHit, "path" | "heading" | "text">,
+): MessageSubtype {
+  const fromQuestion = detectMessageSubtypeFromText(question);
+  if (fromQuestion !== "generic") {
+    return fromQuestion;
+  }
+  if (!hit) {
+    return "generic";
+  }
+  return "generic";
+}
+
+function formatMessageSubtype(subtype: MessageSubtype, language: AnswerLanguage): string {
+  if (language === "en") {
+    if (subtype === "text") {
+      return "a text message";
+    }
+    if (subtype === "image") {
+      return "an image message";
+    }
+    if (subtype === "file") {
+      return "a file message";
+    }
+    if (subtype === "voice") {
+      return "a voice message";
+    }
+    if (subtype === "targeted") {
+      return "a targeted message";
+    }
+    return "a message";
+  }
+  if (subtype === "text") {
+    return "文本消息";
+  }
+  if (subtype === "image") {
+    return "图片消息";
+  }
+  if (subtype === "file") {
+    return "文件消息";
+  }
+  if (subtype === "voice") {
+    return "语音消息";
+  }
+  if (subtype === "targeted") {
+    return "定向消息";
+  }
+  return "消息";
+}
+
 function formatPlatform(platform: DocPlatform): string {
   if (platform === "ios") {
     return "iOS";
@@ -283,6 +430,10 @@ function extractCodeTerms(text: string): string[] {
     /\bNCEngine\.connect\b/g,
     /\bDirectChannel\b/g,
     /\bSendTextMessageParams\b/g,
+    /\bSendImageMessageParams\b/g,
+    /\bSendFileMessageParams\b/g,
+    /\bSendVoiceMessageParams\b/g,
+    /\bSendMediaMessageParams\b/g,
     /\bdirectedUserIds\b/g,
     /\bintent-filter\b/g,
     /\bPushMessageReceiver\b/g,
@@ -644,6 +795,70 @@ function pickBestHit(hits: AnalyzedHit[], roles: AnswerRole[]): AnalyzedHit | un
     .toSorted((left, right) => right.score - left.score)[0];
 }
 
+function pickBestSendHit(question: string, hits: AnalyzedHit[]): AnalyzedHit | undefined {
+  const requestedSubtype = detectMessageSubtype(question);
+  return hits
+    .filter((hit) => hit.role === "send_first_message")
+    .toSorted((left, right) => {
+      const scoreStructure = (hit: AnalyzedHit): number => {
+        const normalizedHeadingPath = normalizeAnswerText([hit.path, hit.heading ?? ""].join("\n"));
+        let score = 0;
+        if (
+          normalizedHeadingPath.includes("/message/") ||
+          normalizedHeadingPath.includes("message send")
+        ) {
+          score += 3;
+        }
+        if (
+          normalizedHeadingPath.includes("send a text message") ||
+          normalizedHeadingPath.includes("send a regular message") ||
+          normalizedHeadingPath.includes("send an image message") ||
+          normalizedHeadingPath.includes("send a file message") ||
+          normalizedHeadingPath.includes("send a voice message") ||
+          normalizedHeadingPath.includes("send a media message") ||
+          normalizedHeadingPath.includes("send a targeted message")
+        ) {
+          score += 2;
+        }
+        if (normalizedHeadingPath.includes("step ")) {
+          score -= 1;
+        }
+        return score;
+      };
+      const scoreSubtype = (hit: AnalyzedHit): number => {
+        const subtype = detectMessageSubtypeFromText([hit.heading ?? "", hit.text].join("\n"));
+        if (requestedSubtype !== "generic") {
+          if (subtype === requestedSubtype) {
+            return 3;
+          }
+          if (
+            requestedSubtype === "image" &&
+            normalizeAnswerText([hit.heading ?? "", hit.text].join("\n")).includes("media message")
+          ) {
+            return 2;
+          }
+          return 0;
+        }
+        if (subtype === "text" || subtype === "generic") {
+          return 2;
+        }
+        if (subtype === "targeted") {
+          return 1;
+        }
+        return 0;
+      };
+      const structureDelta = scoreStructure(right) - scoreStructure(left);
+      if (structureDelta !== 0) {
+        return structureDelta;
+      }
+      const subtypeDelta = scoreSubtype(right) - scoreSubtype(left);
+      if (subtypeDelta !== 0) {
+        return subtypeDelta;
+      }
+      return right.score - left.score;
+    })[0];
+}
+
 function pickBestHitByPredicate(
   hits: AnalyzedHit[],
   predicate: (hit: AnalyzedHit, normalizedHeadingPath: string, normalizedBody: string) => boolean,
@@ -663,7 +878,7 @@ function buildClarificationAnswer(
   question: string,
   analysis: ReturnType<typeof analyzeHits>,
   language: AnswerLanguage,
-): DocAnswerResult {
+): GroundedAnswerResult {
   const platformHits = analysis.relevantHits.filter((hit) => hit.platform !== undefined);
   const bestByPlatform = new Map<DocPlatform, AnalyzedHit>();
   for (const hit of platformHits) {
@@ -697,6 +912,8 @@ function buildClarificationAnswer(
       .join("\n\n"),
     summary: "platform clarification required",
     citations,
+    answerKind: "clarification",
+    agentPolicy: "bypass_agent",
     answerSource: "generated",
     reviewStatus: "not_applicable",
   };
@@ -705,7 +922,7 @@ function buildClarificationAnswer(
 function buildChannelClarificationAnswer(
   analysis: ReturnType<typeof analyzeHits>,
   language: AnswerLanguage,
-): DocAnswerResult {
+): GroundedAnswerResult {
   const channelHits = analysis.analyzedHits.filter((hit) => hit.channelKind !== undefined);
   const bestByChannelKind = new Map<DocChannelKind, AnalyzedHit>();
   for (const hit of channelHits) {
@@ -737,12 +954,14 @@ function buildChannelClarificationAnswer(
       .join("\n\n"),
     summary: "channel clarification required",
     citations,
+    answerKind: "clarification",
+    agentPolicy: "bypass_agent",
     answerSource: "generated",
     reviewStatus: "not_applicable",
   };
 }
 
-function buildNoHitAnswer(question: string, language: AnswerLanguage): DocAnswerResult {
+function buildNoHitAnswer(question: string, language: AnswerLanguage): GroundedAnswerResult {
   return {
     mode: "extractive",
     answer: [
@@ -756,6 +975,8 @@ function buildNoHitAnswer(question: string, language: AnswerLanguage): DocAnswer
     ].join("\n\n"),
     summary: "no relevant documentation found",
     citations: [],
+    answerKind: "no_hit",
+    agentPolicy: "bypass_agent",
     answerSource: "generated",
     reviewStatus: "not_applicable",
   };
@@ -763,8 +984,10 @@ function buildNoHitAnswer(question: string, language: AnswerLanguage): DocAnswer
 
 function buildGuideIntro(params: {
   language: AnswerLanguage;
+  answerKind: GuideAnswerKind;
   platform?: DocPlatform;
   channelKind?: DocChannelKind;
+  messageSubtype?: MessageSubtype;
   overviewHit?: AnalyzedHit;
   setupHit?: AnalyzedHit;
   connectHit?: AnalyzedHit;
@@ -785,6 +1008,9 @@ function buildGuideIntro(params: {
       return `Use the documented flow below to configure webhooks.${citation}`;
     }
     const onPlatform = platformText ? ` on ${platformText}` : "";
+    if (params.answerKind === "send_message") {
+      return `Use the documented flow below to send ${formatMessageSubtype(params.messageSubtype ?? "generic", "en")}${onPlatform}.${citation}`;
+    }
     if (params.channelKind === "group") {
       return `Use the documented flow below to create a group channel${onPlatform}.${citation}`;
     }
@@ -801,6 +1027,9 @@ function buildGuideIntro(params: {
   }
   if (webhookGuide) {
     return `下面是配置 Webhook 的文档步骤。${citation}`;
+  }
+  if (params.answerKind === "send_message") {
+    return `下面是发送${formatMessageSubtype(params.messageSubtype ?? "generic", "zh")}${params.platform ? `的 ${formatPlatform(params.platform)} 文档步骤` : "的文档步骤"}。${citation}`;
   }
   if (params.platform && (params.channelHit || params.sendHit)) {
     return `下面是 ${formatPlatform(params.platform)} 的对应文档步骤，用来开始当前聊天流程。${citation}`;
@@ -848,7 +1077,14 @@ function buildNeedLine(hit: AnalyzedHit, language: AnswerLanguage): string {
     : `- 先阅读 ${hit.heading ?? hit.path}，确认接入前置条件。${inlineCitation(hit)}`;
 }
 
-function buildStepLine(hit: AnalyzedHit, language: AnswerLanguage): string {
+function buildStepLine(
+  hit: AnalyzedHit,
+  language: AnswerLanguage,
+  options: {
+    answerKind: GuideAnswerKind;
+    question: string;
+  },
+): string {
   const normalized = normalizeAnswerText([hit.path, hit.heading ?? "", hit.text].join("\n"));
   const codeTerms = extractCodeTerms([hit.heading ?? "", hit.text].join("\n"));
   const directChannel =
@@ -867,6 +1103,9 @@ function buildStepLine(hit: AnalyzedHit, language: AnswerLanguage): string {
     codeTerms.find((value) => value.includes("connect")) ?? "NCEngine.connect(...)";
   const targetedField =
     codeTerms.find((value) => value.includes("directedUserIds")) ?? "directedUserIds";
+  const messageSubtype = detectMessageSubtype(options.question, hit);
+  const messageParams = pickMessageParamsTerm(codeTerms, messageSubtype);
+  const mentionsDirectChannel = normalizeAnswerText(options.question).includes("direct channel");
 
   if (isWebhookHit(hit)) {
     if (
@@ -933,17 +1172,51 @@ function buildStepLine(hit: AnalyzedHit, language: AnswerLanguage): string {
   if (hit.role === "send_first_message") {
     if (normalized.includes("directeduserids")) {
       return language === "en"
-        ? `Create \`${sendParams}\`, set \`${targetedField}\` to the target members, then call \`${sendMethod}\` to send the targeted message.${inlineCitation(hit)}`
-        : `构造 \`${sendParams}\`，设置 \`${targetedField}\` 指定目标成员，然后调用 \`${sendMethod}\` 发送定向消息。${inlineCitation(hit)}`;
+        ? `Create \`${messageParams ?? sendParams}\`, set \`${targetedField}\` to the target members, then call \`${sendMethod}\` to send the targeted message.${inlineCitation(hit)}`
+        : `构造 \`${messageParams ?? sendParams}\`，设置 \`${targetedField}\` 指定目标成员，然后调用 \`${sendMethod}\` 发送定向消息。${inlineCitation(hit)}`;
     }
-    if (normalized.includes("directchannel")) {
+
+    if (messageSubtype === "text") {
+      if (options.answerKind === "start_chat" && normalized.includes("directchannel")) {
+        return language === "en"
+          ? `Create \`${directChannel}("<target-user-id>")\`, then build \`${messageParams ?? sendParams}\` and call \`${sendMethod}\` to send the first message.${inlineCitation(hit)}`
+          : `创建 \`${directChannel}("<target-user-id>")\`，再构造 \`${messageParams ?? sendParams}\` 并调用 \`${sendMethod}\` 发送第一条消息。${inlineCitation(hit)}`;
+      }
       return language === "en"
-        ? `Create \`${directChannel}("<target-user-id>")\`, then build \`${sendParams}\` and call \`${sendMethod}\` to send the first message.${inlineCitation(hit)}`
-        : `创建 \`${directChannel}("<target-user-id>")\`，再构造 \`${sendParams}\` 并调用 \`${sendMethod}\` 发送第一条消息。${inlineCitation(hit)}`;
+        ? `Build \`${messageParams ?? sendParams}\`, then call \`${sendMethod}\` to send the text message.${inlineCitation(hit)}`
+        : `构造 \`${messageParams ?? sendParams}\`，然后调用 \`${sendMethod}\` 发送文本消息。${inlineCitation(hit)}`;
+    }
+
+    if (messageSubtype === "image") {
+      return language === "en"
+        ? `${messageParams ? `Build \`${messageParams}\`, then ` : ""}call \`${sendMethod}\` to send the image message.${inlineCitation(hit)}`
+        : `${messageParams ? `构造 \`${messageParams}\`，然后` : ""}调用 \`${sendMethod}\` 发送图片消息。${inlineCitation(hit)}`;
+    }
+
+    if (messageSubtype === "file") {
+      return language === "en"
+        ? `${messageParams ? `Build \`${messageParams}\`, then ` : ""}call \`${sendMethod}\` to send the file message.${inlineCitation(hit)}`
+        : `${messageParams ? `构造 \`${messageParams}\`，然后` : ""}调用 \`${sendMethod}\` 发送文件消息。${inlineCitation(hit)}`;
+    }
+
+    if (messageSubtype === "voice") {
+      return language === "en"
+        ? `${messageParams ? `Build \`${messageParams}\`, then ` : ""}call \`${sendMethod}\` to send the voice message.${inlineCitation(hit)}`
+        : `${messageParams ? `构造 \`${messageParams}\`，然后` : ""}调用 \`${sendMethod}\` 发送语音消息。${inlineCitation(hit)}`;
+    }
+
+    if (
+      options.answerKind === "start_chat" &&
+      normalized.includes("directchannel") &&
+      mentionsDirectChannel
+    ) {
+      return language === "en"
+        ? `Create \`${directChannel}("<target-user-id>")\`, then call \`${sendMethod}\` to send the message.${inlineCitation(hit)}`
+        : `创建 \`${directChannel}("<target-user-id>")\`，然后调用 \`${sendMethod}\` 发送消息。${inlineCitation(hit)}`;
     }
     return language === "en"
-      ? `Build \`${sendParams}\`, then call \`${sendMethod}\` to send the first message.${inlineCitation(hit)}`
-      : `构造 \`${sendParams}\`，然后调用 \`${sendMethod}\` 发送第一条消息。${inlineCitation(hit)}`;
+      ? `${messageParams ? `Build \`${messageParams}\`, then ` : ""}call \`${sendMethod}\` to send the message.${inlineCitation(hit)}`
+      : `${messageParams ? `构造 \`${messageParams}\`，然后` : ""}调用 \`${sendMethod}\` 发送消息。${inlineCitation(hit)}`;
   }
 
   return language === "en"
@@ -987,7 +1260,7 @@ function buildConceptAnswer(
   question: string,
   hits: DocSearchHit[],
   language: AnswerLanguage,
-): DocAnswerResult {
+): GroundedAnswerResult {
   const plan = planDocQuestion(question);
   const conceptQuestion = pickPlanStepQuestion(plan, "concept", question);
   const conceptHits = getBucketHits(hits, "concept");
@@ -1041,6 +1314,8 @@ function buildConceptAnswer(
       ].join("\n\n"),
       summary: "no relevant documentation found",
       citations: [],
+      answerKind: "no_hit",
+      agentPolicy: "bypass_agent",
       answerSource: "generated",
       reviewStatus: "not_applicable",
     };
@@ -1092,6 +1367,8 @@ function buildConceptAnswer(
       .join("\n\n"),
     summary: `concept answer from ${citations.length} documentation chunks`,
     citations,
+    answerKind: "concept",
+    agentPolicy: "rewrite_allowed",
     answerSource: "generated",
     reviewStatus: "not_applicable",
   };
@@ -1147,6 +1424,88 @@ function buildCommunityCreationServerRule(
   };
 }
 
+function detectGuideAnswerKind(params: {
+  question: string;
+  analysis: ReturnType<typeof analyzeHits>;
+  channelHit?: AnalyzedHit;
+  sendHit?: AnalyzedHit;
+}): GuideAnswerKind {
+  if (
+    params.analysis.selectedChannelKind === "community" ||
+    params.analysis.selectedChannelKind === "group" ||
+    isChannelCreationQuestion(params.question)
+  ) {
+    return "channel_creation";
+  }
+  if (
+    isSendMessageQuestion(params.question) ||
+    (params.sendHit && !isStartChatQuestion(params.question))
+  ) {
+    return "send_message";
+  }
+  if (isStartChatQuestion(params.question) || params.channelHit) {
+    return "start_chat";
+  }
+  return "generic_guide";
+}
+
+function pickMessageParamsTerm(codeTerms: string[], subtype: MessageSubtype): string | undefined {
+  const candidates =
+    subtype === "text"
+      ? ["SendTextMessageParams"]
+      : subtype === "image"
+        ? ["SendImageMessageParams", "SendMediaMessageParams"]
+        : subtype === "file"
+          ? ["SendFileMessageParams", "SendMediaMessageParams"]
+          : subtype === "voice"
+            ? ["SendVoiceMessageParams", "SendMediaMessageParams"]
+            : subtype === "targeted"
+              ? ["SendTextMessageParams"]
+              : [
+                  "SendTextMessageParams",
+                  "SendImageMessageParams",
+                  "SendFileMessageParams",
+                  "SendVoiceMessageParams",
+                  "SendMediaMessageParams",
+                ];
+  return candidates.find((candidate) => codeTerms.some((term) => term.includes(candidate)));
+}
+
+function collectApiTerms(params: {
+  citedHits: AnalyzedHit[];
+  answerKind: GuideAnswerKind;
+  question: string;
+}): string[] {
+  const includeDirectChannel =
+    params.answerKind === "start_chat" ||
+    normalizeAnswerText(params.question).includes("direct channel");
+
+  return Array.from(
+    new Set(
+      params.citedHits
+        .flatMap((hit) => extractCodeTerms([hit.heading ?? "", hit.text].join("\n")))
+        .filter((term) => {
+          if (term.includes("sendMessage") || term.includes("directedUserIds")) {
+            return true;
+          }
+          if (term.includes("MessageParams")) {
+            return true;
+          }
+          if (term.includes("NCEngine")) {
+            return params.answerKind !== "send_message";
+          }
+          if (term.includes("intent-filter")) {
+            return params.answerKind !== "send_message";
+          }
+          if (term.includes("Channel")) {
+            return includeDirectChannel;
+          }
+          return false;
+        }),
+    ),
+  ).slice(0, 6);
+}
+
 function buildGuideAnswer(
   question: string,
   hits: DocSearchHit[],
@@ -1157,7 +1516,7 @@ function buildGuideAnswer(
     prependStepHits?: AnalyzedHit[];
     appendNoteLines?: string[];
   },
-): DocAnswerResult {
+): GroundedAnswerResult {
   const analysis = analyzeHits(question, hits);
   if (analysis.shouldClarifyChannelKind) {
     return buildChannelClarificationAnswer(analysis, language);
@@ -1201,7 +1560,16 @@ function buildGuideAnswer(
     ) ?? pickBestHit(effectiveHits, ["connect"]);
   const navigationHit = pickBestHit(effectiveHits, ["navigation"]);
   const channelHit = pickBestHit(effectiveHits, ["start_chat", "platform"]);
-  const sendHit = pickBestHit(effectiveHits, ["send_first_message"]);
+  const sendHit = pickBestSendHit(question, effectiveHits);
+  const answerKind = detectGuideAnswerKind({
+    question,
+    analysis,
+    channelHit,
+    sendHit,
+  });
+  const messageSubtype =
+    answerKind === "send_message" ? detectMessageSubtype(question, sendHit) : "generic";
+  const includeEndToEndSections = answerKind !== "send_message" || wantsEndToEndSdkFlow(question);
   const overviewHit = pickBestHit(effectiveHits, ["platform", "start_chat", "setup"]);
   const webhookGuide =
     normalizeAnswerText(question).includes("webhook") ||
@@ -1225,16 +1593,22 @@ function buildGuideAnswer(
 
   const needHits = webhookGuide
     ? []
-    : [importHit, initializeHit, connectHit, navigationHit, channelHit].filter(
-        (hit): hit is AnalyzedHit => Boolean(hit),
-      );
+    : answerKind === "send_message"
+      ? includeEndToEndSections
+        ? [importHit, initializeHit, connectHit].filter((hit): hit is AnalyzedHit => Boolean(hit))
+        : []
+      : [importHit, initializeHit, connectHit, navigationHit, channelHit].filter(
+          (hit): hit is AnalyzedHit => Boolean(hit),
+        );
   const stepHits = webhookGuide
     ? webhookStepHits.length > 0
       ? webhookStepHits
       : effectiveHits.filter((hit) => isWebhookHit(hit)).slice(0, 3)
-    : [importHit, initializeHit, connectHit, navigationHit, channelHit, sendHit].filter(
-        (hit, index, all): hit is AnalyzedHit => Boolean(hit) && all.indexOf(hit) === index,
-      );
+    : answerKind === "send_message"
+      ? [sendHit].filter((hit): hit is AnalyzedHit => Boolean(hit))
+      : [importHit, initializeHit, connectHit, navigationHit, channelHit, sendHit].filter(
+          (hit, index, all): hit is AnalyzedHit => Boolean(hit) && all.indexOf(hit) === index,
+        );
   const autoSharedRule = buildCommunityCreationServerRule(question, effectiveHits, language);
   const prependStepLines = Array.from(
     new Set([
@@ -1251,23 +1625,11 @@ function buildGuideAnswer(
       ? [...prependStepHits, ...stepHits]
       : [...prependStepHits, ...effectiveHits.slice(0, 4)];
   const citations = dedupeCitations(citedHits);
-
-  const apiTerms = Array.from(
-    new Set(
-      citedHits
-        .flatMap((hit) => extractCodeTerms([hit.heading ?? "", hit.text].join("\n")))
-        .filter(
-          (term) =>
-            term.includes("Channel") ||
-            term.includes("Message") ||
-            term.includes("NCEngine") ||
-            term.includes("sendMessage") ||
-            term.includes("initialize") ||
-            term.includes("directedUserIds") ||
-            term.includes("intent-filter"),
-        ),
-    ),
-  ).slice(0, 6);
+  const apiTerms = collectApiTerms({
+    citedHits,
+    answerKind,
+    question,
+  });
 
   const noteLines: string[] = [];
   const normalizedQuestion = normalizeAnswerText(question);
@@ -1281,28 +1643,28 @@ function buildGuideAnswer(
       Boolean(channelHit) ||
       Boolean(sendHit) ||
       Boolean(connectHit));
-  if (channelHit && sdkChatFlow) {
+  if (channelHit && sdkChatFlow && answerKind === "start_chat") {
     noteLines.push(
       language === "en"
         ? `- A direct channel is a one-to-one conversation whose channel ID is typically the target user ID.${inlineCitation(channelHit)}`
         : `- Direct channel 表示两个用户之间的一对一私聊，会话标识通常就是对方用户 ID。${inlineCitation(channelHit)}`,
     );
   }
-  if (sdkChatFlow && !setupHit && !importHit && !initializeHit) {
+  if (sdkChatFlow && includeEndToEndSections && !setupHit && !importHit && !initializeHit) {
     noteLines.push(
       language === "en"
         ? "- The retrieved docs do not cover SDK import or initialization."
         : "- 当前命中的文档没有覆盖完整的 SDK 导入或初始化步骤。",
     );
   }
-  if (sdkChatFlow && !connectHit) {
+  if (sdkChatFlow && includeEndToEndSections && !connectHit) {
     noteLines.push(
       language === "en"
         ? "- The retrieved docs do not cover token acquisition or connection establishment."
         : "- 当前命中的文档没有展开 token 获取或连接建立步骤。",
     );
   }
-  if (sdkChatFlow && !sendHit) {
+  if (sdkChatFlow && answerKind !== "send_message" && !sendHit) {
     noteLines.push(
       language === "en"
         ? "- The retrieved docs do not include a concrete send-message example."
@@ -1318,7 +1680,12 @@ function buildGuideAnswer(
 
   const combinedStepLines = [
     ...prependStepLines,
-    ...stepHits.map((hit) => buildStepLine(hit, language)),
+    ...stepHits.map((hit) =>
+      buildStepLine(hit, language, {
+        answerKind,
+        question,
+      }),
+    ),
   ];
   const selectedPlatform =
     analysis.shouldClarifyPlatform && options?.allowClarificationOnly === false
@@ -1330,8 +1697,10 @@ function buildGuideAnswer(
     answer: [
       buildGuideIntro({
         language,
+        answerKind,
         platform: selectedPlatform,
         channelKind: analysis.selectedChannelKind,
+        messageSubtype,
         overviewHit,
         setupHit,
         connectHit,
@@ -1363,6 +1732,11 @@ function buildGuideAnswer(
         ? "platform clarification required"
         : `guided answer from ${citations.length} documentation chunks`,
     citations,
+    answerKind,
+    agentPolicy:
+      analysis.shouldClarifyPlatform && options?.allowClarificationOnly === false
+        ? "bypass_agent"
+        : "rewrite_allowed",
     answerSource: "generated",
     reviewStatus: "not_applicable",
     pendingClarificationQuestion:
@@ -1380,7 +1754,7 @@ function buildMixedAnswer(
   question: string,
   hits: DocSearchHit[],
   language: AnswerLanguage,
-): DocAnswerResult {
+): GroundedAnswerResult {
   const plan = planDocQuestion(question);
   const conceptQuestion = pickPlanStepQuestion(plan, "concept", question);
   const proceduralQuestion = pickPlanStepQuestion(plan, "procedural", question);
@@ -1448,6 +1822,8 @@ function buildMixedAnswer(
         ? procedural.summary
         : "mixed answer from documentation chunks",
     citations: combinedCitations,
+    answerKind: "generic_guide",
+    agentPolicy: procedural.agentPolicy,
     answerSource: "generated",
     reviewStatus: "not_applicable",
     pendingClarificationQuestion: procedural.pendingClarificationQuestion,
@@ -1455,7 +1831,7 @@ function buildMixedAnswer(
   };
 }
 
-function buildGroundedAnswer(question: string, hits: DocSearchHit[]): DocAnswerResult {
+function buildGroundedAnswer(question: string, hits: DocSearchHit[]): GroundedAnswerResult {
   const language = detectAnswerLanguage(question, hits);
   if (hits.length === 0) {
     return buildNoHitAnswer(question, language);
@@ -1570,12 +1946,7 @@ export async function buildDocAnswer(params: {
   if (params.mode === "extractive") {
     return grounded;
   }
-  if (
-    params.hits.length === 0 ||
-    grounded.summary === "no relevant documentation found" ||
-    grounded.summary === "platform clarification required" ||
-    grounded.summary === "channel clarification required"
-  ) {
+  if (grounded.agentPolicy === "bypass_agent") {
     return {
       ...grounded,
       mode: "agent",

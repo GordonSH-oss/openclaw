@@ -81,8 +81,18 @@ function detectEvidenceRole(hit: DocSearchHit): string {
   if (normalized.includes("platform chat api") || normalized.includes("server api")) {
     return "server_irrelevant";
   }
-  if (normalized.includes("send your first message") || normalized.includes("send a message")) {
-    return "send_first_message";
+  if (
+    normalized.includes("send your first message") ||
+    normalized.includes("send a message") ||
+    normalized.includes("text message") ||
+    normalized.includes("regular message") ||
+    normalized.includes("image message") ||
+    normalized.includes("media message") ||
+    normalized.includes("file message") ||
+    normalized.includes("voice message") ||
+    normalized.includes("targeted message")
+  ) {
+    return "send_message";
   }
   if (normalized.includes("connect") || normalized.includes("token")) {
     return "connect";

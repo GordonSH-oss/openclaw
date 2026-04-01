@@ -30,6 +30,7 @@ const PRODUCT_TOKENS = [
 type DocTier = "primary" | "partial";
 type QueryIntent =
   | "start"
+  | "send"
   | "connect"
   | "accept"
   | "configure"
@@ -492,6 +493,18 @@ function detectQueryIntents(normalizedQuery: string, normalizedTokens: string[])
     intents.add("start");
   }
   if (
+    hasToken("send") ||
+    hasToken("sending") ||
+    normalizedQuery.includes("text message") ||
+    normalizedQuery.includes("image message") ||
+    normalizedQuery.includes("file message") ||
+    normalizedQuery.includes("voice message") ||
+    normalizedQuery.includes("media message") ||
+    normalizedQuery.includes("targeted message")
+  ) {
+    intents.add("send");
+  }
+  if (
     hasToken("connect") ||
     hasToken("connection") ||
     hasToken("login") ||
@@ -696,6 +709,23 @@ function scoreHeadingIntent(
   };
 
   boost("start", ["start", "make first", "begin"], 18, 6);
+  boost(
+    "send",
+    [
+      "send a message",
+      "send your first message",
+      "send a text message",
+      "send a regular message",
+      "send an image message",
+      "send a file message",
+      "send a voice message",
+      "send a media message",
+      "send a targeted message",
+      "message send",
+    ],
+    28,
+    10,
+  );
   boost("connect", ["connect", "connection", "login", "log in", "sign in", "authenticate"], 22, 8);
   boost("accept", ["accept", "answer", "receive and accept"], 18, 6);
   boost(
@@ -937,6 +967,119 @@ function scoreWebhookSemantics(
   }
   if (normalizedPath.includes("moderation")) {
     score -= 16;
+  }
+
+  return score;
+}
+
+function isClientSendMessageQuery(signals: ReturnType<typeof detectQuerySignals>): boolean {
+  const normalizedQuery = signals.normalizedQuery;
+  const mentionsSendMessage =
+    signals.intents.includes("send") &&
+    (normalizedQuery.includes("message") ||
+      normalizedQuery.includes("text") ||
+      normalizedQuery.includes("image") ||
+      normalizedQuery.includes("file") ||
+      normalizedQuery.includes("voice") ||
+      normalizedQuery.includes("media") ||
+      normalizedQuery.includes("targeted"));
+  const mentionsServerApi =
+    normalizedQuery.includes("server api") || normalizedQuery.includes("platform chat api");
+  return mentionsSendMessage && !mentionsServerApi;
+}
+
+function scoreClientSendMessageSemantics(
+  pathText: string,
+  headingText: string,
+  bodyText: string,
+  signals: ReturnType<typeof detectQuerySignals>,
+): number {
+  if (!isClientSendMessageQuery(signals)) {
+    return 0;
+  }
+
+  const normalizedPath = normalizeSearchText(pathText);
+  const normalizedHeading = normalizeSearchText(headingText);
+  const normalizedBody = normalizeSearchText(bodyText.slice(0, 800));
+  const normalizedQuery = signals.normalizedQuery;
+  let score = 0;
+
+  if (normalizedPath.includes("chatsdk")) {
+    score += 24;
+  }
+  if (normalizedPath.includes("/message/")) {
+    score += 34;
+  }
+  if (normalizedPath.endsWith("message send md") || normalizedPath.endsWith("message send mdx")) {
+    score += 20;
+  }
+  if (normalizedPath.includes("platform chat api")) {
+    score -= 54;
+  }
+  if (normalizedPath.includes("sync to sender")) {
+    score -= 58;
+  }
+  if (normalizedPath.includes("query history") || normalizedPath.includes("history")) {
+    score -= 32;
+  }
+  if (normalizedPath.includes("modify message")) {
+    score -= 22;
+  }
+
+  if (
+    normalizedHeading.includes("send a message") ||
+    normalizedHeading.includes("send a regular message") ||
+    normalizedHeading.includes("send a text message") ||
+    normalizedHeading.includes("send an image message") ||
+    normalizedHeading.includes("send a file message") ||
+    normalizedHeading.includes("send a voice message") ||
+    normalizedHeading.includes("send a media message") ||
+    normalizedHeading.includes("send a targeted message")
+  ) {
+    score += 34;
+  }
+  if (normalizedBody.includes("sendmessage") || normalizedBody.includes("send message")) {
+    score += 18;
+  }
+  if (normalizedBody.includes("messageparams")) {
+    score += 18;
+  }
+  if (normalizedBody.includes("direct channel")) {
+    score += 6;
+  }
+  if (normalizedBody.includes("server api")) {
+    score -= 30;
+  }
+  if (normalizedBody.includes("isechotosender") || normalizedBody.includes("issyncsender")) {
+    score -= 36;
+  }
+  if (
+    normalizedBody.includes("sync to the sender") ||
+    normalizedBody.includes("sync the message")
+  ) {
+    score -= 26;
+  }
+
+  const subtypeBoosts = [
+    { query: "text message", terms: ["text message", "regular message"] },
+    { query: "image message", terms: ["image message", "media message"] },
+    { query: "file message", terms: ["file message"] },
+    { query: "voice message", terms: ["voice message", "audio message"] },
+    { query: "targeted message", terms: ["targeted message", "directeduserids"] },
+  ];
+  for (const subtype of subtypeBoosts) {
+    if (!normalizedQuery.includes(subtype.query)) {
+      continue;
+    }
+    if (
+      subtype.terms.some(
+        (term) => normalizedHeading.includes(term) || normalizedBody.includes(term),
+      )
+    ) {
+      score += 24;
+    } else {
+      score -= 12;
+    }
   }
 
   return score;
@@ -1434,6 +1577,7 @@ function scoreProceduralChunk(
 
   let score = scoreSharedChunk(chunk, query, tokens, signals);
   score += scoreHeadingIntent(headingText, bodyText, signals);
+  score += scoreClientSendMessageSemantics(pathText, headingText, bodyText, signals);
   score += scoreClientChatStartSemantics(pathText, headingText, bodyText, signals);
   score += scoreClientConnectionSemantics(pathText, headingText, bodyText, signals);
   score += scoreWebhookSemantics(pathText, headingText, bodyText, signals);
