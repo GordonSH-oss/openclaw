@@ -336,6 +336,40 @@ async function createCommunityChannelFixtureDocs(): Promise<string> {
   return docsRoot;
 }
 
+async function createOpenChannelFixtureDocs(): Promise<string> {
+  const docsRoot = await makeTempDir("doc-assistant-open-docs");
+  const docsDir = path.join(docsRoot, "docs");
+  await fs.mkdir(path.join(docsDir, "chatsdk-android", "community-channels"), { recursive: true });
+  await fs.mkdir(path.join(docsDir, "chatsdk-android", "open-channels"), { recursive: true });
+
+  await fs.writeFile(
+    path.join(docsDir, "chatsdk-android", "community-channels", "overview.md"),
+    [
+      "# Community channel overview",
+      "",
+      "Community channels are designed for large-scale communication with subchannels and app-server-managed membership.",
+      "",
+      "They support private subchannels and user groups.",
+      "",
+    ].join("\n"),
+    "utf-8",
+  );
+  await fs.writeFile(
+    path.join(docsDir, "chatsdk-android", "open-channels", "overview.md"),
+    [
+      "# Open channel overview",
+      "",
+      "Open channels provide high-concurrency messaging for unlimited online participants.",
+      "",
+      "They do not support offline push, and local messages are cleared when the user leaves the channel.",
+      "",
+    ].join("\n"),
+    "utf-8",
+  );
+
+  return docsRoot;
+}
+
 async function createWebhookFixtureDocs(): Promise<string> {
   const docsRoot = await makeTempDir("doc-assistant-webhook-docs");
   await fs.mkdir(path.join(docsRoot, "docs", "platform-chat-api", "webhook", "events", "message"), {
@@ -1230,6 +1264,26 @@ test("search prefers community overview docs for concept questions", async () =>
   assert.equal(dndIndex === -1 || overviewIndex < dndIndex, true);
 });
 
+test("search prefers open channel overview docs for open-channel concept questions", async () => {
+  const docsRoot = await createOpenChannelFixtureDocs();
+
+  const hits = await searchDocs({
+    query: "what about open channel?",
+    docsRoot,
+    maxResults: 5,
+  });
+
+  assert.equal(hits[0]?.path.endsWith("docs/chatsdk-android/open-channels/overview.md"), true);
+  const openOverviewIndex = hits.findIndex((hit) =>
+    hit.path.endsWith("docs/chatsdk-android/open-channels/overview.md"),
+  );
+  const communityOverviewIndex = hits.findIndex((hit) =>
+    hit.path.endsWith("docs/chatsdk-android/community-channels/overview.md"),
+  );
+  assert.equal(openOverviewIndex, 0);
+  assert.equal(communityOverviewIndex === -1 || openOverviewIndex < communityOverviewIndex, true);
+});
+
 test("search keeps creation workflow docs ahead of overview for procedural community queries", async () => {
   const docsRoot = await createCommunityChannelFixtureDocs();
 
@@ -1345,6 +1399,45 @@ test("buildDocAnswer turns webhook questions into a direct configuration guide",
   assert.equal(result.answer.includes("Verify the webhook signature"), true);
   assert.equal(result.answer.includes("token acquisition"), false);
   assert.equal(result.answer.includes("send-message example"), false);
+});
+
+test("buildDocAnswer uses open channel evidence instead of community definitions", async () => {
+  const result = await buildDocAnswer({
+    runId: "concept-open-channel-1",
+    question: "what about open channel?",
+    mode: "extractive",
+    hits: [
+      {
+        path: "docs/chatsdk-android/open-channels/overview.md",
+        heading: "Open channel overview",
+        startLine: 6,
+        endLine: 12,
+        snippet:
+          "Open channels provide high-concurrency messaging for unlimited online participants.",
+        text:
+          "Open channels provide high-concurrency messaging for unlimited online participants. They do not support offline push, and local messages are cleared when the user leaves the channel.",
+        score: 120,
+      },
+      {
+        path: "docs/chatsdk-android/community-channels/overview.md",
+        heading: "Community channel overview",
+        startLine: 6,
+        endLine: 12,
+        snippet:
+          "Community channels are designed for large-scale communication with subchannels and app-server-managed membership.",
+        text:
+          "Community channels are designed for large-scale communication with subchannels and app-server-managed membership. They support private subchannels and user groups.",
+        score: 116,
+      },
+    ],
+  });
+
+  assert.equal(result.answer.includes("Open channels provide high-concurrency messaging"), true);
+  assert.equal(result.answer.includes("Community channels are designed"), false);
+  assert.equal(
+    result.citations[0]?.path.endsWith("docs/chatsdk-android/open-channels/overview.md"),
+    true,
+  );
 });
 
 test("buildDocAnswer turns concept questions into an explanation instead of a step guide", async () => {

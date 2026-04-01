@@ -41,7 +41,7 @@ type QueryIntent =
   | "upgrade"
   | "release";
 
-type QueryChannelKind = "direct" | "group" | "community";
+type QueryChannelKind = "direct" | "group" | "community" | "open";
 export type DocQuestionIntent = "concept" | "procedural";
 export type DocQuestionPlanKind = DocQuestionIntent | "mixed";
 export type DocRetrievalBucket = "concept" | "procedural";
@@ -355,10 +355,12 @@ function detectQueryChannelKinds(normalizedQuery: string): QueryChannelKind[] {
   if (
     normalizedQuery.includes("community channel") ||
     normalizedQuery.includes("subchannel") ||
-    normalizedQuery.includes("private subchannel") ||
-    normalizedQuery.includes("open channel")
+    normalizedQuery.includes("private subchannel")
   ) {
     kinds.add("community");
+  }
+  if (normalizedQuery.includes("open channel")) {
+    kinds.add("open");
   }
   return Array.from(kinds);
 }
@@ -390,6 +392,9 @@ function scoreChannelKindAlignment(
     }
     if (kind === "community" && pathText.includes("community-channels")) {
       score += 14;
+    }
+    if (kind === "open" && pathText.includes("open-channels")) {
+      score += 18;
     }
     if (kind === "direct" && pathText.includes("direct system channels")) {
       score += 18;
@@ -838,6 +843,14 @@ function scorePathSemantics(
   }
   if (signals.intents.includes("release") && normalizedPath.includes("release notes")) {
     score += 24;
+  }
+  if (
+    signals.normalizedQuery.includes("open channel") &&
+    (normalizedPath.includes("community channel") ||
+      normalizedPath.includes("subchannel") ||
+      normalizedPath.includes("private subchannel"))
+  ) {
+    score -= 42;
   }
   if (!signals.normalizedQuery.includes("open channel") && normalizedPath.includes("open channel")) {
     score -= 24;
@@ -1489,7 +1502,7 @@ function scoreBucketedEntries(params: {
     return [];
   }
 
-  return scored.sort((a, b) => {
+  return scored.toSorted((a, b) => {
     if (b.score !== a.score) {
       return b.score - a.score;
     }

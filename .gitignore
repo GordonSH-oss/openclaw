@@ -141,3 +141,7 @@ changelog/fragments/
 
 # Local scratch workspace
 .tmp/
+
+# Learn doc assistant runtime artifacts
+learn/doc-assistant-design/.mini-doc-assistant-data/
+learn/doc-assistant-design/.smoke-data/

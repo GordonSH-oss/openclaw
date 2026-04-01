@@ -38,7 +38,7 @@ export type DocAnswerResult = {
 };
 
 type DocPlatform = "android" | "ios" | "web" | "flutter";
-type DocChannelKind = "direct" | "group" | "community";
+type DocChannelKind = "direct" | "group" | "community" | "open";
 type AnswerRole =
   | "setup"
   | "connect"
@@ -179,11 +179,13 @@ function detectPlatform(value: string): DocPlatform | undefined {
 
 function detectChannelKind(value: string): DocChannelKind | undefined {
   const normalized = normalizeAnswerText(value);
+  if (normalized.includes("open channel")) {
+    return "open";
+  }
   if (
     normalized.includes("community channel") ||
     normalized.includes("subchannel") ||
-    normalized.includes("private subchannel") ||
-    normalized.includes("open channel")
+    normalized.includes("private subchannel")
   ) {
     return "community";
   }
@@ -212,6 +214,9 @@ function formatChannelKind(kind: DocChannelKind): string {
   }
   if (kind === "group") {
     return "group channel";
+  }
+  if (kind === "open") {
+    return "open channel";
   }
   return "community channel / subchannel";
 }
@@ -262,7 +267,7 @@ function orderPlatforms(platforms: DocPlatform[]): DocPlatform[] {
     web: 2,
     flutter: 3,
   };
-  return platforms.slice().sort((left, right) => rank[left] - rank[right]);
+  return platforms.slice().toSorted((left, right) => rank[left] - rank[right]);
 }
 
 function extractCodeTerms(text: string): string[] {
@@ -549,7 +554,7 @@ function analyzeHits(question: string, hits: DocSearchHit[]): {
   if (!selectedChannelKind && isChannelFocusedQuestion(question) && foundChannelKinds.length > 0) {
     selectedChannelKind = channelHits
       .slice()
-      .sort((left, right) => right.score - left.score)[0]?.channelKind;
+      .toSorted((left, right) => right.score - left.score)[0]?.channelKind;
   }
 
   const channelScopedHits =
@@ -598,13 +603,13 @@ function analyzeHits(question: string, hits: DocSearchHit[]): {
   if (!selectedPlatform && foundPlatforms.length > 0) {
     selectedPlatform = platformHits
       .slice()
-      .sort((left, right) => right.score - left.score)[0]?.platform;
+      .toSorted((left, right) => right.score - left.score)[0]?.platform;
   }
 
   const usedHits = (selectedPlatform
     ? channelScopedHits.filter((hit) => hit.platform === selectedPlatform || !hit.platform)
     : channelScopedHits
-  ).sort((left, right) => right.score - left.score);
+  ).toSorted((left, right) => right.score - left.score);
 
   return {
     explicitPlatform,
@@ -624,7 +629,7 @@ function analyzeHits(question: string, hits: DocSearchHit[]): {
 function pickBestHit(hits: AnalyzedHit[], roles: AnswerRole[]): AnalyzedHit | undefined {
   return hits
     .filter((hit) => roles.includes(hit.role))
-    .sort((left, right) => right.score - left.score)[0];
+    .toSorted((left, right) => right.score - left.score)[0];
 }
 
 function pickBestHitByPredicate(
@@ -639,7 +644,7 @@ function pickBestHitByPredicate(
         normalizeAnswerText(hit.text),
       ),
     )
-    .sort((left, right) => right.score - left.score)[0];
+    .toSorted((left, right) => right.score - left.score)[0];
 }
 
 function buildClarificationAnswer(
@@ -916,19 +921,6 @@ function buildStepLine(hit: AnalyzedHit, language: AnswerLanguage): string {
     : `按 ${hit.heading ?? hit.path} 中的说明完成这一步。${inlineCitation(hit)}`;
 }
 
-function summarizeConceptLead(question: string, hit: AnalyzedHit, language: AnswerLanguage): string {
-  const sentence = hit.snippet.replace(/\s+/g, " ").trim();
-  const inline = inlineCitation(hit);
-  if (sentence) {
-    return language === "en"
-      ? `For "${question}", the docs define it as: ${sentence}${inline}`
-      : `关于“${question}”，文档里的核心定义是：${sentence}${inline}`;
-  }
-  return language === "en"
-    ? `Start with ${hit.heading ?? hit.path} to understand "${question}".${inline}`
-    : `关于“${question}”，可以先从 ${hit.heading ?? hit.path} 理解这个概念。${inline}`;
-}
-
 function buildConceptKeyPoint(hit: AnalyzedHit, language: AnswerLanguage): string {
   const normalized = normalizeAnswerText([hit.heading ?? "", hit.text].join("\n"));
   if (normalized.includes("retain") || normalized.includes("retention") || normalized.includes("7 days")) {
@@ -974,7 +966,7 @@ function buildConceptAnswer(
       effectiveHits,
       (hit, normalizedHeadingPath, normalizedBody) =>
         normalizedHeadingPath.includes("overview") &&
-        (hit.score >= effectiveHits[0]!.score - 16 ||
+        (hit.score >= effectiveHits[0].score - 16 ||
           normalizedBody.includes("large communities") ||
           normalizedBody.includes("subchannel")),
     ) ??
@@ -1041,7 +1033,6 @@ function buildConceptAnswer(
   return {
     mode: "extractive",
     answer: [
-      summarizeConceptLead(conceptQuestion, definitionHit, language),
       [sectionLabel(language, "definition"), `- ${definitionHit.snippet}${inlineCitation(definitionHit)}`].join(
         "\n",
       ),
