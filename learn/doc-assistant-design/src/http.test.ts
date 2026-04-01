@@ -448,10 +448,18 @@ test("HTTP API exposes users, search, runs, transcript, and status", async () =>
   });
   const runtimeStatusPayload = runtimeStatus.res.json() as {
     ok: boolean;
-    result: { status: string; docsRoot: string; questionHistoryEntries: number };
+    result: {
+      status: string;
+      version: string;
+      packageVersion: string;
+      docsRoot: string;
+      questionHistoryEntries: number;
+    };
   };
   assert.equal(runtimeStatusPayload.ok, true);
   assert.equal(runtimeStatusPayload.result.status, "running");
+  assert.equal(runtimeStatusPayload.result.version, "v0.1");
+  assert.equal(runtimeStatusPayload.result.packageVersion, "0.1.0");
   assert.equal(runtimeStatusPayload.result.docsRoot, harness.docsRoot);
   assert.equal(runtimeStatusPayload.result.questionHistoryEntries, 1);
 });

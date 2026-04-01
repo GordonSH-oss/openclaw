@@ -31,6 +31,7 @@ async function main(): Promise<void> {
   });
 
   console.log("Learn Doc Assistant is running.");
+  console.log(`Version:   ${server.version} (${server.packageVersion})`);
   console.log(`WebSocket: ${server.url}`);
   console.log(`HTTP API:  ${server.apiBaseUrl}`);
   console.log(`Health:    http://${server.host}:${server.port}/health`);

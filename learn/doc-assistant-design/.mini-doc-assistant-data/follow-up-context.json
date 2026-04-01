@@ -1,1 +1,51 @@
-{}
+{
+  "d06d7f0e-4acc-4038-92ad-7fe6349529b6": {
+    "sessionId": "d06d7f0e-4acc-4038-92ad-7fe6349529b6",
+    "runId": "61da94c1-f224-4b10-b323-58b9f8a38956",
+    "originalQuestion": "How to start a chat?",
+    "candidatePlatforms": [
+      "web",
+      "ios",
+      "flutter"
+    ],
+    "hits": [
+      {
+        "path": "docs/chatsdk-web/quickstart.md",
+        "heading": "Send a message {#send}",
+        "startLine": 137,
+        "endLine": 156,
+        "snippet": "Send a text message to a user with userId `2`. Besides text messages, you can also send images, files, voice messages, and more. See [Message types](./message/send.md#types). ```ts import { DirectChannel, SendTextMessag…",
+        "score": 148,
+        "text": "Send a text message to a user with userId `2`. Besides text messages, you can also send images, files, voice messages, and more. See [Message types](./message/send.md#types).\n\n```ts\nimport { DirectChannel, SendTextMessageParams } from '@nexconn/chat';\n\n// Create a direct channel instance (targetId is the other user's ID)\nconst channel = new DirectChannel('2');\n\n// Send a text message\nconst params = new SendTextMessageParams({ text: 'Hello, Nexconn!' });\nconst { code, data } = await channel.sendMessage(params);\nif (code === 0) {\n  console.log('Message sent:', data);\n} else {\n  console.log('Send failed. Code:', code);\n}\n```"
+      },
+      {
+        "path": "docs/chatsdk-ios/quickstart.md",
+        "heading": "Step 5: Send a message",
+        "startLine": 199,
+        "endLine": 255,
+        "snippet": "Send a text message to another user: <Tabs groupId=\"language\"> <TabItem value=\"swift\" label=\"Swift\" default> ```swift guard let channel = DirectChannel(channelId: \"recipient-user-id\") else { return } let textContent = T…",
+        "score": 139,
+        "text": "Send a text message to another user:\n\n<Tabs groupId=\"language\">\n<TabItem value=\"swift\" label=\"Swift\" default>\n\n```swift\nguard let channel = DirectChannel(channelId: \"recipient-user-id\") else {\n  return\n}\n\nlet textContent = TextMessage(text: \"Hello!\")\nlet params = SendMessageParams(content: textContent)\n\nchannel.sendMessage(\n  params: params,\n  attachedHandler: { message in\n    // Saved to local database — update UI here\n  },\n  completionHandler: { message, error in\n    if let error {\n      print(\"Send failed: \\(error.localizedDescription)\")\n    } else {\n      print(\"Sent successfully, messageId: \\(message?.messageId ?? \"\")\")\n    }\n  }\n)\n```\n\n</TabItem>\n<TabItem value=\"objectivec\" label=\"Objective-C\">\n\n```objectivec\n// 1. Create a direct channel to the recipient\nNCDirectChannel *channel = [[NCDirectChannel alloc] initWithChannelId:@\"recipient-user-id\"];\n\n// 2. Build message content and send parameters\nNCTextMessage *textContent = [[NCTextMessage alloc] initWithText:@\"Hello!\"];\nNCSendMessageParams *params = [[NCSendMessageParams alloc] initWithContent:textContent];\n\n// 3. Send\n[channel sendMessageWithParams:params\n              attachedHandler:^(NCMessage *message) {\n    // Saved to local database — update UI here\n} completionHandler:^(NCMessage *message, NCError *error) {\n    if (error == nil) {\n        NSLog(@\"Sent successfully, messageId: %@\", message.messageId);\n    } else {\n        NSLog(@\"Send failed: %@\", error.localizedDescription);\n    }\n}];\n```\n\n</TabItem>\n</Tabs>"
+      },
+      {
+        "path": "docs/chatsdk-flutter/quickstart.md",
+        "heading": "Send a message {#sendmessage}",
+        "startLine": 142,
+        "endLine": 164,
+        "snippet": "Create a channel instance and call `channel.sendMessage()`: ```dart final channel = DirectChannel('<target-user-id>'); await channel.sendMessage( SendMessageParams( messageParams: TextMessageParams( text: 'Hello!', ), )…",
+        "score": 133,
+        "text": "Create a channel instance and call `channel.sendMessage()`:\n\n```dart\nfinal channel = DirectChannel('<target-user-id>');\nawait channel.sendMessage(\n  SendMessageParams(\n    messageParams: TextMessageParams(\n      text: 'Hello!',\n    ),\n  ),\n  callback: SendMessageCallback(\n    onMessageSaved: (message) {\n      print('Message saved locally');\n    },\n    onMessageSent: (code, message) {\n      print('Message sent, code: $code');\n    },\n  ),\n);\n```"
+      },
+      {
+        "path": "docs/chatsdk-web/community-channel/chat.md",
+        "heading": "Send a message",
+        "startLine": 8,
+        "endLine": 25,
+        "snippet": "Messages in community channels are sent to a specific subchannel. Use `CommunitySubChannel` with the community ID and subchannel ID. ```ts import { CommunitySubChannel, SendTextMessageParams } from '@nexconn/chat'; cons…",
+        "score": 132,
+        "text": "Messages in community channels are sent to a specific subchannel. Use `CommunitySubChannel` with the community ID and subchannel ID.\n\n```ts\nimport { CommunitySubChannel, SendTextMessageParams } from '@nexconn/chat';\n\nconst channel = new CommunitySubChannel('<communityId>', '<subChannelId>');\n\nconst params = new SendTextMessageParams({ text: 'Hello, subchannel!' });\nconst { code, data } = await channel.sendMessage(params);\nif (code === 0) {\n  console.log('Message sent:', data);\n} else {\n  console.log('Send failed. Code:', code);\n}\n```"
+      }
+    ],
+    "createdAt": 1774965680994
+  }
+}

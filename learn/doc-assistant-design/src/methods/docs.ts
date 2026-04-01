@@ -608,6 +608,8 @@ export const docsStatusHandler: MethodHandler = async ({ respond, state }) => {
   const memoryCounts = await getAnswerMemoryCounts(state.config.dataDir);
   respond(true, {
     status: "running",
+    version: state.config.version,
+    packageVersion: state.config.packageVersion,
     docsRoot: state.config.docsRoot,
     defaultMode: state.config.defaultMode,
     dataDir: state.config.dataDir,

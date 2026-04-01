@@ -3,6 +3,7 @@ import type {
   DocsTerminalResult,
   OpenAICompatibleConfig,
 } from "./protocol/index.js";
+import { DOC_ASSISTANT_MARKETING_VERSION, DOC_ASSISTANT_PACKAGE_VERSION } from "./version.js";
 
 export type EventBroadcaster = {
   broadcast(event: string, data: unknown, connIds?: Set<string>): void;
@@ -42,6 +43,8 @@ export type DocAssistantRuntimeState = {
   dedupe: Map<string, DedupeEntry>;
   runs: DocRunState;
   config: {
+    version: string;
+    packageVersion: string;
     docsRoot: string;
     dataDir?: string;
     defaultMode: DocAssistantMode;
@@ -109,6 +112,8 @@ export function createDocRunState(): DocRunState {
 }
 
 export function createDocAssistantRuntimeState(config: {
+  version?: string;
+  packageVersion?: string;
   docsRoot: string;
   dataDir?: string;
   defaultMode: DocAssistantMode;
@@ -124,7 +129,15 @@ export function createDocAssistantRuntimeState(config: {
     broadcaster: createEventBroadcaster(),
     dedupe: new Map(),
     runs: createDocRunState(),
-    config,
+    config: {
+      version: config.version ?? DOC_ASSISTANT_MARKETING_VERSION,
+      packageVersion: config.packageVersion ?? DOC_ASSISTANT_PACKAGE_VERSION,
+      docsRoot: config.docsRoot,
+      dataDir: config.dataDir,
+      defaultMode: config.defaultMode,
+      adminToken: config.adminToken,
+      defaultAgentConfig: config.defaultAgentConfig,
+    },
   };
 }
 

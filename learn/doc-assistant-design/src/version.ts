@@ -1,0 +1,2 @@
+export const DOC_ASSISTANT_MARKETING_VERSION = "v0.1";
+export const DOC_ASSISTANT_PACKAGE_VERSION = "0.1.0";

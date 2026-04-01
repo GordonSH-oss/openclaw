@@ -1,7 +1,7 @@
 [
   {
-    "id": "b44eafb41aeb55fe:1:4",
-    "relativePath": "doc-assistant-followup-rewrite-docs-wvT8H1tkd6y8/chatsdk-android/send.md",
+    "id": "e52b00a185fad83b:1:4",
+    "relativePath": "doc-assistant-followup-rewrite-docs-jeta0RbuARtq/chatsdk-android/send.md",
     "heading": "Send a message",
     "startLine": 1,
     "endLine": 4,
@@ -12,7 +12,7 @@
       "followup",
       "rewrite",
       "docs",
-      "wvt8h1tkd6y8",
+      "jeta0rbuartq",
       "chatsdk",
       "android",
       "send",
@@ -31,8 +31,8 @@
     ]
   },
   {
-    "id": "5f68627c9eecf148:1:4",
-    "relativePath": "doc-assistant-followup-rewrite-docs-wvT8H1tkd6y8/chatsdk-ios/send.md",
+    "id": "79a34ab64d7ce979:1:4",
+    "relativePath": "doc-assistant-followup-rewrite-docs-jeta0RbuARtq/chatsdk-ios/send.md",
     "heading": "Send a message",
     "startLine": 1,
     "endLine": 4,
@@ -43,7 +43,7 @@
       "followup",
       "rewrite",
       "docs",
-      "wvt8h1tkd6y8",
+      "jeta0rbuartq",
       "chatsdk",
       "ios",
       "send",
@@ -62,8 +62,8 @@
     ]
   },
   {
-    "id": "6f70bb49504a9f1c:1:4",
-    "relativePath": "doc-assistant-followup-rewrite-docs-wvT8H1tkd6y8/chatsdk-web/send.md",
+    "id": "1b87717e092a0761:1:4",
+    "relativePath": "doc-assistant-followup-rewrite-docs-jeta0RbuARtq/chatsdk-web/send.md",
     "heading": "Send a message",
     "startLine": 1,
     "endLine": 4,
@@ -74,7 +74,7 @@
       "followup",
       "rewrite",
       "docs",
-      "wvt8h1tkd6y8",
+      "jeta0rbuartq",
       "chatsdk",
       "web",
       "send",

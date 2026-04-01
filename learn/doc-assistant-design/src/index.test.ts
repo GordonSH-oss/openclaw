@@ -515,6 +515,8 @@ type MethodsResult = {
 
 type StatusResult = {
   status: string;
+  version: string;
+  packageVersion: string;
   docsRoot: string;
   defaultMode: "extractive" | "agent";
   dataDir: string;
@@ -589,6 +591,8 @@ test("docs.methods and docs.status expose supported control-plane surfaces", asy
 
   const status = responseResult<StatusResult>(await client.request("docs.status"));
   assert.equal(status.status, "running");
+  assert.equal(status.version, "v0.1");
+  assert.equal(status.packageVersion, "0.1.0");
   assert.equal(status.connections >= 1, true);
   assert.equal(status.activeRuns, 0);
   assert.equal(status.terminalRuns, 0);

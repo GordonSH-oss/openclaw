@@ -9,6 +9,7 @@ import { createDocAssistantRouter } from "./server-methods.js";
 import { attachDocAssistantWsHandlers } from "./server-ws-runtime.js";
 import { serveDocAssistantApi } from "./http-api.js";
 import { serveDocAssistantUi } from "./http-ui.js";
+import { DOC_ASSISTANT_MARKETING_VERSION, DOC_ASSISTANT_PACKAGE_VERSION } from "./version.js";
 
 export type DocAssistantServerConfig = {
   port?: number;
@@ -59,6 +60,8 @@ export async function createDocAssistantServer(config: DocAssistantServerConfig 
   const defaultMode = config.defaultMode ?? "extractive";
 
   const state = createDocAssistantRuntimeState({
+    version: DOC_ASSISTANT_MARKETING_VERSION,
+    packageVersion: DOC_ASSISTANT_PACKAGE_VERSION,
     docsRoot,
     dataDir: config.dataDir,
     defaultMode,
@@ -74,6 +77,8 @@ export async function createDocAssistantServer(config: DocAssistantServerConfig 
       res.end(
         JSON.stringify({
           status: "ok",
+          version: state.config.version,
+          packageVersion: state.config.packageVersion,
           docsRoot,
           apiPath: "/api/doc-assistant",
           uiPath: "/ui",
@@ -122,6 +127,8 @@ export async function createDocAssistantServer(config: DocAssistantServerConfig 
     wss,
     host,
     port: address.port,
+    version: state.config.version,
+    packageVersion: state.config.packageVersion,
     url,
     httpBaseUrl,
     apiBaseUrl: `${httpBaseUrl}/api/doc-assistant`,
