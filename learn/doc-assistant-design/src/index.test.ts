@@ -12,8 +12,10 @@ import {
   detectClarificationFollowUpQuestion,
   rewriteClarificationQuestion,
   shouldReuseClarificationHits,
+  updateClarificationStateAfterAnswer,
 } from "./follow-up-context.js";
-import { searchDocs } from "./doc-search.js";
+import { executeDocQuestion } from "./question-execution.js";
+import { planDocQuestion, searchDocs } from "./doc-search.js";
 import { createDocAssistantRouter } from "./server-methods.js";
 import { createDocAssistantRuntimeState } from "./server-runtime-state.js";
 import { handleConnection } from "./ws-connection.js";
@@ -220,6 +222,113 @@ async function createClientConnectFixtureDocs(): Promise<string> {
       "## Channel management",
       "",
       "Use the Platform Chat API for server-side channel management.",
+      "",
+    ].join("\n"),
+    "utf-8",
+  );
+  return docsRoot;
+}
+
+async function createCommunityChannelFixtureDocs(): Promise<string> {
+  const docsRoot = await makeTempDir("doc-assistant-community-docs");
+  const docsDir = path.join(docsRoot, "docs");
+  await fs.mkdir(path.join(docsDir, "chatsdk-android", "community-channels"), { recursive: true });
+  await fs.mkdir(path.join(docsDir, "chatsdk-ios", "community-channels"), { recursive: true });
+  await fs.mkdir(path.join(docsDir, "chatsdk-web", "community-channels"), { recursive: true });
+  await fs.mkdir(path.join(docsDir, "chatsdk-ios", "channel"), { recursive: true });
+
+  await fs.writeFile(
+    path.join(docsDir, "chatsdk-android", "community-channels", "overview.md"),
+    [
+      "# Community channel overview",
+      "",
+      "Community channels are for large-scale real-time communication with no member limit.",
+      "",
+      "They support subchannels, including public and private subchannels, and help organize large communities.",
+      "",
+      "Create community channels by using the Server API from your app server instead of a client-side SDK create call.",
+      "",
+    ].join("\n"),
+    "utf-8",
+  );
+  await fs.writeFile(
+    path.join(docsDir, "chatsdk-ios", "community-channels", "overview.md"),
+    [
+      "# Community channel overview",
+      "",
+      "Community channels are for large-scale real-time communication with no member limit.",
+      "",
+      "They support subchannels, including public and private subchannels, and help organize large communities.",
+      "",
+    ].join("\n"),
+    "utf-8",
+  );
+  await fs.writeFile(
+    path.join(docsDir, "chatsdk-web", "community-channels", "overview.md"),
+    [
+      "# Community channel overview",
+      "",
+      "Community channels are for large-scale real-time communication with no member limit.",
+      "",
+      "They support subchannels, including public and private subchannels, and help organize large communities.",
+      "",
+    ].join("\n"),
+    "utf-8",
+  );
+  for (const platform of ["android", "ios", "web"]) {
+    await fs.writeFile(
+      path.join(docsDir, `chatsdk-${platform}`, "community-channels", "creating-channel.md"),
+      [
+        "# Creating community channels",
+        "",
+        `The ${platform === "ios" ? "iOS" : platform === "web" ? "Web" : "Android"} Chat SDK does not provide client-side APIs for creating community channels or subchannels.`,
+        "",
+        "Use Server API from your app server to create the community channel, then return the channel information to the client.",
+        "",
+      ].join("\n"),
+      "utf-8",
+    );
+  }
+  await fs.writeFile(
+    path.join(docsDir, "chatsdk-ios", "channel", "get.md"),
+    [
+      "# Get a single channel",
+      "",
+      "Call `BaseChannel.getChannels(identifiers:completion:)` to retrieve one or more specific channels.",
+      "",
+      "A direct channel is a one-to-one conversation whose channel ID is typically the target user ID.",
+      "",
+    ].join("\n"),
+    "utf-8",
+  );
+  await fs.writeFile(
+    path.join(docsDir, "chatsdk-ios", "channel", "get-unread-message.md"),
+    [
+      "# Get the first unread message",
+      "",
+      "Call `getFirstUnreadMessage(completion:)` on a channel instance to inspect unread messages.",
+      "",
+      "Use a direct channel instance when you need unread-message access on iOS.",
+      "",
+    ].join("\n"),
+    "utf-8",
+  );
+  await fs.writeFile(
+    path.join(docsDir, "chatsdk-android", "community-channels", "events.md"),
+    [
+      "# Community channel events",
+      "",
+      "Listen for community channel events in the Android Chat SDK.",
+      "",
+    ].join("\n"),
+    "utf-8",
+  );
+  await fs.writeFile(
+    path.join(docsDir, "chatsdk-android", "community-channels", "do-not-disturb.md"),
+    [
+      "# Community channel do not disturb",
+      "",
+      "Configure DND behavior for community channels on Android.",
       "",
     ].join("\n"),
     "utf-8",
@@ -1098,6 +1207,109 @@ test("buildDocAnswer turns explicit-platform chat questions into a step guide", 
   assert.equal(result.answer.includes("sendMessage"), true);
 });
 
+test("search prefers community overview docs for concept questions", async () => {
+  const docsRoot = await createCommunityChannelFixtureDocs();
+
+  const hits = await searchDocs({
+    query: "What is community channel?",
+    docsRoot,
+    maxResults: 5,
+  });
+
+  assert.equal(hits[0]?.path.endsWith("docs/chatsdk-android/community-channels/overview.md"), true);
+  assert.equal(hits[0]?.retrievalBucket, "concept");
+  const overviewIndex = hits.findIndex((hit) =>
+    hit.path.endsWith("docs/chatsdk-android/community-channels/overview.md"),
+  );
+  const creatingIndex = hits.findIndex((hit) => hit.path.endsWith("creating-channel.md"));
+  const eventsIndex = hits.findIndex((hit) => hit.path.endsWith("events.md"));
+  const dndIndex = hits.findIndex((hit) => hit.path.endsWith("do-not-disturb.md"));
+  assert.equal(overviewIndex !== -1, true);
+  assert.equal(creatingIndex === -1 || overviewIndex < creatingIndex, true);
+  assert.equal(eventsIndex === -1 || overviewIndex < eventsIndex, true);
+  assert.equal(dndIndex === -1 || overviewIndex < dndIndex, true);
+});
+
+test("search keeps creation workflow docs ahead of overview for procedural community queries", async () => {
+  const docsRoot = await createCommunityChannelFixtureDocs();
+
+  const hits = await searchDocs({
+    query: "How to create a community channel?",
+    docsRoot,
+    maxResults: 5,
+  });
+
+  assert.equal(hits[0]?.path.endsWith("creating-channel.md"), true);
+  assert.equal(hits[0]?.retrievalBucket, "procedural");
+  assert.equal(
+    hits.some((hit) => hit.path.endsWith("docs/chatsdk-android/community-channels/overview.md")),
+    true,
+  );
+});
+
+test("mixed community queries preserve both concept and procedural retrieval buckets", async () => {
+  const docsRoot = await createCommunityChannelFixtureDocs();
+
+  const hits = await searchDocs({
+    query: "What is community channel ?How to create a community channel?",
+    docsRoot,
+    maxResults: 5,
+  });
+
+  assert.equal(hits.some((hit) => hit.retrievalBucket === "concept"), true);
+  assert.equal(hits.some((hit) => hit.retrievalBucket === "procedural"), true);
+  assert.equal(
+    hits.some(
+      (hit) =>
+        hit.retrievalBucket === "concept" &&
+        hit.path.endsWith("docs/chatsdk-android/community-channels/overview.md"),
+    ),
+    true,
+  );
+  assert.equal(
+    hits.some(
+      (hit) => hit.retrievalBucket === "procedural" && hit.path.endsWith("creating-channel.md"),
+    ),
+    true,
+  );
+});
+
+test("planDocQuestion carries the first concept referent into a later pronoun step", () => {
+  const plan = planDocQuestion("What is community channel? How to get it?");
+
+  assert.equal(plan.kind, "mixed");
+  assert.equal(plan.steps[0]?.question, "What is community channel");
+  assert.equal(plan.steps[1]?.question, "How to get community channel");
+  assert.equal(plan.steps[1]?.intent, "procedural");
+});
+
+test("mixed pronoun queries keep community docs ahead of generic channel get pages", async () => {
+  const docsRoot = await createCommunityChannelFixtureDocs();
+
+  const hits = await searchDocs({
+    query: "What is community channel? How to get it?",
+    docsRoot,
+    maxResults: 6,
+  });
+
+  const communityProceduralIndex = hits.findIndex(
+    (hit) =>
+      hit.retrievalBucket === "procedural" &&
+      (hit.path.endsWith("docs/chatsdk-android/community-channels/creating-channel.md") ||
+        hit.path.endsWith("docs/chatsdk-ios/community-channels/creating-channel.md") ||
+        hit.path.endsWith("docs/chatsdk-web/community-channels/creating-channel.md") ||
+        hit.path.endsWith("docs/chatsdk-android/community-channels/overview.md")),
+  );
+  const directGetIndex = hits.findIndex((hit) => hit.path.endsWith("docs/chatsdk-ios/channel/get.md"));
+
+  assert.equal(communityProceduralIndex !== -1, true);
+  assert.equal(directGetIndex === -1 || communityProceduralIndex < directGetIndex, true);
+  assert.equal(
+    hits.some((hit) => hit.path.endsWith("docs/chatsdk-android/community-channels/overview.md")),
+    true,
+  );
+});
+
 test("buildDocAnswer turns webhook questions into a direct configuration guide", async () => {
   const result = await buildDocAnswer({
     runId: "guide-webhook-1",
@@ -1210,6 +1422,107 @@ test("buildDocAnswer refuses concept answers when docs only mention the term inc
   assert.equal(result.citations.length, 0);
   assert.equal(result.answer.includes("I couldn't find reliable local documentation that directly defines"), true);
   assert.equal(result.answer.includes("Disconnect and disable push"), false);
+});
+
+test("buildDocAnswer accepts overview pages as concept evidence", async () => {
+  const result = await buildDocAnswer({
+    runId: "concept-community-overview-1",
+    question: "What is community channel?",
+    mode: "extractive",
+    hits: [
+      {
+        path: "docs/chatsdk-android/community-channels/overview.md",
+        heading: "Community channel overview",
+        startLine: 1,
+        endLine: 8,
+        snippet: "Community channels are for large-scale real-time communication with no member limit.",
+        text:
+          "Community channels are for large-scale real-time communication with no member limit. They support subchannels, including public and private subchannels. Create community channels by using the Server API from your app server instead of a client-side SDK create call.",
+        score: 120,
+        retrievalBucket: "concept",
+      },
+    ],
+  });
+
+  assert.equal(result.summary.startsWith("concept answer from "), true);
+  assert.equal(result.answer.includes("Definition"), true);
+  assert.equal(result.answer.includes("large-scale real-time communication"), true);
+  assert.equal(result.answer.includes("Sources:"), true);
+});
+
+test("buildDocAnswer does not turn mixed community pronoun questions into a direct-chat guide", async () => {
+  const docsRoot = await createCommunityChannelFixtureDocs();
+  const hits = await searchDocs({
+    query: "What is community channel? How to get it?",
+    docsRoot,
+    maxResults: 6,
+  });
+
+  const result = await buildDocAnswer({
+    runId: "mixed-community-pronoun-1",
+    question: "What is community channel? How to get it?",
+    mode: "extractive",
+    hits,
+  });
+
+  assert.equal(result.summary === "no relevant documentation found", false);
+  assert.equal(result.answer.includes("Definition"), true);
+  assert.equal(result.answer.includes("start a direct chat"), false);
+  assert.equal(result.answer.includes("DirectChannel"), false);
+  assert.equal(result.answer.includes("Community channels are for large-scale real-time communication"), true);
+});
+
+test("buildDocAnswer returns definition first and partial steps for mixed community questions", async () => {
+  const result = await buildDocAnswer({
+    runId: "mixed-community-1",
+    question: "What is community channel ?How to create a community channel?",
+    mode: "extractive",
+    hits: [
+      {
+        path: "docs/chatsdk-android/community-channels/overview.md",
+        heading: "Community channel overview",
+        startLine: 1,
+        endLine: 6,
+        snippet: "Community channels are for large-scale real-time communication with no member limit.",
+        text:
+          "Community channels are for large-scale real-time communication with no member limit. They support subchannels, including public and private subchannels.",
+        score: 130,
+        retrievalBucket: "concept",
+      },
+      {
+        path: "docs/chatsdk-android/community-channels/creating-channel.md",
+        heading: "Creating community channels",
+        startLine: 1,
+        endLine: 8,
+        snippet:
+          "The Android Chat SDK does not provide client-side APIs for creating community channels or subchannels. Use Server API from your app server.",
+        text:
+          "The Android Chat SDK does not provide client-side APIs for creating community channels or subchannels. Use Server API from your app server to create the community channel, then return the channel information to the client.",
+        score: 125,
+        retrievalBucket: "procedural",
+      },
+      {
+        path: "docs/chatsdk-ios/community-channels/creating-channel.md",
+        heading: "Creating community channels",
+        startLine: 1,
+        endLine: 8,
+        snippet:
+          "The iOS Chat SDK does not provide client-side APIs for creating community channels or subchannels. Use Server API from your app server.",
+        text:
+          "The iOS Chat SDK does not provide client-side APIs for creating community channels or subchannels. Use Server API from your app server to create the community channel, then return the channel information to the client.",
+        score: 118,
+        retrievalBucket: "procedural",
+      },
+    ],
+  });
+
+  assert.equal(result.summary, "platform clarification required");
+  assert.equal(result.answer.includes("Definition"), true);
+  assert.equal(result.answer.includes("Steps"), true);
+  assert.equal(result.answer.includes("Community channels are for large-scale real-time communication"), true);
+  assert.equal(result.answer.includes("Community channels and subchannels are created via Server API"), true);
+  assert.equal(result.answer.includes("Choose Android / iOS"), true);
+  assert.equal(result.answer.includes("no relevant documentation found"), false);
 });
 
 test("detectGreetingIntent only intercepts narrow greeting and small-talk inputs", () => {
@@ -1523,6 +1836,96 @@ test("docs.ask can continue a clarification by rewriting the question and rerunn
   assert.equal(terminal.summary.includes("clarification"), false);
   assert.equal(terminal.summary.includes("no relevant"), false);
   assert.equal(terminal.answer.includes("我没有在本地 Markdown 文档库里找到"), false);
+});
+
+test("mixed community clarification keeps the definition and resumes only the procedural half", async () => {
+  const docsRoot = await createCommunityChannelFixtureDocs();
+  const dataDir = await makeTempDir("doc-assistant-mixed-community-followup");
+  const sessionId = "mixed-community-session";
+
+  const first = await executeDocQuestion({
+    runId: "mixed-community-clarify",
+    question: "What is community channel ?How to create a community channel?",
+    sessionId,
+    mode: "extractive",
+    docsRoot,
+    dataDir,
+    maxResults: 5,
+  });
+  await updateClarificationStateAfterAnswer({
+    sessionId,
+    runId: "mixed-community-clarify",
+    question: "What is community channel ?How to create a community channel?",
+    hits: first.hits,
+    summary: first.answer.summary,
+    pendingQuestion: first.answer.pendingClarificationQuestion,
+    clarificationHits: first.answer.clarificationHits,
+    route: first.route,
+    dataDir,
+  });
+
+  assert.equal(first.answer.summary, "platform clarification required");
+  assert.equal(first.answer.answer.includes("Definition"), true);
+  assert.equal(first.answer.answer.includes("Steps"), true);
+  assert.equal(first.answer.answer.includes("Choose Android / iOS"), true);
+
+  const second = await executeDocQuestion({
+    runId: "mixed-community-android",
+    question: "Android",
+    sessionId,
+    mode: "extractive",
+    docsRoot,
+    dataDir,
+    maxResults: 5,
+  });
+
+  assert.equal(second.answer.followUpSource, "clarification_rewrite");
+  assert.equal(second.answer.continuedFromRunId, "mixed-community-clarify");
+  assert.equal(second.answer.rewrittenQuestion, "How to create a community channel on Android?");
+  assert.equal(second.answer.answer.includes("Definition"), false);
+  assert.equal(second.answer.answer.includes("Android"), true);
+  assert.equal(second.answer.answer.includes("Server API"), true);
+});
+
+test("mixed community clarification also resumes from a Chinese Android follow-up", async () => {
+  const docsRoot = await createCommunityChannelFixtureDocs();
+  const dataDir = await makeTempDir("doc-assistant-mixed-community-followup-zh");
+  const sessionId = "mixed-community-session-zh";
+
+  const first = await executeDocQuestion({
+    runId: "mixed-community-clarify-zh",
+    question: "What is community channel ?How to create a community channel?",
+    sessionId,
+    mode: "extractive",
+    docsRoot,
+    dataDir,
+    maxResults: 5,
+  });
+  await updateClarificationStateAfterAnswer({
+    sessionId,
+    runId: "mixed-community-clarify-zh",
+    question: "What is community channel ?How to create a community channel?",
+    hits: first.hits,
+    summary: first.answer.summary,
+    pendingQuestion: first.answer.pendingClarificationQuestion,
+    clarificationHits: first.answer.clarificationHits,
+    route: first.route,
+    dataDir,
+  });
+
+  const second = await executeDocQuestion({
+    runId: "mixed-community-android-zh",
+    question: "我要找android的",
+    sessionId,
+    mode: "extractive",
+    docsRoot,
+    dataDir,
+    maxResults: 5,
+  });
+
+  assert.equal(Boolean(second.answer.followUpSource), true);
+  assert.equal(second.answer.rewrittenQuestion, "How to create a community channel on Android?");
+  assert.equal(second.answer.answer.includes("Server API"), true);
 });
 
 test("docs.ask ignores contaminated clarification memory and continues to a platform guide", async (t) => {

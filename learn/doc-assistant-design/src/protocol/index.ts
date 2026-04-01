@@ -63,6 +63,7 @@ export type DocCitation = {
 export type DocSearchHit = DocCitation & {
   score: number;
   text: string;
+  retrievalBucket?: "concept" | "procedural";
 };
 
 export type DocAnswerSource =

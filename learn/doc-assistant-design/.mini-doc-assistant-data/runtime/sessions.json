@@ -185,12 +185,27 @@
     "sessionKey": "temp/6b0a8613-5dd1-4ba1-941c-634531c3fd1c",
     "transcriptPath": "/Users/admin/Workspace@RongCloud/For-learning/openclaw/learn/doc-assistant-design/.mini-doc-assistant-data/runtime/transcripts/811114d7-e9ad-483b-ad02-bdcf17f37d8b.jsonl",
     "createdAt": 1775009054050,
-    "updatedAt": 1775009723032,
+    "updatedAt": 1775027397852,
+    "status": "idle",
+    "inputTokens": 56,
+    "outputTokens": 1537,
+    "lastChannel": "doc-assistant",
+    "startedAt": 1775027393400,
+    "endedAt": 1775027397852,
+    "model": "learning-primary",
+    "provider": "mock"
+  },
+  "temp/7d8c0300-0a26-4489-8273-74a9df4c94a7": {
+    "sessionId": "a307ff12-5fca-4510-b7d2-33d076e6142e",
+    "sessionKey": "temp/7d8c0300-0a26-4489-8273-74a9df4c94a7",
+    "transcriptPath": "/Users/admin/Workspace@RongCloud/For-learning/openclaw/learn/doc-assistant-design/.mini-doc-assistant-data/runtime/transcripts/a307ff12-5fca-4510-b7d2-33d076e6142e.jsonl",
+    "createdAt": 1775013100051,
+    "updatedAt": 1775013133062,
     "status": "idle",
     "inputTokens": 8,
-    "outputTokens": 292,
+    "outputTokens": 76,
     "lastChannel": "doc-assistant",
-    "startedAt": 1775009720797,
-    "endedAt": 1775009723032
+    "startedAt": 1775013130814,
+    "endedAt": 1775013133062
   }
 }

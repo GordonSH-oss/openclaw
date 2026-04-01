@@ -47,5 +47,419 @@
       }
     ],
     "createdAt": 1774965680994
+  },
+  "smoke-session-1775023319665": {
+    "sessionId": "smoke-session-1775023319665",
+    "runId": "smoke-1775023319665-0",
+    "originalQuestion": "What is community channel ?How to create a community channel?",
+    "pendingQuestion": "How to create a community channel",
+    "candidatePlatforms": [
+      "ios",
+      "android"
+    ],
+    "hits": [
+      {
+        "path": "docs/chatsdk-ios/community-channels/creating-channel.md",
+        "heading": "Create a community channel and subchannels",
+        "startLine": 6,
+        "endLine": 13,
+        "snippet": "The Chat SDK does not provide client-side APIs for creating community channels or subchannels. Use the Nexconn Server API for these operations. :::tip A single user can join up to 100 community channels and create or jo…",
+        "score": 165,
+        "text": "The Chat SDK does not provide client-side APIs for creating community channels or subchannels. Use the Nexconn Server API for these operations.\n\n:::tip\nA single user can join up to 100 community channels and create or join up to 50 subchannels within each community.\n:::",
+        "retrievalBucket": "procedural",
+        "platform": "ios",
+        "channelKind": "community",
+        "role": "reference"
+      },
+      {
+        "path": "docs/chatsdk-android/community-channels/creating-channel.md",
+        "heading": "Creating community channels",
+        "startLine": 6,
+        "endLine": 9,
+        "snippet": "The Chat SDK (Chat SDK) does not provide client-side APIs for creating community channels or subchannels. Use the Server API to create them.",
+        "score": 149,
+        "text": "The Chat SDK (Chat SDK) does not provide client-side APIs for creating community channels or subchannels. Use the Server API to create them.",
+        "retrievalBucket": "procedural",
+        "platform": "android",
+        "channelKind": "community",
+        "role": "reference"
+      }
+    ],
+    "createdAt": 1775023322963
+  },
+  "smoke-session-1775023367949": {
+    "sessionId": "smoke-session-1775023367949",
+    "runId": "smoke-1775023367949-0",
+    "originalQuestion": "What is community channel ?How to create a community channel?",
+    "pendingQuestion": "How to create a community channel",
+    "candidatePlatforms": [
+      "ios",
+      "android"
+    ],
+    "hits": [
+      {
+        "path": "docs/chatsdk-ios/community-channels/creating-channel.md",
+        "heading": "Create a community channel and subchannels",
+        "startLine": 6,
+        "endLine": 13,
+        "snippet": "The Chat SDK does not provide client-side APIs for creating community channels or subchannels. Use the Nexconn Server API for these operations. :::tip A single user can join up to 100 community channels and create or jo…",
+        "score": 165,
+        "text": "The Chat SDK does not provide client-side APIs for creating community channels or subchannels. Use the Nexconn Server API for these operations.\n\n:::tip\nA single user can join up to 100 community channels and create or join up to 50 subchannels within each community.\n:::",
+        "retrievalBucket": "procedural",
+        "platform": "ios",
+        "channelKind": "community",
+        "role": "reference"
+      },
+      {
+        "path": "docs/chatsdk-android/community-channels/creating-channel.md",
+        "heading": "Creating community channels",
+        "startLine": 6,
+        "endLine": 9,
+        "snippet": "The Chat SDK (Chat SDK) does not provide client-side APIs for creating community channels or subchannels. Use the Server API to create them.",
+        "score": 149,
+        "text": "The Chat SDK (Chat SDK) does not provide client-side APIs for creating community channels or subchannels. Use the Server API to create them.",
+        "retrievalBucket": "procedural",
+        "platform": "android",
+        "channelKind": "community",
+        "role": "reference"
+      }
+    ],
+    "createdAt": 1775023370599
+  },
+  "smoke-session-1775023421938": {
+    "sessionId": "smoke-session-1775023421938",
+    "runId": "smoke-1775023421938-0",
+    "originalQuestion": "What is community channel ?How to create a community channel?",
+    "pendingQuestion": "How to create a community channel",
+    "candidatePlatforms": [
+      "ios",
+      "android"
+    ],
+    "hits": [
+      {
+        "path": "docs/chatsdk-ios/community-channels/creating-channel.md",
+        "heading": "Create a community channel and subchannels",
+        "startLine": 6,
+        "endLine": 13,
+        "snippet": "The Chat SDK does not provide client-side APIs for creating community channels or subchannels. Use the Nexconn Server API for these operations. :::tip A single user can join up to 100 community channels and create or jo…",
+        "score": 165,
+        "text": "The Chat SDK does not provide client-side APIs for creating community channels or subchannels. Use the Nexconn Server API for these operations.\n\n:::tip\nA single user can join up to 100 community channels and create or join up to 50 subchannels within each community.\n:::",
+        "retrievalBucket": "procedural",
+        "platform": "ios",
+        "channelKind": "community",
+        "role": "reference"
+      },
+      {
+        "path": "docs/chatsdk-android/community-channels/creating-channel.md",
+        "heading": "Creating community channels",
+        "startLine": 6,
+        "endLine": 9,
+        "snippet": "The Chat SDK (Chat SDK) does not provide client-side APIs for creating community channels or subchannels. Use the Server API to create them.",
+        "score": 149,
+        "text": "The Chat SDK (Chat SDK) does not provide client-side APIs for creating community channels or subchannels. Use the Server API to create them.",
+        "retrievalBucket": "procedural",
+        "platform": "android",
+        "channelKind": "community",
+        "role": "reference"
+      }
+    ],
+    "createdAt": 1775023425050
+  },
+  "smoke-session-1775025084432": {
+    "sessionId": "smoke-session-1775025084432",
+    "runId": "smoke-1775025084432-0",
+    "originalQuestion": "What is community channel ?How to create a community channel?",
+    "pendingQuestion": "How to create a community channel",
+    "candidatePlatforms": [
+      "ios",
+      "android"
+    ],
+    "hits": [
+      {
+        "path": "docs/chatsdk-ios/community-channels/creating-channel.md",
+        "heading": "Create a community channel and subchannels",
+        "startLine": 6,
+        "endLine": 13,
+        "snippet": "The Chat SDK does not provide client-side APIs for creating community channels or subchannels. Use the Nexconn Server API for these operations. :::tip A single user can join up to 100 community channels and create or jo…",
+        "score": 197,
+        "text": "The Chat SDK does not provide client-side APIs for creating community channels or subchannels. Use the Nexconn Server API for these operations.\n\n:::tip\nA single user can join up to 100 community channels and create or join up to 50 subchannels within each community.\n:::",
+        "retrievalBucket": "procedural",
+        "platform": "ios",
+        "channelKind": "community",
+        "role": "reference"
+      },
+      {
+        "path": "docs/chatsdk-android/community-channels/creating-channel.md",
+        "heading": "Creating community channels",
+        "startLine": 6,
+        "endLine": 9,
+        "snippet": "The Chat SDK (Chat SDK) does not provide client-side APIs for creating community channels or subchannels. Use the Server API to create them.",
+        "score": 181,
+        "text": "The Chat SDK (Chat SDK) does not provide client-side APIs for creating community channels or subchannels. Use the Server API to create them.",
+        "retrievalBucket": "procedural",
+        "platform": "android",
+        "channelKind": "community",
+        "role": "reference"
+      }
+    ],
+    "createdAt": 1775025089767
+  },
+  "smoke-session-1775025089769": {
+    "sessionId": "smoke-session-1775025089769",
+    "runId": "smoke-1775025089769-0",
+    "originalQuestion": "What is community channel? How to get it?",
+    "pendingQuestion": "How to get community channel",
+    "candidatePlatforms": [
+      "ios",
+      "flutter"
+    ],
+    "hits": [
+      {
+        "path": "docs/chatsdk-ios/community-channels/creating-channel.md",
+        "heading": "Create a community channel and subchannels",
+        "startLine": 6,
+        "endLine": 13,
+        "snippet": "The Chat SDK does not provide client-side APIs for creating community channels or subchannels. Use the Nexconn Server API for these operations. :::tip A single user can join up to 100 community channels and create or jo…",
+        "score": 84,
+        "text": "The Chat SDK does not provide client-side APIs for creating community channels or subchannels. Use the Nexconn Server API for these operations.\n\n:::tip\nA single user can join up to 100 community channels and create or join up to 50 subchannels within each community.\n:::",
+        "retrievalBucket": "procedural",
+        "platform": "ios",
+        "channelKind": "community",
+        "role": "reference"
+      },
+      {
+        "path": "docs/chatsdk-flutter/community-channels/creating-channel.md",
+        "heading": "Create a community channel",
+        "startLine": 12,
+        "endLine": 15,
+        "snippet": "Creating a community channel requires the Server API. See the server documentation [Create a Community Channel](/platform-chat-api/community-channel/create-community-channel).",
+        "score": 81,
+        "text": "Creating a community channel requires the Server API. See the server documentation [Create a Community Channel](/platform-chat-api/community-channel/create-community-channel).",
+        "retrievalBucket": "procedural",
+        "platform": "flutter",
+        "channelKind": "community",
+        "role": "reference"
+      }
+    ],
+    "createdAt": 1775025094033
+  },
+  "smoke-session-1775025102164": {
+    "sessionId": "smoke-session-1775025102164",
+    "runId": "smoke-1775025102164-0",
+    "originalQuestion": "How to create a direct channel?",
+    "pendingQuestion": "How to create a direct channel?",
+    "candidatePlatforms": [
+      "android",
+      "flutter"
+    ],
+    "hits": [
+      {
+        "path": "docs/chatsdk-android/direct-system-channels/retrieving-channels.md",
+        "heading": "Get a specific channel",
+        "startLine": 14,
+        "endLine": 74,
+        "snippet": "Construct a channel instance and call `reload()` to refresh its latest data from the local database. <Tabs groupId=\"language\"> <TabItem value=\"kotlin\" label=\"Kotlin\" default> ```kotlin // Get a direct channel val direct…",
+        "score": 131,
+        "text": "Construct a channel instance and call `reload()` to refresh its latest data from the local database.\n\n<Tabs groupId=\"language\">\n<TabItem value=\"kotlin\" label=\"Kotlin\" default>\n\n```kotlin\n// Get a direct channel\nval directChannel = DirectChannel(\"userId\")\n\ndirectChannel.reload { updatedChannel, error ->\n    if (error == null && updatedChannel != null) {\n        println(\"Channel ID: ${updatedChannel.channelId}\")\n        println(\"Unread count: ${updatedChannel.unreadCount}\")\n        println(\"Pinned: ${updatedChannel.isPinned}\")\n    } else {\n        // Failed: ${error?.message}\n    }\n}\n\n// Get a group channel\nval groupChannel = GroupChannel(\"groupId\")\n\ngroupChannel.reload { updatedChannel, error ->\n    if (error == null && updatedChannel != null) {\n        println(\"Channel ID: ${updatedChannel.channelId}\")\n    }\n}\n```\n\n</TabItem>\n<TabItem value=\"java\" label=\"Java\">\n\n```java\n// Get a direct channel\nDirectChannel directChannel = new DirectChannel(\"userId\");\n\ndirectChannel.reload((updatedChannel, error) -> {\n    if (error == null && updatedChannel != null) {\n        System.out.println(\"Channel ID: \" + updatedChannel.getChannelId());\n        System.out.println(\"Unread count: \" + updatedChannel.getUnreadCount());\n        System.out.println(\"Pinned: \" + updatedChannel.getIsPinned());\n    } else {\n        // Failed\n    }\n});\n\n// Get a group channel\nGroupChannel groupChannel = new GroupChannel(\"groupId\");\n\ngroupChannel.reload((updatedChannel, error) -> {\n    if (error == null && updatedChannel != null) {\n        System.out.println(\"Channel ID: \" + updatedChannel.getChannelId());\n    }\n});\n```\n\n</TabItem>\n</Tabs>",
+        "retrievalBucket": "procedural"
+      },
+      {
+        "path": "docs/chatsdk-android/direct-system-channels/overview.md",
+        "heading": "Direct channel",
+        "startLine": 26,
+        "endLine": 31,
+        "snippet": "A direct channel enables one-to-one messaging between two users. The two users may or may not be contacts — Nexconn does not manage user relationships. The SDK automatically establishes and maintains the channel relatio…",
+        "score": 129,
+        "text": "A direct channel enables one-to-one messaging between two users. The two users may or may not be contacts — Nexconn does not manage user relationships. The SDK automatically establishes and maintains the channel relationship.\n\nPersistent messages in a direct channel are saved to the local database on the client.",
+        "retrievalBucket": "procedural"
+      },
+      {
+        "path": "docs/chatsdk-flutter/direct-system-channels/overview.md",
+        "heading": "Direct channel",
+        "startLine": 20,
+        "endLine": 25,
+        "snippet": "A one-to-one channel between two users. The users may or may not be friends — the SDK does not manage user relationships. The SDK creates and maintains the channel relationship. Messages in direct channels are stored in…",
+        "score": 129,
+        "text": "A one-to-one channel between two users. The users may or may not be friends — the SDK does not manage user relationships. The SDK creates and maintains the channel relationship.\n\nMessages in direct channels are stored in the local database.",
+        "retrievalBucket": "procedural"
+      },
+      {
+        "path": "docs/chatsdk-android/direct-system-channels/tagging-channels.md",
+        "heading": "Remove channels from a tag",
+        "startLine": 101,
+        "endLine": 162,
+        "snippet": "Remove one or more channels from a tag. For example, remove the direct channel with \"Tom\" from all channels tagged \"Training.\" After removal, the channel still exists but no longer carries the tag. <Tabs groupId=\"langua…",
+        "score": 128,
+        "text": "Remove one or more channels from a tag. For example, remove the direct channel with \"Tom\" from all channels tagged \"Training.\" After removal, the channel still exists but no longer carries the tag.\n\n<Tabs groupId=\"language\">\n<TabItem value=\"kotlin\" label=\"Kotlin\" default>\n\n```kotlin\nTag.getTags { tagList, error ->\n    if (error == null && tagList != null) {\n        val tag = tagList.firstOrNull { it.tagId == \"peixunban\" }\n        \n        if (tag != null) {\n            tag.deleteChannels(\n                listOf(\n                    ChannelIdentifier(ChannelType.DIRECT, \"userId1\")\n                )\n            ) { error ->\n                if (error == null) {\n                    // Removed successfully\n                } else {\n                    // Failed: ${error.message}\n                }\n            }\n        }\n    }\n}\n```\n\n</TabItem>\n<TabItem value=\"java\" label=\"Java\">\n\n```java\nTag.getTags((tagList, error) -> {\n    if (error == null && tagList != null) {\n        Tag tag = null;\n        for (Tag t : tagList) {\n            if (\"peixunban\".equals(t.getTagId())) {\n                tag = t;\n                break;\n            }\n        }\n        \n        if (tag != null) {\n            List<ChannelIdentifier> channels = new ArrayList<>();\n            channels.add(new ChannelIdentifier(ChannelType.DIRECT, \"userId1\"));\n            \n            tag.deleteChannels(channels, error2 -> {\n                if (error2 == null) {\n                    // Removed successfully\n                } else {\n                    // Failed\n                }\n            });\n        }\n    }\n});\n```\n\n</TabItem>\n</Tabs>",
+        "retrievalBucket": "procedural"
+      },
+      {
+        "path": "docs/chatsdk-android/direct-system-channels/deleting-channel.md",
+        "heading": "Delete a single channel",
+        "startLine": 14,
+        "endLine": 61,
+        "snippet": "Call `channel.delete()` to remove a specific channel from the channel list. This method does not delete messages within the channel — it only removes the channel from the SDK's channel list. After successful deletion, r…",
+        "score": 118,
+        "text": "Call `channel.delete()` to remove a specific channel from the channel list. This method does not delete messages within the channel — it only removes the channel from the SDK's channel list. After successful deletion, refresh your UI to stop displaying the channel.\n\n<Tabs groupId=\"language\">\n<TabItem value=\"kotlin\" label=\"Kotlin\" default>\n\n```kotlin\nval channel = DirectChannel(\"userId\")\n\nchannel.delete { success, error ->\n    if (error == null && success == true) {\n        // Channel deleted successfully\n    } else {\n        // Deletion failed: ${error?.message}\n    }\n}\n```\n\n</TabItem>\n<TabItem value=\"java\" label=\"Java\">\n\n```java\nDirectChannel channel = new DirectChannel(\"userId\");\n\nchannel.delete(new OperationHandler<Boolean>() {\n    @Override\n    public void onResult(Boolean success, NCError error) {\n        if (error == null && success != null && success) {\n            // Channel deleted successfully\n        } else {\n            // Deletion failed\n        }\n    }\n});\n```\n\n</TabItem>\n</Tabs>\n\n:::tip\n\nIf a new message arrives in a deleted channel, the channel reappears in the channel list. The user can then view the channel's message history and the latest message.\n\nThe SDK does not provide a single API to delete both a channel and its message history. To also delete messages, call the message deletion API separately when deleting the channel. See [Deleting Messages] for details.\n\n:::",
+        "retrievalBucket": "procedural"
+      }
+    ],
+    "createdAt": 1775025105890
+  },
+  "smoke-session-1775025201519": {
+    "sessionId": "smoke-session-1775025201519",
+    "runId": "smoke-1775025201519-0",
+    "originalQuestion": "What is community channel ?How to create a community channel?",
+    "pendingQuestion": "How to create a community channel",
+    "candidatePlatforms": [
+      "ios",
+      "android"
+    ],
+    "hits": [
+      {
+        "path": "docs/chatsdk-ios/community-channels/creating-channel.md",
+        "heading": "Create a community channel and subchannels",
+        "startLine": 6,
+        "endLine": 13,
+        "snippet": "The Chat SDK does not provide client-side APIs for creating community channels or subchannels. Use the Nexconn Server API for these operations. :::tip A single user can join up to 100 community channels and create or jo…",
+        "score": 197,
+        "text": "The Chat SDK does not provide client-side APIs for creating community channels or subchannels. Use the Nexconn Server API for these operations.\n\n:::tip\nA single user can join up to 100 community channels and create or join up to 50 subchannels within each community.\n:::",
+        "retrievalBucket": "procedural",
+        "platform": "ios",
+        "channelKind": "community",
+        "role": "reference"
+      },
+      {
+        "path": "docs/chatsdk-android/community-channels/creating-channel.md",
+        "heading": "Creating community channels",
+        "startLine": 6,
+        "endLine": 9,
+        "snippet": "The Chat SDK (Chat SDK) does not provide client-side APIs for creating community channels or subchannels. Use the Server API to create them.",
+        "score": 181,
+        "text": "The Chat SDK (Chat SDK) does not provide client-side APIs for creating community channels or subchannels. Use the Server API to create them.",
+        "retrievalBucket": "procedural",
+        "platform": "android",
+        "channelKind": "community",
+        "role": "reference"
+      }
+    ],
+    "createdAt": 1775025204500
+  },
+  "smoke-session-1775025204503": {
+    "sessionId": "smoke-session-1775025204503",
+    "runId": "smoke-1775025204503-0",
+    "originalQuestion": "What is community channel? How to get it?",
+    "pendingQuestion": "How to get community channel",
+    "candidatePlatforms": [
+      "ios",
+      "flutter"
+    ],
+    "hits": [
+      {
+        "path": "docs/chatsdk-ios/community-channels/creating-channel.md",
+        "heading": "Create a community channel and subchannels",
+        "startLine": 6,
+        "endLine": 13,
+        "snippet": "The Chat SDK does not provide client-side APIs for creating community channels or subchannels. Use the Nexconn Server API for these operations. :::tip A single user can join up to 100 community channels and create or jo…",
+        "score": 84,
+        "text": "The Chat SDK does not provide client-side APIs for creating community channels or subchannels. Use the Nexconn Server API for these operations.\n\n:::tip\nA single user can join up to 100 community channels and create or join up to 50 subchannels within each community.\n:::",
+        "retrievalBucket": "procedural",
+        "platform": "ios",
+        "channelKind": "community",
+        "role": "reference"
+      },
+      {
+        "path": "docs/chatsdk-flutter/community-channels/creating-channel.md",
+        "heading": "Create a community channel",
+        "startLine": 12,
+        "endLine": 15,
+        "snippet": "Creating a community channel requires the Server API. See the server documentation [Create a Community Channel](/platform-chat-api/community-channel/create-community-channel).",
+        "score": 81,
+        "text": "Creating a community channel requires the Server API. See the server documentation [Create a Community Channel](/platform-chat-api/community-channel/create-community-channel).",
+        "retrievalBucket": "procedural",
+        "platform": "flutter",
+        "channelKind": "community",
+        "role": "reference"
+      }
+    ],
+    "createdAt": 1775025206867
+  },
+  "smoke-session-1775025233024": {
+    "sessionId": "smoke-session-1775025233024",
+    "runId": "smoke-1775025233024-0",
+    "originalQuestion": "What is community channel ?How to create a community channel?",
+    "pendingQuestion": "How to create a community channel",
+    "candidatePlatforms": [
+      "ios",
+      "android"
+    ],
+    "hits": [
+      {
+        "path": "docs/chatsdk-ios/community-channels/creating-channel.md",
+        "heading": "Create a community channel and subchannels",
+        "startLine": 6,
+        "endLine": 13,
+        "snippet": "The Chat SDK does not provide client-side APIs for creating community channels or subchannels. Use the Nexconn Server API for these operations. :::tip A single user can join up to 100 community channels and create or jo…",
+        "score": 197,
+        "text": "The Chat SDK does not provide client-side APIs for creating community channels or subchannels. Use the Nexconn Server API for these operations.\n\n:::tip\nA single user can join up to 100 community channels and create or join up to 50 subchannels within each community.\n:::",
+        "retrievalBucket": "procedural",
+        "platform": "ios",
+        "channelKind": "community",
+        "role": "reference"
+      },
+      {
+        "path": "docs/chatsdk-android/community-channels/creating-channel.md",
+        "heading": "Creating community channels",
+        "startLine": 6,
+        "endLine": 9,
+        "snippet": "The Chat SDK (Chat SDK) does not provide client-side APIs for creating community channels or subchannels. Use the Server API to create them.",
+        "score": 181,
+        "text": "The Chat SDK (Chat SDK) does not provide client-side APIs for creating community channels or subchannels. Use the Server API to create them.",
+        "retrievalBucket": "procedural",
+        "platform": "android",
+        "channelKind": "community",
+        "role": "reference"
+      }
+    ],
+    "createdAt": 1775025235724
+  },
+  "smoke-session-1775025235725": {
+    "sessionId": "smoke-session-1775025235725",
+    "runId": "smoke-1775025235725-0",
+    "originalQuestion": "What is community channel? How to get it?",
+    "pendingQuestion": "How to get community channel",
+    "candidatePlatforms": [
+      "ios",
+      "flutter"
+    ],
+    "hits": [
+      {
+        "path": "docs/chatsdk-ios/community-channels/creating-channel.md",
+        "heading": "Create a community channel and subchannels",
+        "startLine": 6,
+        "endLine": 13,
+        "snippet": "The Chat SDK does not provide client-side APIs for creating community channels or subchannels. Use the Nexconn Server API for these operations. :::tip A single user can join up to 100 community channels and create or jo…",
+        "score": 84,
+        "text": "The Chat SDK does not provide client-side APIs for creating community channels or subchannels. Use the Nexconn Server API for these operations.\n\n:::tip\nA single user can join up to 100 community channels and create or join up to 50 subchannels within each community.\n:::",
+        "retrievalBucket": "procedural",
+        "platform": "ios",
+        "channelKind": "community",
+        "role": "reference"
+      },
+      {
+        "path": "docs/chatsdk-flutter/community-channels/creating-channel.md",
+        "heading": "Create a community channel",
+        "startLine": 12,
+        "endLine": 15,
+        "snippet": "Creating a community channel requires the Server API. See the server documentation [Create a Community Channel](/platform-chat-api/community-channel/create-community-channel).",
+        "score": 81,
+        "text": "Creating a community channel requires the Server API. See the server documentation [Create a Community Channel](/platform-chat-api/community-channel/create-community-channel).",
+        "retrievalBucket": "procedural",
+        "platform": "flutter",
+        "channelKind": "community",
+        "role": "reference"
+      }
+    ],
+    "createdAt": 1775025238436
   }
 }

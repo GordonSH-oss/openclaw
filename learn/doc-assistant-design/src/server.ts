@@ -2,7 +2,6 @@ import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import process from "node:process";
 import type { OpenAICompatibleConfig } from "./protocol/index.js";
-import { resolveDefaultDocsRoot } from "./doc-index.js";
 import { DEFAULT_DOC_ASSISTANT_AGENT_MODEL } from "./openai-compatible.js";
 import { createDocAssistantRuntimeState } from "./server-runtime-state.js";
 import { createDocAssistantRouter } from "./server-methods.js";
@@ -10,10 +9,12 @@ import { attachDocAssistantWsHandlers } from "./server-ws-runtime.js";
 import { serveDocAssistantApi } from "./http-api.js";
 import { serveDocAssistantUi } from "./http-ui.js";
 import { DOC_ASSISTANT_MARKETING_VERSION, DOC_ASSISTANT_PACKAGE_VERSION } from "./version.js";
+import { loadDocAssistantDotEnv, resolveDocAssistantDocsRootFromEnv } from "./env.js";
 
 export type DocAssistantServerConfig = {
   port?: number;
   host?: string;
+  listen?: boolean;
   docsRoot?: string;
   dataDir?: string;
   defaultMode?: "extractive" | "agent";
@@ -26,6 +27,12 @@ export type DocAssistantServerConfig = {
   };
   allowedOrigins?: string[];
 };
+
+const DEFAULT_ALLOWED_ORIGINS = ["http://localhost:3000"];
+
+function resolveAllowedOrigins(allowedOrigins: string[] | undefined): string[] {
+  return Array.from(new Set([...DEFAULT_ALLOWED_ORIGINS, ...(allowedOrigins ?? [])]));
+}
 
 function resolveDefaultAgentConfig(
   config: DocAssistantServerConfig,
@@ -54,9 +61,11 @@ function resolveDefaultAgentConfig(
 }
 
 export async function createDocAssistantServer(config: DocAssistantServerConfig = {}) {
+  loadDocAssistantDotEnv();
   const port = config.port ?? 8790;
   const host = config.host ?? "127.0.0.1";
-  const docsRoot = config.docsRoot ?? process.env.DOC_ASSISTANT_DOCS_ROOT ?? resolveDefaultDocsRoot();
+  const shouldListen = config.listen ?? true;
+  const docsRoot = config.docsRoot ?? resolveDocAssistantDocsRootFromEnv();
   const defaultMode = config.defaultMode ?? "extractive";
 
   const state = createDocAssistantRuntimeState({
@@ -69,7 +78,7 @@ export async function createDocAssistantServer(config: DocAssistantServerConfig 
     defaultAgentConfig: resolveDefaultAgentConfig(config),
   });
   const router = createDocAssistantRouter();
-  const allowedOrigins = config.allowedOrigins;
+  const allowedOrigins = resolveAllowedOrigins(config.allowedOrigins);
 
   const httpServer = createServer(async (req, res) => {
     if (req.url === "/health") {
@@ -113,20 +122,24 @@ export async function createDocAssistantServer(config: DocAssistantServerConfig 
     router,
   });
 
-  await new Promise<void>((resolve) => {
-    httpServer.listen(port, host, () => resolve());
-  });
+  let resolvedPort = port;
+  if (shouldListen) {
+    await new Promise<void>((resolve) => {
+      httpServer.listen(port, host, () => resolve());
+    });
+    const address = httpServer.address() as AddressInfo;
+    resolvedPort = address.port;
+  }
 
-  const address = httpServer.address() as AddressInfo;
-  const url = `ws://${host}:${address.port}`;
-  const httpBaseUrl = `http://${host}:${address.port}`;
+  const url = `ws://${host}:${resolvedPort}`;
+  const httpBaseUrl = `http://${host}:${resolvedPort}`;
 
   return {
     state,
     router,
     wss,
     host,
-    port: address.port,
+    port: resolvedPort,
     version: state.config.version,
     packageVersion: state.config.packageVersion,
     url,
@@ -137,6 +150,9 @@ export async function createDocAssistantServer(config: DocAssistantServerConfig 
     docsRoot,
     async close() {
       wss.close();
+      if (!shouldListen) {
+        return;
+      }
       await new Promise<void>((resolve, reject) => {
         httpServer.close((error) => (error ? reject(error) : resolve()));
       });

@@ -49,6 +49,9 @@ export async function runDocAssistantSmoke(params: {
       question,
       hits: execution.hits,
       summary: execution.answer.summary,
+      pendingQuestion: execution.answer.pendingClarificationQuestion,
+      clarificationHits: execution.answer.clarificationHits,
+      route: execution.route,
       dataDir: params.dataDir,
     });
   }

@@ -12,6 +12,7 @@ import type { MethodRouter } from "./method-router.js";
 import type { DocAssistantRuntimeState } from "./server-runtime-state.js";
 
 const API_BASE_PATH = "/api/doc-assistant";
+const DEFAULT_ALLOWED_ORIGINS = ["http://localhost:3000"];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -85,11 +86,12 @@ function writeCorsHeaders(
   allowedOrigins: string[] | undefined,
 ): void {
   const origin = readHeader(req, "origin");
-  if (!origin || !allowedOrigins || allowedOrigins.length === 0) {
+  if (!origin) {
     return;
   }
-  const allowAny = allowedOrigins.includes("*");
-  if (!allowAny && !allowedOrigins.includes(origin)) {
+  const effectiveAllowedOrigins = Array.from(new Set([...DEFAULT_ALLOWED_ORIGINS, ...(allowedOrigins ?? [])]));
+  const allowAny = effectiveAllowedOrigins.includes("*");
+  if (!allowAny && !effectiveAllowedOrigins.includes(origin)) {
     return;
   }
   res.setHeader("Access-Control-Allow-Origin", allowAny ? "*" : origin);

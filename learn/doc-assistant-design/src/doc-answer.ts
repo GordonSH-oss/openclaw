@@ -1,5 +1,6 @@
 import { runLearningAgentCommand } from "../../agent-design/src/index.js";
 import { detectAnswerLanguage, type AnswerLanguage } from "./answer-language.js";
+import { planDocQuestion, type DocQuestionPlan } from "./doc-search.js";
 import type {
   DocAnswerReviewStatus,
   DocAnswerSource,
@@ -26,6 +27,8 @@ export type DocAnswerResult = {
   followUpSource?: DocFollowUpSource;
   continuedFromRunId?: string;
   rewrittenQuestion?: string;
+  pendingClarificationQuestion?: string;
+  clarificationHits?: DocSearchHit[];
   attempts?: Array<{
     provider: string;
     model: string;
@@ -36,7 +39,6 @@ export type DocAnswerResult = {
 
 type DocPlatform = "android" | "ios" | "web" | "flutter";
 type DocChannelKind = "direct" | "group" | "community";
-type QuestionIntent = "concept" | "procedural";
 type AnswerRole =
   | "setup"
   | "connect"
@@ -253,6 +255,16 @@ function formatPlatform(platform: DocPlatform): string {
   return "Android";
 }
 
+function orderPlatforms(platforms: DocPlatform[]): DocPlatform[] {
+  const rank: Record<DocPlatform, number> = {
+    android: 0,
+    ios: 1,
+    web: 2,
+    flutter: 3,
+  };
+  return platforms.slice().sort((left, right) => rank[left] - rank[right]);
+}
+
 function extractCodeTerms(text: string): string[] {
   const terms = new Set<string>();
   for (const match of text.matchAll(/`([^`\n]{2,80})`/g)) {
@@ -313,10 +325,49 @@ function classifyHitRole(hit: DocSearchHit): AnswerRole {
   const normalizedBody = normalizeAnswerText(hit.text);
   const normalizedHeadingPath = normalizeAnswerText([hit.path, hit.heading ?? ""].join("\n"));
   const webhookPage = normalized.includes("webhook");
+  const serverApiPage =
+    (!webhookPage && normalizedHeadingPath.includes("platform chat api")) ||
+    normalizedHeadingPath.includes("chat server api list");
+  const canonicalDefinitionPage =
+    !serverApiPage &&
+    (normalizedHeadingPath.includes("about ") ||
+      normalizedHeadingPath.startsWith("what is ") ||
+      normalizedHeadingPath.startsWith("what are ") ||
+      normalizedHeadingPath.includes("glossary") ||
+      normalizedHeadingPath.includes("offline messages") ||
+      normalizedHeadingPath.includes("missed messages") ||
+      normalizedHeadingPath.includes("community channel overview") ||
+      normalizedHeadingPath.includes("community channels overview") ||
+      ((normalizedHeadingPath.includes("community channel") ||
+        normalizedHeadingPath.includes("community channels")) &&
+        normalizedHeadingPath.includes("overview") &&
+        (normalizedBody.includes(" is a ") ||
+          normalizedBody.includes(" are ") ||
+          normalizedBody.includes(" refers to ") ||
+          normalizedBody.includes(" used for ") ||
+          normalizedBody.includes(" enables ") ||
+          normalizedBody.includes("key features") ||
+          normalizedBody.includes("main features") ||
+          normalizedBody.includes("no member limit"))));
 
   if (
-    (!webhookPage && normalized.includes("platform chat api")) ||
-    normalized.includes("server api") ||
+    canonicalDefinitionPage ||
+    normalizedBody.includes(" is a ") ||
+    normalizedBody.includes(" are ") ||
+    normalizedBody.includes(" refers to ")
+  ) {
+    return "definition";
+  }
+
+  if (
+    ((!webhookPage && normalized.includes("platform chat api")) ||
+      normalized.includes("server api")) &&
+    !(
+      normalizedHeadingPath.includes("creating community channels") ||
+      normalizedHeadingPath.includes("creating community channel") ||
+      normalizedHeadingPath.includes("creating channel") ||
+      normalizedBody.includes("does not provide client side apis")
+    ) ||
     normalized.includes("query history") ||
     normalized.includes("cloud message history") ||
     normalized.includes("sync to sender") ||
@@ -335,20 +386,6 @@ function classifyHitRole(hit: DocSearchHit): AnswerRole {
     normalizedBody.includes("androidmanifest")
   ) {
     return "navigation";
-  }
-
-  if (
-    normalizedHeadingPath.includes("about ") ||
-    normalizedHeadingPath.startsWith("what is ") ||
-    normalizedHeadingPath.startsWith("what are ") ||
-    normalizedHeadingPath.includes("glossary") ||
-    normalizedHeadingPath.includes("offline messages") ||
-    normalizedHeadingPath.includes("missed messages") ||
-    normalizedBody.includes(" is a ") ||
-    normalizedBody.includes(" are ") ||
-    normalizedBody.includes(" refers to ")
-  ) {
-    return "definition";
   }
 
   if (
@@ -399,38 +436,16 @@ function classifyHitRole(hit: DocSearchHit): AnswerRole {
   return "reference";
 }
 
-function detectQuestionIntent(question: string): QuestionIntent {
-  const normalized = normalizeAnswerText(question);
-  const conceptMarkers = [...CONCEPT_MARKER_TERMS, "meaning of"];
-  const proceduralMarkers = [
-    "how to",
-    "how do",
-    "how can",
-    "start",
-    "send",
-    "configure",
-    "connect",
-    "initialize",
-    "install",
-    "create",
-    "发起",
-    "配置",
-    "连接",
-    "初始化",
-    "如何",
-    "怎么",
-  ];
+function getBucketHits(hits: DocSearchHit[], bucket: "concept" | "procedural"): DocSearchHit[] {
+  return hits.filter((hit) => hit.retrievalBucket === bucket);
+}
 
-  if (proceduralMarkers.some((marker) => normalized.includes(marker))) {
-    return "procedural";
-  }
-  if (conceptMarkers.some((marker) => normalized.includes(marker))) {
-    return "concept";
-  }
-  if (normalized.split(" ").length <= 5 && !normalized.includes("sdk")) {
-    return "concept";
-  }
-  return "procedural";
+function pickPlanStepQuestion(
+  plan: DocQuestionPlan,
+  intent: "concept" | "procedural",
+  fallbackQuestion: string,
+): string {
+  return plan.steps.find((step) => step.intent === intent)?.question ?? fallbackQuestion;
 }
 
 function extractConceptFocusTerms(question: string): string[] {
@@ -465,21 +480,28 @@ function looksLikeDefinitionEvidence(question: string, hit: AnalyzedHit): boolea
   );
   const hasDefinitionSignal =
     hit.role === "definition" ||
+    normalizedHeadingPath.includes("overview") ||
     normalizedHeadingPath.includes("glossary") ||
     normalizedHeadingPath.includes("about ") ||
     normalizedHeadingPath.includes("what is ") ||
     normalizedSnippet.includes(" is a ") ||
     normalizedSnippet.includes(" refers to ") ||
+    normalizedSnippet.includes(" used for ") ||
+    normalizedBody.includes(" used for ") ||
     normalizedBody.includes(" is a ") ||
     normalizedBody.includes(" refers to ");
+  const hasOverviewFocusSignal = normalizedHeadingPath.includes("overview") && hasFocusInHeadingPath;
 
   if (!hasFocusInVisibleText) {
     return false;
   }
   if (focusTerms.length === 1) {
-    return hasDefinitionSignal && (hasFocusInHeadingPath || normalizedSnippet.includes(focusTerms[0]));
+    return (
+      (hasDefinitionSignal || hasOverviewFocusSignal) &&
+      (hasFocusInHeadingPath || normalizedSnippet.includes(focusTerms[0]))
+    );
   }
-  return hasDefinitionSignal && hasFocusInHeadingPath;
+  return (hasDefinitionSignal || hasOverviewFocusSignal) && hasFocusInHeadingPath;
 }
 
 function analyzeHits(question: string, hits: DocSearchHit[]): {
@@ -561,6 +583,8 @@ function analyzeHits(question: string, hits: DocSearchHit[]): {
   const mentionsPlatformDependentTopic =
     normalizedQuestion.includes("sdk") ||
     normalizedQuestion.includes("direct channel") ||
+    normalizedQuestion.includes("community channel") ||
+    normalizedQuestion.includes("subchannel") ||
     normalizedQuestion.includes("chat") ||
     normalizedQuestion.includes("call") ||
     normalizedQuestion.includes("message");
@@ -930,17 +954,35 @@ function buildConceptAnswer(
   hits: DocSearchHit[],
   language: AnswerLanguage,
 ): DocAnswerResult {
-  const analysis = analyzeHits(question, hits);
+  const plan = planDocQuestion(question);
+  const conceptQuestion = pickPlanStepQuestion(plan, "concept", question);
+  const conceptHits = getBucketHits(hits, "concept");
+  const analysis = analyzeHits(conceptQuestion, conceptHits.length > 0 ? conceptHits : hits);
   const effectiveHits = analysis.usedHits.length > 0 ? analysis.usedHits : analysis.relevantHits;
   if (effectiveHits.length === 0) {
-    return buildNoHitAnswer(question, language);
+    return buildNoHitAnswer(conceptQuestion, language);
   }
 
+  const topOverviewHit = effectiveHits.find((hit) =>
+    normalizeAnswerText([hit.path, hit.heading ?? ""].join("\n")).includes("overview"),
+  );
   const definitionHit =
+    (topOverviewHit && looksLikeDefinitionEvidence(conceptQuestion, topOverviewHit)
+      ? topOverviewHit
+      : undefined) ??
+    pickBestHitByPredicate(
+      effectiveHits,
+      (hit, normalizedHeadingPath, normalizedBody) =>
+        normalizedHeadingPath.includes("overview") &&
+        (hit.score >= effectiveHits[0]!.score - 16 ||
+          normalizedBody.includes("large communities") ||
+          normalizedBody.includes("subchannel")),
+    ) ??
     pickBestHit(effectiveHits, ["definition"]) ??
     pickBestHitByPredicate(
       effectiveHits,
       (_hit, normalizedHeadingPath) =>
+        normalizedHeadingPath.includes("overview") ||
         normalizedHeadingPath.includes("about ") ||
         normalizedHeadingPath.includes("glossary") ||
         normalizedHeadingPath.includes("offline messages") ||
@@ -948,13 +990,13 @@ function buildConceptAnswer(
     ) ??
     effectiveHits[0];
 
-  if (!looksLikeDefinitionEvidence(question, definitionHit)) {
+  if (!looksLikeDefinitionEvidence(conceptQuestion, definitionHit)) {
     return {
       mode: "extractive",
       answer: [
         language === "en"
-          ? `I couldn't find reliable local documentation that directly defines "${question}".`
-          : `我没有在当前本地文档里找到能够直接定义“${question}”的可靠内容。`,
+          ? `I couldn't find reliable local documentation that directly defines "${conceptQuestion}".`
+          : `我没有在当前本地文档里找到能够直接定义“${conceptQuestion}”的可靠内容。`,
         language === "en"
           ? "The current hits mention the term incidentally inside feature pages instead of defining the concept itself."
           : "现有命中结果更像是功能页里顺带提到相关术语，而不是解释这个概念本身。",
@@ -999,7 +1041,7 @@ function buildConceptAnswer(
   return {
     mode: "extractive",
     answer: [
-      summarizeConceptLead(question, definitionHit, language),
+      summarizeConceptLead(conceptQuestion, definitionHit, language),
       [sectionLabel(language, "definition"), `- ${definitionHit.snippet}${inlineCitation(definitionHit)}`].join(
         "\n",
       ),
@@ -1020,16 +1062,72 @@ function buildConceptAnswer(
   };
 }
 
+function buildPlatformClarificationNote(
+  analysis: ReturnType<typeof analyzeHits>,
+  language: AnswerLanguage,
+): string {
+  const platformText = orderPlatforms(analysis.foundPlatforms)
+    .map((platform) => formatPlatform(platform))
+    .join(" / ");
+  if (language === "en") {
+    return `- The remaining client-side implementation differs by platform. Choose ${platformText} for the SDK-specific continuation.`;
+  }
+  return `- 剩余的客户端实现步骤和平台相关。请从 ${platformText} 中指定一个平台，我再继续补全对应 SDK 的实现入口。`;
+}
+
+function buildCommunityCreationServerRule(
+  question: string,
+  hits: AnalyzedHit[],
+  language: AnswerLanguage,
+): { line: string; hit?: AnalyzedHit } | undefined {
+  const normalizedQuestion = normalizeAnswerText(question);
+  const isCommunityCreationQuestion =
+    normalizedQuestion.includes("create") &&
+    (normalizedQuestion.includes("community channel") || normalizedQuestion.includes("subchannel"));
+  if (!isCommunityCreationQuestion) {
+    return undefined;
+  }
+  const serverHit = pickBestHitByPredicate(hits, (_hit, normalizedHeadingPath, normalizedBody) => {
+    return (
+      (normalizedHeadingPath.includes("creating community channels") ||
+        normalizedHeadingPath.includes("creating community channel") ||
+        normalizedHeadingPath.includes("creating channel")) &&
+      normalizedBody.includes("server api")
+    );
+  });
+  if (!serverHit) {
+    return {
+      line:
+        language === "en"
+          ? "Community channels and subchannels are created via Server API."
+          : "Community channel 和 subchannel 需要通过 Server API 创建。",
+    };
+  }
+  return {
+    line:
+      language === "en"
+        ? `Community channels and subchannels are created via Server API, not by a client-side SDK create call.${inlineCitation(serverHit)}`
+        : `Community channel 和 subchannel 通过 Server API 创建，而不是由客户端 SDK 直接发起创建。${inlineCitation(serverHit)}`,
+    hit: serverHit,
+  };
+}
+
 function buildGuideAnswer(
   question: string,
   hits: DocSearchHit[],
   language: AnswerLanguage,
+  options?: {
+    allowClarificationOnly?: boolean;
+    prependStepLines?: string[];
+    prependStepHits?: AnalyzedHit[];
+    appendNoteLines?: string[];
+  },
 ): DocAnswerResult {
   const analysis = analyzeHits(question, hits);
   if (analysis.shouldClarifyChannelKind) {
     return buildChannelClarificationAnswer(analysis, language);
   }
-  if (analysis.shouldClarifyPlatform) {
+  if (analysis.shouldClarifyPlatform && options?.allowClarificationOnly !== false) {
     return buildClarificationAnswer(question, analysis, language);
   }
 
@@ -1037,7 +1135,12 @@ function buildGuideAnswer(
     return buildNoHitAnswer(question, language);
   }
 
-  const effectiveHits = analysis.usedHits.length > 0 ? analysis.usedHits : analysis.relevantHits;
+  const effectiveHits =
+    options?.allowClarificationOnly === false && analysis.shouldClarifyPlatform
+      ? analysis.relevantHits
+      : analysis.usedHits.length > 0
+        ? analysis.usedHits
+        : analysis.relevantHits;
   if (effectiveHits.length === 0) {
     return buildNoHitAnswer(question, language);
   }
@@ -1094,7 +1197,18 @@ function buildGuideAnswer(
     : [importHit, initializeHit, connectHit, navigationHit, channelHit, sendHit].filter(
         (hit, index, all): hit is AnalyzedHit => Boolean(hit) && all.indexOf(hit) === index,
       );
-  const citedHits = stepHits.length > 0 ? stepHits : effectiveHits.slice(0, 4);
+  const autoSharedRule = buildCommunityCreationServerRule(question, effectiveHits, language);
+  const prependStepLines = Array.from(
+    new Set([...(autoSharedRule ? [autoSharedRule.line] : []), ...(options?.prependStepLines ?? [])]),
+  );
+  const prependStepHits = [
+    ...(autoSharedRule?.hit ? [autoSharedRule.hit] : []),
+    ...(options?.prependStepHits ?? []),
+  ].filter((hit, index, all) => all.indexOf(hit) === index);
+  const citedHits =
+    stepHits.length > 0
+      ? [...prependStepHits, ...stepHits]
+      : [...prependStepHits, ...effectiveHits.slice(0, 4)];
   const citations = dedupeCitations(citedHits);
 
   const apiTerms = Array.from(
@@ -1114,8 +1228,13 @@ function buildGuideAnswer(
   ).slice(0, 6);
 
   const noteLines: string[] = [];
+  const normalizedQuestion = normalizeAnswerText(question);
+  const isCommunityProvisioningFlow =
+    analysis.selectedChannelKind === "community" &&
+    (normalizedQuestion.includes("create") || normalizedQuestion.includes("get"));
   const sdkChatFlow =
     !webhookGuide &&
+    !isCommunityProvisioningFlow &&
     (effectiveHits.some((hit) => normalizeAnswerText(hit.path).includes("chatsdk")) ||
       Boolean(channelHit) ||
       Boolean(sendHit) ||
@@ -1148,13 +1267,25 @@ function buildGuideAnswer(
         : "- 当前命中的文档没有给出明确的发消息示例。",
     );
   }
+  if (analysis.shouldClarifyPlatform && options?.allowClarificationOnly === false) {
+    noteLines.push(buildPlatformClarificationNote(analysis, language));
+  }
+  if (options?.appendNoteLines?.length) {
+    noteLines.push(...options.appendNoteLines);
+  }
+
+  const combinedStepLines = [...prependStepLines, ...stepHits.map((hit) => buildStepLine(hit, language))];
+  const selectedPlatform =
+    analysis.shouldClarifyPlatform && options?.allowClarificationOnly === false
+      ? undefined
+      : analysis.selectedPlatform;
 
   return {
     mode: "extractive",
     answer: [
       buildGuideIntro({
         language,
-        platform: analysis.selectedPlatform,
+        platform: selectedPlatform,
         channelKind: analysis.selectedChannelKind,
         overviewHit,
         setupHit,
@@ -1165,8 +1296,8 @@ function buildGuideAnswer(
       needHits.length > 0
         ? [sectionLabel(language, "need"), ...needHits.map((hit) => buildNeedLine(hit, language))].join("\n")
         : "",
-      stepHits.length > 0
-        ? [sectionLabel(language, "steps"), ...stepHits.map((hit, index) => `${index + 1}. ${buildStepLine(hit, language)}`)].join(
+      combinedStepLines.length > 0
+        ? [sectionLabel(language, "steps"), ...combinedStepLines.map((line, index) => `${index + 1}. ${line}`)].join(
             "\n",
           )
         : "",
@@ -1178,10 +1309,83 @@ function buildGuideAnswer(
     ]
       .filter(Boolean)
       .join("\n\n"),
-    summary: `guided answer from ${citations.length} documentation chunks`,
+    summary:
+      analysis.shouldClarifyPlatform && options?.allowClarificationOnly === false
+        ? "platform clarification required"
+        : `guided answer from ${citations.length} documentation chunks`,
     citations,
     answerSource: "generated",
     reviewStatus: "not_applicable",
+    pendingClarificationQuestion:
+      analysis.shouldClarifyPlatform && options?.allowClarificationOnly === false ? question : undefined,
+    clarificationHits:
+      analysis.shouldClarifyPlatform && options?.allowClarificationOnly === false ? effectiveHits : undefined,
+  };
+}
+
+function buildMixedAnswer(question: string, hits: DocSearchHit[], language: AnswerLanguage): DocAnswerResult {
+  const plan = planDocQuestion(question);
+  const conceptQuestion = pickPlanStepQuestion(plan, "concept", question);
+  const proceduralQuestion = pickPlanStepQuestion(plan, "procedural", question);
+  const conceptHits = getBucketHits(hits, "concept");
+  const proceduralHits = getBucketHits(hits, "procedural");
+  const proceduralAnalyzedHits = analyzeHits(
+    proceduralQuestion,
+    proceduralHits.length > 0 ? proceduralHits : hits,
+  ).relevantHits;
+  const sharedRule = buildCommunityCreationServerRule(proceduralQuestion, proceduralAnalyzedHits, language);
+
+  const definition = buildConceptAnswer(
+    conceptQuestion,
+    conceptHits.length > 0 ? conceptHits : hits,
+    language,
+  );
+  const procedural = buildGuideAnswer(
+    proceduralQuestion,
+    proceduralHits.length > 0 ? proceduralHits : hits,
+    language,
+    {
+      allowClarificationOnly: false,
+      prependStepLines: sharedRule ? [sharedRule.line] : [],
+      prependStepHits: sharedRule?.hit ? [sharedRule.hit] : [],
+    },
+  );
+
+  if (definition.summary === "no relevant documentation found") {
+    return procedural;
+  }
+
+  const combinedCitations = dedupeCitations([
+    ...definition.citations.map((citation) => ({
+      ...citation,
+      score: 0,
+      text: citation.snippet,
+    })),
+    ...procedural.citations.map((citation) => ({
+      ...citation,
+      score: 0,
+      text: citation.snippet,
+    })),
+  ]);
+
+  const definitionBlock = definition.answer
+    .split("\n\n")
+    .filter((section) => !section.startsWith("Sources:"))
+    .join("\n\n");
+  const stepsBlock = procedural.answer
+    .split("\n\n")
+    .filter((section) => !section.startsWith("Sources:"))
+    .join("\n\n");
+
+  return {
+    mode: "extractive",
+    answer: [definitionBlock, stepsBlock, renderSourcesAppendix(combinedCitations)].filter(Boolean).join("\n\n"),
+    summary: procedural.summary === "platform clarification required" ? procedural.summary : "mixed answer from documentation chunks",
+    citations: combinedCitations,
+    answerSource: "generated",
+    reviewStatus: "not_applicable",
+    pendingClarificationQuestion: procedural.pendingClarificationQuestion,
+    clarificationHits: procedural.clarificationHits,
   };
 }
 
@@ -1191,7 +1395,11 @@ function buildGroundedAnswer(question: string, hits: DocSearchHit[]): DocAnswerR
     return buildNoHitAnswer(question, language);
   }
 
-  if (detectQuestionIntent(question) === "concept") {
+  const plan = planDocQuestion(question);
+  if (plan.kind === "mixed") {
+    return buildMixedAnswer(question, hits, language);
+  }
+  if (plan.kind === "concept") {
     return buildConceptAnswer(question, hits, language);
   }
 
@@ -1255,6 +1463,9 @@ function buildAgentPrompt(question: string, groundedAnswer: string, hits: DocSea
     "Retrieved documentation:",
     evidence,
     "",
+    language === "en"
+      ? "A draft answer is provided below as a starting point. If any part conflicts with the retrieved evidence, correct or remove it."
+      : "下面会给出一版草稿答案作为起点。如果草稿和检索证据冲突，请以证据为准并改正或删除冲突内容。",
     "Please stream the final answer between the sentinels below.",
     "FINAL_ANSWER_START",
     groundedAnswer,

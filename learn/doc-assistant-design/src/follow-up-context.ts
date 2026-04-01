@@ -10,6 +10,7 @@ export type StoredClarificationContext = {
   sessionId: string;
   runId: string;
   originalQuestion: string;
+  pendingQuestion?: string;
   candidatePlatforms: DocFollowUpPlatform[];
   hits: DocSearchHit[];
   createdAt: number;
@@ -101,6 +102,9 @@ function isStoredClarificationContextValid(entry: StoredClarificationContext | n
     return false;
   }
   if (detectClarificationFollowUpQuestion(entry.originalQuestion)) {
+    return false;
+  }
+  if (entry.pendingQuestion && detectClarificationFollowUpQuestion(entry.pendingQuestion)) {
     return false;
   }
   if (entry.hits.length === 0) {
@@ -245,6 +249,7 @@ export async function persistClarificationContext(params: {
   sessionId: string;
   runId: string;
   originalQuestion: string;
+  pendingQuestion?: string;
   hits: DocSearchHit[];
   dataDir?: string;
 }): Promise<StoredClarificationContext> {
@@ -253,6 +258,7 @@ export async function persistClarificationContext(params: {
     sessionId: params.sessionId,
     runId: params.runId,
     originalQuestion: params.originalQuestion,
+    pendingQuestion: params.pendingQuestion,
     candidatePlatforms: extractClarificationPlatforms(params.hits),
     hits: params.hits,
     createdAt: Date.now(),
@@ -268,6 +274,8 @@ export async function updateClarificationStateAfterAnswer(params: {
   question: string;
   hits: DocSearchHit[];
   summary: string;
+  pendingQuestion?: string;
+  clarificationHits?: DocSearchHit[];
   route?: "greeting" | "memory" | "search";
   dataDir?: string;
 }): Promise<void> {
@@ -276,12 +284,15 @@ export async function updateClarificationStateAfterAnswer(params: {
   }
   const looksLikeFollowUp = Boolean(detectClarificationFollowUpQuestion(params.question));
   if (params.summary === "platform clarification required") {
+    const pendingQuestion = params.pendingQuestion ?? params.question;
+    const clarificationHits = params.clarificationHits ?? params.hits;
     const entry: StoredClarificationContext = {
       sessionId: params.sessionId,
       runId: params.runId,
       originalQuestion: params.question,
-      candidatePlatforms: extractClarificationPlatforms(params.hits),
-      hits: params.hits,
+      pendingQuestion,
+      candidatePlatforms: extractClarificationPlatforms(clarificationHits),
+      hits: clarificationHits,
       createdAt: Date.now(),
     };
     if (params.route !== "search" || !isStoredClarificationContextValid(entry)) {
@@ -291,7 +302,8 @@ export async function updateClarificationStateAfterAnswer(params: {
       sessionId: params.sessionId,
       runId: params.runId,
       originalQuestion: params.question,
-      hits: params.hits,
+      pendingQuestion,
+      hits: clarificationHits,
       dataDir: params.dataDir,
     });
     return;

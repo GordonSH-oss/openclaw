@@ -36,9 +36,10 @@ export async function executeDocQuestion(params: {
       ? await getStoredClarificationContext(params.sessionId, params.dataDir)
       : null;
   const selectedPlatform = clarificationFollowUp ? followUpMatch?.platform : undefined;
+  const followUpBaseQuestion = clarificationFollowUp?.pendingQuestion ?? clarificationFollowUp?.originalQuestion;
   const rewrittenQuestion =
-    clarificationFollowUp && selectedPlatform
-      ? rewriteClarificationQuestion(clarificationFollowUp.originalQuestion, selectedPlatform)
+    followUpBaseQuestion && selectedPlatform
+      ? rewriteClarificationQuestion(followUpBaseQuestion, selectedPlatform)
       : undefined;
 
   if (clarificationFollowUp && selectedPlatform && rewrittenQuestion) {

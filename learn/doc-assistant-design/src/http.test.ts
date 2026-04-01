@@ -4,12 +4,14 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
+import { fileURLToPath } from "node:url";
 import { replaceAnswerMemoryEntries } from "./answer-memory.js";
 import { createDocAssistantRuntimeState } from "./server-runtime-state.js";
 import { createDocAssistantRouter } from "./server-methods.js";
 import { handleConnection } from "./ws-connection.js";
 import { serveDocAssistantApi } from "./http-api.js";
 import { serveDocAssistantUi } from "./http-ui.js";
+import { createDocAssistantServer } from "./server.js";
 import type { AnswerMemoryEntry } from "./protocol/index.js";
 
 async function makeTempDir(name: string): Promise<string> {
@@ -467,6 +469,20 @@ test("HTTP API exposes users, search, runs, transcript, and status", async () =>
 test("HTTP API handles CORS preflight and serves the built-in UI page", async () => {
   const harness = await createHttpHarness();
 
+  const localhostPreflight = await dispatchApi({
+    state: harness.state,
+    router: harness.router,
+    method: "OPTIONS",
+    path: "/runs",
+    headers: {
+      origin: "http://localhost:3000",
+      "access-control-request-method": "POST",
+      "access-control-request-headers": "Content-Type,X-Doc-Assistant-Client-Id",
+    },
+  });
+  assert.equal(localhostPreflight.res.statusCode, 204);
+  assert.equal(localhostPreflight.res.headers.get("access-control-allow-origin"), "http://localhost:3000");
+
   const preflight = await dispatchApi({
     state: harness.state,
     router: harness.router,
@@ -507,6 +523,46 @@ test("HTTP API handles CORS preflight and serves the built-in UI page", async ()
   );
   assert.equal(assetHandled, true);
   assert.equal(assetRes.body.includes("docs.ask"), true);
+});
+
+test("server bootstrap honors .env docs root outside src/index.ts", { concurrency: false }, async (t) => {
+  const docsRoot = await createFixtureDocs();
+  const envPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../.env");
+  let originalEnvFile: string | null = null;
+  try {
+    originalEnvFile = await fs.readFile(envPath, "utf-8");
+  } catch {
+    originalEnvFile = null;
+  }
+  const originalEnvVar = process.env.DOC_ASSISTANT_DOCS_ROOT;
+  t.after(async () => {
+    if (originalEnvFile === null) {
+      await fs.rm(envPath, { force: true });
+    } else {
+      await fs.writeFile(envPath, originalEnvFile, "utf-8");
+    }
+    if (originalEnvVar === undefined) {
+      delete process.env.DOC_ASSISTANT_DOCS_ROOT;
+    } else {
+      process.env.DOC_ASSISTANT_DOCS_ROOT = originalEnvVar;
+    }
+  });
+
+  delete process.env.DOC_ASSISTANT_DOCS_ROOT;
+  await fs.writeFile(envPath, `DOC_ASSISTANT_DOCS_ROOT=${docsRoot}\n`, "utf-8");
+
+  const server = await createDocAssistantServer({
+    host: "127.0.0.1",
+    port: 0,
+    listen: false,
+  });
+  t.after(async () => {
+    await server.close();
+  });
+
+  assert.equal(server.docsRoot, docsRoot);
+  assert.equal(server.state.config.docsRoot, docsRoot);
+  assert.equal(server.apiBaseUrl.endsWith("/api/doc-assistant"), true);
 });
 
 test("HTTP API greeting runs skip retrieval and complete with a guided greeting", async () => {

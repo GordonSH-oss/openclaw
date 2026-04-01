@@ -42,6 +42,18 @@ type QueryIntent =
   | "release";
 
 type QueryChannelKind = "direct" | "group" | "community";
+export type DocQuestionIntent = "concept" | "procedural";
+export type DocQuestionPlanKind = DocQuestionIntent | "mixed";
+export type DocRetrievalBucket = "concept" | "procedural";
+export type DocQuestionPlanStep = {
+  intent: DocQuestionIntent;
+  question: string;
+  order: number;
+};
+export type DocQuestionPlan = {
+  kind: DocQuestionPlanKind;
+  steps: DocQuestionPlanStep[];
+};
 
 const GENERIC_QUERY_TOKENS = new Set([
   "a",
@@ -71,6 +83,81 @@ const GENERIC_QUERY_TOKENS = new Set([
   "use",
   "what",
 ]);
+
+const CONCEPT_QUERY_MARKERS = [
+  "what",
+  "what s",
+  "whats",
+  "what is",
+  "what are",
+  "meaning",
+  "define",
+  "definition",
+  "explain",
+  "about",
+  "是什么",
+  "什么意思",
+  "含义",
+  "解释一下",
+];
+
+const PROCEDURAL_QUERY_MARKERS = [
+  "how to",
+  "how do",
+  "how can",
+  "required",
+  "requirements",
+  "require",
+  "prerequisites",
+  "need",
+  "start",
+  "send",
+  "configure",
+  "connect",
+  "initialize",
+  "install",
+  "create",
+  "set up",
+  "setup",
+  "发起",
+  "配置",
+  "连接",
+  "初始化",
+  "如何",
+  "怎么",
+  "创建",
+];
+
+const PROCEDURAL_NOISE_TERMS = [
+  "create",
+  "creating",
+  "workflow",
+  "steps",
+  "step",
+  "event",
+  "events",
+  "notification",
+  "dnd",
+  "manager",
+  "delete",
+  "modify",
+  "history",
+];
+
+const REFERENCE_PRONOUN_PATTERNS = [
+  /\bit\b/giu,
+  /\bthis\b/giu,
+  /\bthat\b/giu,
+  /\bthem\b/giu,
+  /\bthese\b/giu,
+  /\bthose\b/giu,
+  /它/gu,
+  /它们/gu,
+  /这个/gu,
+  /那个/gu,
+  /这些/gu,
+  /那些/gu,
+];
 
 function countTokenMatches(haystack: string, token: string): number {
   if (!haystack.includes(token)) {
@@ -106,6 +193,120 @@ function normalizeSnippet(text: string, maxLength = 220): string {
     return compact;
   }
   return `${compact.slice(0, maxLength - 1)}…`;
+}
+
+function trimQuestionSegment(text: string): string {
+  return text
+    .trim()
+    .replace(/^[,;:，；：]+/u, "")
+    .replace(/[?？!！.。]+$/u, "")
+    .trim();
+}
+
+function splitQuestionIntoSegments(question: string): string[] {
+  const normalized = question
+    .replace(/([?？])/gu, "$1\n")
+    .replace(/\b(and then|then)\b/giu, "\n")
+    .replace(/((?:what(?:'s| is| are)?|define|explain)\b[^?\n]{0,200}?)(\bhow to\b)/iu, "$1\n$2")
+    .replace(/(是什么[^?\n]{0,200}?)(如何|怎么|创建)/gu, "$1\n$2");
+  const segments = normalized
+    .split(/\n+/)
+    .map((part) => trimQuestionSegment(part))
+    .filter(Boolean);
+  return segments.length > 0 ? segments : [trimQuestionSegment(question)].filter(Boolean);
+}
+
+function extractQuestionReferent(question: string): string | undefined {
+  const trimmed = trimQuestionSegment(question);
+  if (!trimmed) {
+    return undefined;
+  }
+
+  const normalized = normalizeSearchText(trimmed);
+  const prioritizedPhrases = [
+    "community channel",
+    "subchannel",
+    "group channel",
+    "direct channel",
+    "offline messages",
+    "webhook",
+    "push notification",
+  ];
+  const prioritized = prioritizedPhrases.find((phrase) => normalized.includes(phrase));
+  if (prioritized) {
+    return prioritized;
+  }
+
+  const stripped = trimmed
+    .replace(/^(?:what(?:'s| is| are)?|define|definition of|explain|about)\s+/iu, "")
+    .replace(/^(?:什么是|什么叫|请解释(?:一下)?|解释一下|介绍(?:一下)?|关于)\s*/u, "")
+    .replace(/^(?:a|an|the)\s+/iu, "")
+    .replace(/[?？!！.。]+$/u, "")
+    .trim();
+  return stripped || undefined;
+}
+
+function hasReferencePronoun(question: string): boolean {
+  return REFERENCE_PRONOUN_PATTERNS.some((pattern) =>
+    new RegExp(pattern.source, pattern.flags).test(question),
+  );
+}
+
+function rewriteQuestionWithReferent(question: string, referent: string): string {
+  let rewritten = question;
+  for (const pattern of REFERENCE_PRONOUN_PATTERNS) {
+    rewritten = rewritten.replace(pattern, referent);
+  }
+  return rewritten.replace(/\s+/g, " ").trim();
+}
+
+function inheritReferentsAcrossSegments(rawSteps: string[]): string[] {
+  const steps: string[] = [];
+  let lastConceptReferent: string | undefined;
+
+  for (const rawStep of rawSteps) {
+    const intent = detectQuestionIntentForSegment(rawStep);
+    let stepQuestion = rawStep;
+    if (intent === "concept") {
+      lastConceptReferent = extractQuestionReferent(rawStep) ?? lastConceptReferent;
+    } else if (lastConceptReferent && hasReferencePronoun(rawStep)) {
+      const normalizedReferent = normalizeSearchText(lastConceptReferent);
+      if (normalizedReferent && !normalizeSearchText(rawStep).includes(normalizedReferent)) {
+        stepQuestion = rewriteQuestionWithReferent(rawStep, lastConceptReferent);
+      }
+    }
+    steps.push(stepQuestion);
+  }
+
+  return steps;
+}
+
+function detectQuestionIntentForSegment(question: string): DocQuestionIntent {
+  const normalized = normalizeSearchText(question);
+  if (PROCEDURAL_QUERY_MARKERS.some((marker) => normalized.includes(marker))) {
+    return "procedural";
+  }
+  if (CONCEPT_QUERY_MARKERS.some((marker) => normalized.includes(marker))) {
+    return "concept";
+  }
+  if (normalized.split(" ").length <= 5 && !normalized.includes("sdk")) {
+    return "concept";
+  }
+  return "procedural";
+}
+
+export function planDocQuestion(question: string): DocQuestionPlan {
+  const rawSteps = inheritReferentsAcrossSegments(splitQuestionIntoSegments(question));
+  const steps = rawSteps.map((stepQuestion, index) => ({
+    question: stepQuestion,
+    intent: detectQuestionIntentForSegment(stepQuestion),
+    order: index,
+  }));
+  const uniqueIntents = new Set(steps.map((step) => step.intent));
+  return {
+    kind: uniqueIntents.size > 1 ? "mixed" : (steps[0]?.intent ?? "procedural"),
+    steps,
+  };
 }
 
 function detectQuerySignals(query: string, tokens: string[]): {
@@ -160,6 +361,52 @@ function detectQueryChannelKinds(normalizedQuery: string): QueryChannelKind[] {
     kinds.add("community");
   }
   return Array.from(kinds);
+}
+
+function scoreChannelKindAlignment(
+  pathText: string,
+  headingText: string,
+  bodyText: string,
+  signals: ReturnType<typeof detectQuerySignals>,
+): number {
+  if (signals.channelKinds.length === 0) {
+    return 0;
+  }
+
+  const explicitKinds = new Set(signals.channelKinds);
+  const detectedKinds = new Set<QueryChannelKind>([
+    ...detectQueryChannelKinds(pathText),
+    ...detectQueryChannelKinds(headingText),
+    ...detectQueryChannelKinds(bodyText.slice(0, 600)),
+  ]);
+  let score = 0;
+
+  for (const kind of explicitKinds) {
+    if (detectedKinds.has(kind)) {
+      score += 18;
+    }
+    if (kind === "community" && pathText.includes("community channel")) {
+      score += 18;
+    }
+    if (kind === "community" && pathText.includes("community-channels")) {
+      score += 14;
+    }
+    if (kind === "direct" && pathText.includes("direct system channels")) {
+      score += 18;
+    }
+    if (kind === "group" && pathText.includes("group channels")) {
+      score += 18;
+    }
+  }
+
+  for (const detected of detectedKinds) {
+    if (explicitKinds.has(detected)) {
+      continue;
+    }
+    score -= 24;
+  }
+
+  return score;
 }
 
 function isChannelCreationQuery(signals: ReturnType<typeof detectQuerySignals>): boolean {
@@ -544,12 +791,12 @@ function scorePathSemantics(
     const pathPlatforms = PLATFORM_TOKENS.filter((token) => pathText.includes(token));
     for (const platform of signals.platforms) {
       if (pathPlatforms.includes(platform)) {
-        score += 22;
+        score += 26;
       }
     }
     for (const platform of pathPlatforms) {
       if (!signals.platforms.includes(platform)) {
-        score -= 12;
+        score -= 18;
       }
     }
   }
@@ -937,12 +1184,26 @@ function scoreChannelCreationSemantics(
     if (normalizedPath.includes("community channel") || normalizedPath.includes("community channels")) {
       score += 34;
     }
+    if (normalizedPath.includes("creating-channel")) {
+      score += 36;
+    }
     if (
+      normalizedHeading.includes("creating community channels") ||
+      normalizedHeading.includes("creating community channel") ||
       normalizedHeading.includes("create a community channel") ||
       normalizedHeading.includes("create a subchannel") ||
       normalizedBody.includes("private subchannel")
     ) {
-      score += 24;
+      score += 28;
+    }
+    if (normalizedBody.includes("server api")) {
+      score += 22;
+    }
+    if (normalizedBody.includes("does not provide client side apis")) {
+      score += 18;
+    }
+    if (normalizedPath.includes("/overview")) {
+      score -= 10;
     }
   } else {
     if (
@@ -989,7 +1250,102 @@ function scoreChannelCreationSemantics(
   return score;
 }
 
-function scoreChunk(
+function extractConceptFocusTokens(signals: ReturnType<typeof detectQuerySignals>): string[] {
+  const blacklist = new Set([
+    ...CONCEPT_QUERY_MARKERS,
+    ...PROCEDURAL_QUERY_MARKERS,
+    "channel",
+    "channels",
+    "sdk",
+  ]);
+  return signals.normalizedTokens.filter(
+    (token) => token.length >= 4 && !GENERIC_QUERY_TOKENS.has(token) && !blacklist.has(token),
+  );
+}
+
+function looksLikeDefinitionText(text: string): boolean {
+  return (
+    text.includes(" is a ") ||
+    text.includes(" are ") ||
+    text.includes(" refers to ") ||
+    text.includes(" used for ") ||
+    text.includes(" lets ") ||
+    text.includes(" enables ")
+  );
+}
+
+function scoreConceptSemantics(
+  pathText: string,
+  headingText: string,
+  bodyText: string,
+  signals: ReturnType<typeof detectQuerySignals>,
+): number {
+  const normalizedPath = normalizeSearchText(pathText);
+  const normalizedHeading = normalizeSearchText(headingText);
+  const normalizedBody = normalizeSearchText(bodyText.slice(0, 900));
+  const focusTokens = extractConceptFocusTokens(signals);
+  let score = 0;
+
+  if (normalizedPath.endsWith("/overview md") || normalizedPath.endsWith("/overview mdx")) {
+    score += 32;
+  }
+  if (normalizedPath.includes("/overview") || normalizedHeading.includes("overview")) {
+    score += 22;
+  }
+  if (normalizedPath.includes("/about") || normalizedHeading.includes("about ")) {
+    score += 22;
+  }
+  if (normalizedPath.includes("glossary") || normalizedHeading.includes("glossary")) {
+    score += 20;
+  }
+  if (looksLikeDefinitionText(` ${normalizedBody} `)) {
+    score += 18;
+  }
+  if (normalizedBody.includes("key features") || normalizedBody.includes("main features")) {
+    score += 10;
+  }
+
+  if (signals.channelKinds.includes("community")) {
+    if (normalizedPath.includes("community channel") || normalizedPath.includes("community channels")) {
+      score += 18;
+    }
+    if (normalizedPath.includes("community-channels/overview")) {
+      score += 40;
+    }
+  }
+
+  if (focusTokens.length > 0) {
+    const headingMatches = focusTokens.filter(
+      (token) => normalizedHeading.includes(token) || normalizedPath.includes(token),
+    ).length;
+    const bodyMatches = focusTokens.filter((token) => normalizedBody.includes(token)).length;
+    score += headingMatches * 10;
+    score += bodyMatches * 5;
+  }
+
+  for (const term of PROCEDURAL_NOISE_TERMS) {
+    if (normalizedPath.includes(term)) {
+      score -= 18;
+    }
+    if (normalizedHeading.includes(term)) {
+      score -= 12;
+    }
+  }
+
+  if (normalizedPath.includes("creating-channel")) {
+    score -= 26;
+  }
+  if (normalizedPath.includes("/events/") || normalizedPath.includes("/event/")) {
+    score -= 24;
+  }
+  if (normalizedPath.includes("do-not-disturb") || normalizedPath.includes("dnd")) {
+    score -= 24;
+  }
+
+  return score;
+}
+
+function scoreSharedChunk(
   chunk: DocIndexChunk,
   query: string,
   tokens: string[],
@@ -1009,13 +1365,42 @@ function scoreChunk(
     score += countTokenMatches(headingText, token) * 4;
     score += countTokenMatches(bodyText, token);
   }
+  score += scoreChannelKindAlignment(pathText, headingText, bodyText, signals);
   score += scorePathSemantics(pathText, headingText, signals);
   score += scoreBasenameSemantics(basenameStem, headingText, signals);
+  return score;
+}
+
+function scoreProceduralChunk(
+  chunk: DocIndexChunk,
+  query: string,
+  tokens: string[],
+  signals: ReturnType<typeof detectQuerySignals>,
+): number {
+  const pathText = chunk.relativePath.toLowerCase();
+  const headingText = (chunk.heading ?? "").toLowerCase();
+  const bodyText = chunk.text.toLowerCase();
+
+  let score = scoreSharedChunk(chunk, query, tokens, signals);
   score += scoreHeadingIntent(headingText, bodyText, signals);
   score += scoreClientChatStartSemantics(pathText, headingText, bodyText, signals);
   score += scoreClientConnectionSemantics(pathText, headingText, bodyText, signals);
   score += scoreWebhookSemantics(pathText, headingText, bodyText, signals);
   score += scoreChannelCreationSemantics(pathText, headingText, bodyText, signals);
+  return score;
+}
+
+function scoreConceptChunk(
+  chunk: DocIndexChunk,
+  query: string,
+  tokens: string[],
+  signals: ReturnType<typeof detectQuerySignals>,
+): number {
+  const pathText = chunk.relativePath.toLowerCase();
+  const headingText = (chunk.heading ?? "").toLowerCase();
+  const bodyText = chunk.text.toLowerCase();
+  let score = scoreSharedChunk(chunk, query, tokens, signals);
+  score += scoreConceptSemantics(pathText, headingText, bodyText, signals);
   return score;
 }
 
@@ -1041,27 +1426,30 @@ export function toCitation(hit: DocSearchHit): DocCitation {
   };
 }
 
-export async function searchDocs(params: {
-  query: string;
-  docsRoot?: string;
-  dataDir?: string;
-  maxResults?: number;
-}): Promise<DocSearchHit[]> {
-  const chunks = await buildDocIndex({
-    docsRoot: params.docsRoot,
-    dataDir: params.dataDir,
-  });
-  const query = params.query.trim().toLowerCase();
+function scoreBucketedEntries(params: {
+  chunks: DocIndexChunk[];
+  question: string;
+  bucket: DocRetrievalBucket;
+}): Array<{
+  chunk: DocIndexChunk;
+  score: number;
+  strongOverlap: number;
+  tier: DocTier;
+  basenameStem: string;
+  pathPlatforms: string[];
+}> {
+  const query = params.question.trim().toLowerCase();
   const tokens = expandQueryTokens(query, tokenize(query));
   const scoringTokens = tokens.filter((token) => !GENERIC_QUERY_TOKENS.has(token));
   const strongTokens = getStrongQueryTokens(tokens);
   const signals = detectQuerySignals(query, tokens);
-  const scored = chunks
+  const scoreChunkForBucket = params.bucket === "concept" ? scoreConceptChunk : scoreProceduralChunk;
+  const scored = params.chunks
     .map((chunk) => {
       const pathText = chunk.relativePath.toLowerCase();
       return {
         chunk,
-        score: scoreChunk(chunk, query, scoringTokens, signals),
+        score: scoreChunkForBucket(chunk, query, scoringTokens, signals),
         strongOverlap: countUniqueTokenOverlap(chunk.tokens, strongTokens),
         tier: detectDocTier(pathText),
         basenameStem: getBasenameStem(pathText),
@@ -1101,16 +1489,103 @@ export async function searchDocs(params: {
     return [];
   }
 
-  return scored
-    .sort((a, b) => {
-      if (b.score !== a.score) {
-        return b.score - a.score;
+  return scored.sort((a, b) => {
+    if (b.score !== a.score) {
+      return b.score - a.score;
+    }
+    if (a.chunk.relativePath !== b.chunk.relativePath) {
+      return a.chunk.relativePath.localeCompare(b.chunk.relativePath);
+    }
+    return a.chunk.startLine - b.chunk.startLine;
+  });
+}
+
+function toBucketedHits(
+  entries: ReturnType<typeof scoreBucketedEntries>,
+  bucket: DocRetrievalBucket,
+  limit: number,
+): DocSearchHit[] {
+  return entries.slice(0, limit).map((entry) => ({
+    ...toHit(entry.chunk, entry.score),
+    retrievalBucket: bucket,
+  }));
+}
+
+export async function searchDocs(params: {
+  query: string;
+  docsRoot?: string;
+  dataDir?: string;
+  maxResults?: number;
+}): Promise<DocSearchHit[]> {
+  const chunks = await buildDocIndex({
+    docsRoot: params.docsRoot,
+    dataDir: params.dataDir,
+  });
+  const plan = planDocQuestion(params.query);
+  const maxResults = params.maxResults ?? 5;
+
+  if (plan.kind === "concept" || plan.kind === "procedural") {
+    return toBucketedHits(
+      scoreBucketedEntries({
+        chunks,
+        question: plan.steps[0]?.question ?? params.query,
+        bucket: plan.kind,
+      }),
+      plan.kind,
+      maxResults,
+    );
+  }
+
+  const merged: DocSearchHit[] = [];
+  const seen = new Set<string>();
+  const perBucketLimit = Math.max(2, maxResults);
+  const bucketHitsByStep = plan.steps.map((step) => ({
+    step,
+    hits: toBucketedHits(
+      scoreBucketedEntries({
+        chunks,
+        question: step.question,
+        bucket: step.intent,
+      }),
+      step.intent,
+      perBucketLimit,
+    ),
+  }));
+
+  for (const entry of bucketHitsByStep) {
+    const hit = entry.hits[0];
+    if (!hit) {
+      continue;
+    }
+    const key = `${hit.path}:${hit.startLine}:${hit.endLine}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      merged.push(hit);
+    }
+  }
+
+  for (let rank = 1; merged.length < maxResults; rank += 1) {
+    let progressed = false;
+    for (const entry of bucketHitsByStep) {
+      const hit = entry.hits[rank];
+      if (!hit) {
+        continue;
       }
-      if (a.chunk.relativePath !== b.chunk.relativePath) {
-        return a.chunk.relativePath.localeCompare(b.chunk.relativePath);
+      progressed = true;
+      const key = `${hit.path}:${hit.startLine}:${hit.endLine}`;
+      if (seen.has(key)) {
+        continue;
       }
-      return a.chunk.startLine - b.chunk.startLine;
-    })
-    .slice(0, params.maxResults ?? 5)
-    .map((entry) => toHit(entry.chunk, entry.score));
+      seen.add(key);
+      merged.push(hit);
+      if (merged.length >= maxResults) {
+        return merged;
+      }
+    }
+    if (!progressed) {
+      break;
+    }
+  }
+
+  return merged.slice(0, maxResults);
 }
