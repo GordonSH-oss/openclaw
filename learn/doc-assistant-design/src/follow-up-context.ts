@@ -1,6 +1,14 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { isNonCacheableSummary } from "./answer-cache-policy.js";
+import {
+  detectDocShape,
+  detectPreferredDocShape,
+  detectProceduralTaskKind,
+  type DocPreferredDocShape,
+  type DocProceduralTaskKind,
+  type DocSearchDocShape,
+} from "./doc-search.js";
 import type { DocSearchHit } from "./protocol/index.js";
 import { resolveDocAssistantDataDir } from "./user-store.js";
 
@@ -11,6 +19,10 @@ export type StoredClarificationContext = {
   runId: string;
   originalQuestion: string;
   pendingQuestion?: string;
+  normalizedQuestion?: string;
+  taskKind?: DocProceduralTaskKind;
+  preferredDocShape?: DocPreferredDocShape;
+  originalTopHitShapes?: DocSearchDocShape[];
   candidatePlatforms: DocFollowUpPlatform[];
   hits: DocSearchHit[];
   createdAt: number;
@@ -129,6 +141,14 @@ function normalizeFollowUpText(text: string): string {
     .trim();
 }
 
+function normalizeClarificationQuestion(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[?!.:,;，。！？、]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 export function detectFollowUpPlatform(value: string): DocFollowUpPlatform | undefined {
   const normalized = normalizeFollowUpText(value);
   const matched = Object.entries(PLATFORM_PATTERNS)
@@ -221,11 +241,50 @@ export function extractClarificationPlatforms(hits: DocSearchHit[]): DocFollowUp
 }
 
 export function shouldReuseClarificationHits(
-  hits: DocSearchHit[],
+  context:
+    | Pick<
+        StoredClarificationContext,
+        "hits" | "taskKind" | "preferredDocShape" | "originalTopHitShapes"
+      >
+    | DocSearchHit[],
   platform: DocFollowUpPlatform,
 ): boolean {
+  const hits = Array.isArray(context) ? context : context.hits;
   const selectedHits = selectPlatformHits(hits, platform);
-  return selectedHits.length >= 2;
+  if (selectedHits.length < 2) {
+    return false;
+  }
+
+  const taskKind = Array.isArray(context) ? "generic" : (context.taskKind ?? "generic");
+  const preferredDocShape = Array.isArray(context)
+    ? "specialized_task"
+    : (context.preferredDocShape ?? "specialized_task");
+  const topSelectedShapes = selectedHits
+    .slice(0, 3)
+    .map((hit) => hit.docShape ?? detectDocShape(hit));
+  const quickstartCount = topSelectedShapes.filter((shape) => shape === "quickstart_step").length;
+  const specializedCount = topSelectedShapes.filter((shape) => shape === "specialized_task").length;
+  const topShape = topSelectedShapes[0];
+
+  if (
+    preferredDocShape === "specialized_task" &&
+    (taskKind === "send_message" ||
+      taskKind === "first_message" ||
+      taskKind === "channel_creation") &&
+    topShape === "quickstart_step"
+  ) {
+    return false;
+  }
+
+  if (
+    (taskKind === "send_message" || taskKind === "first_message") &&
+    quickstartCount > 0 &&
+    quickstartCount >= specializedCount
+  ) {
+    return false;
+  }
+
+  return true;
 }
 
 export async function getStoredClarificationContext(
@@ -270,6 +329,12 @@ export async function persistClarificationContext(params: {
     runId: params.runId,
     originalQuestion: params.originalQuestion,
     pendingQuestion: params.pendingQuestion,
+    normalizedQuestion: normalizeClarificationQuestion(
+      params.pendingQuestion ?? params.originalQuestion,
+    ),
+    taskKind: detectProceduralTaskKind(params.pendingQuestion ?? params.originalQuestion),
+    preferredDocShape: detectPreferredDocShape(params.pendingQuestion ?? params.originalQuestion),
+    originalTopHitShapes: params.hits.slice(0, 3).map((hit) => hit.docShape ?? detectDocShape(hit)),
     candidatePlatforms: extractClarificationPlatforms(params.hits),
     hits: params.hits,
     createdAt: Date.now(),
@@ -302,6 +367,12 @@ export async function updateClarificationStateAfterAnswer(params: {
       runId: params.runId,
       originalQuestion: params.question,
       pendingQuestion,
+      normalizedQuestion: normalizeClarificationQuestion(pendingQuestion),
+      taskKind: detectProceduralTaskKind(pendingQuestion),
+      preferredDocShape: detectPreferredDocShape(pendingQuestion),
+      originalTopHitShapes: clarificationHits
+        .slice(0, 3)
+        .map((hit) => hit.docShape ?? detectDocShape(hit)),
       candidatePlatforms: extractClarificationPlatforms(clarificationHits),
       hits: clarificationHits,
       createdAt: Date.now(),

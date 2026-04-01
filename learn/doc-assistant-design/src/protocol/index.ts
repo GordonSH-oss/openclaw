@@ -64,6 +64,7 @@ export type DocSearchHit = DocCitation & {
   score: number;
   text: string;
   retrievalBucket?: "concept" | "procedural";
+  docShape?: "quickstart_step" | "specialized_task" | "overview" | "generic_reference";
 };
 
 export type DocAnswerSource = "memory_standard" | "memory_draft" | "generated" | "greeting";

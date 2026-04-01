@@ -44,7 +44,7 @@ export async function executeDocQuestion(params: {
       : undefined;
 
   if (clarificationFollowUp && selectedPlatform && rewrittenQuestion) {
-    if (shouldReuseClarificationHits(clarificationFollowUp.hits, selectedPlatform)) {
+    if (shouldReuseClarificationHits(clarificationFollowUp, selectedPlatform)) {
       const hits = selectPlatformHits(clarificationFollowUp.hits, selectedPlatform);
       await params.onRetrieved?.(hits);
       const answer = await buildDocAnswer({
@@ -105,6 +105,10 @@ export async function executeDocQuestion(params: {
       docsRoot: params.docsRoot,
       dataDir: params.dataDir,
       maxResults: params.maxResults,
+      refinement: {
+        taskKind: clarificationFollowUp.taskKind,
+        preferredDocShape: clarificationFollowUp.preferredDocShape,
+      },
     });
     await params.onRetrieved?.(hits);
     const answer = await buildDocAnswer({

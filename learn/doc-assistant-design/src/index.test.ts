@@ -234,6 +234,7 @@ async function createSendMessageFixtureDocs(): Promise<string> {
   const docsDir = path.join(docsRoot, "docs");
   await fs.mkdir(path.join(docsDir, "chatsdk-android", "message"), { recursive: true });
   await fs.mkdir(path.join(docsDir, "chatsdk-ios", "message"), { recursive: true });
+  await fs.mkdir(path.join(docsDir, "chatsdk-web"), { recursive: true });
   await fs.mkdir(path.join(docsDir, "platform-chat-api", "message"), { recursive: true });
 
   await fs.writeFile(
@@ -253,6 +254,20 @@ async function createSendMessageFixtureDocs(): Promise<string> {
     "utf-8",
   );
   await fs.writeFile(
+    path.join(docsDir, "chatsdk-android", "getting-started.md"),
+    [
+      "# Getting started",
+      "",
+      "## Step 5: Send a message",
+      "",
+      "Build `SendTextMessageParams` and call `channel.sendMessage(...)` to send your first Android message.",
+      "",
+      "For more message types and detailed API usage, see `/chatsdk-android/message/send`.",
+      "",
+    ].join("\n"),
+    "utf-8",
+  );
+  await fs.writeFile(
     path.join(docsDir, "chatsdk-ios", "message", "send.md"),
     [
       "# Send messages",
@@ -264,6 +279,32 @@ async function createSendMessageFixtureDocs(): Promise<string> {
       "## Send a media message",
       "",
       "Build `SendImageMessageParams` and call `channel.sendMessage(...)` to send a media message on iOS.",
+      "",
+    ].join("\n"),
+    "utf-8",
+  );
+  await fs.writeFile(
+    path.join(docsDir, "chatsdk-ios", "quickstart.md"),
+    [
+      "# Quickstart",
+      "",
+      "## Step 5: Send a message",
+      "",
+      "Build `SendTextMessageParams` and call `channel.sendMessage(...)` to send your first iOS message.",
+      "",
+      "For the dedicated message APIs, see `/chatsdk-ios/message/send`.",
+      "",
+    ].join("\n"),
+    "utf-8",
+  );
+  await fs.writeFile(
+    path.join(docsDir, "chatsdk-web", "quickstart.md"),
+    [
+      "# Quickstart",
+      "",
+      "## Send a message",
+      "",
+      "Use the Web quickstart to send your first message after setup.",
       "",
     ].join("\n"),
     "utf-8",
@@ -1161,6 +1202,46 @@ void test("search prefers client send-message docs over sync-to-sender server do
   assert.equal(serverIndex === -1 || iosIndex < serverIndex, true);
 });
 
+void test("search still keeps quickstart-style entry points for generic first-message clarification", async () => {
+  const docsRoot = await createSendMessageFixtureDocs();
+
+  const hits = await searchDocs({
+    query: "How to send my first message?",
+    docsRoot,
+    maxResults: 6,
+  });
+
+  assert.equal(
+    hits.some((hit) => hit.path.endsWith("docs/chatsdk-android/getting-started.md")),
+    true,
+  );
+  assert.equal(
+    hits.some((hit) => hit.path.endsWith("docs/chatsdk-ios/quickstart.md")),
+    true,
+  );
+});
+
+void test("search prefers specialized send docs over quickstart steps once platform is explicit", async () => {
+  const docsRoot = await createSendMessageFixtureDocs();
+
+  const hits = await searchDocs({
+    query: "How to send my first message on Android?",
+    docsRoot,
+    maxResults: 6,
+  });
+
+  const sendIndex = hits.findIndex((hit) =>
+    hit.path.endsWith("docs/chatsdk-android/message/send.md"),
+  );
+  const stepIndex = hits.findIndex((hit) =>
+    hit.path.endsWith("docs/chatsdk-android/getting-started.md"),
+  );
+
+  assert.equal(sendIndex !== -1, true);
+  assert.equal(stepIndex !== -1, true);
+  assert.equal(sendIndex < stepIndex, true);
+});
+
 void test("buildDocAnswer asks for platform clarification when multiple SDK platforms match", async () => {
   const result = await buildDocAnswer({
     runId: "clarify-1",
@@ -1391,7 +1472,11 @@ void test("buildDocAnswer renders explicit-platform send-message questions as se
   });
 
   assert.equal(result.summary.startsWith("guided answer from "), true);
-  assert.equal(result.answer.includes("send a message on Android"), true);
+  assert.equal(
+    result.answer.includes("send a message on Android") ||
+      result.answer.includes("send a text message on Android"),
+    true,
+  );
   assert.equal(result.answer.includes("start a direct chat"), false);
   assert.equal(result.answer.includes("DirectChannel"), false);
   assert.equal(result.answer.includes("SendTextMessageParams"), true);
@@ -1422,6 +1507,31 @@ void test("buildDocAnswer keeps image-message answers subtype-specific", async (
     result.citations.some((citation) => citation.heading === "Send an image message"),
     true,
   );
+});
+
+void test("buildDocAnswer makes quickstart-step send answers explicit about tutorial context", async () => {
+  const result = await buildDocAnswer({
+    runId: "send-quickstart-shape-1",
+    question: "How to send my first message on Android?",
+    mode: "extractive",
+    hits: [
+      {
+        path: "docs/chatsdk-android/getting-started.md",
+        heading: "Step 5: Send a message",
+        startLine: 20,
+        endLine: 36,
+        snippet:
+          "Build `SendTextMessageParams` and call `channel.sendMessage(...)` to send your first Android message.",
+        text: "Build `SendTextMessageParams` and call `channel.sendMessage(...)` to send your first Android message. For more details, continue with the dedicated message docs.",
+        score: 90,
+        docShape: "quickstart_step",
+      },
+    ],
+  });
+
+  assert.equal(result.answer.includes("quickstart"), true);
+  assert.equal(result.answer.includes("entry point"), true);
+  assert.equal(result.answer.includes("full standalone"), false);
 });
 
 void test("search prefers community overview docs for concept questions", async () => {
@@ -1847,7 +1957,20 @@ void test("clarification reuse heuristic only reuses when the prior retrieval ha
     docsRoot: reuseDocs,
     maxResults: 5,
   });
-  assert.equal(shouldReuseClarificationHits(reuseHits, "android"), true);
+  assert.equal(
+    shouldReuseClarificationHits(
+      {
+        hits: reuseHits,
+        taskKind: "start_chat",
+        preferredDocShape: "quickstart_step",
+        originalTopHitShapes: reuseHits
+          .slice(0, 3)
+          .map((hit) => hit.docShape ?? "generic_reference"),
+      },
+      "android",
+    ),
+    true,
+  );
 
   const rewriteDocs = await createClarificationRewriteFixtureDocs();
   const rewriteHits = await searchDocs({
@@ -1855,7 +1978,20 @@ void test("clarification reuse heuristic only reuses when the prior retrieval ha
     docsRoot: rewriteDocs,
     maxResults: 5,
   });
-  assert.equal(shouldReuseClarificationHits(rewriteHits, "android"), false);
+  assert.equal(
+    shouldReuseClarificationHits(
+      {
+        hits: rewriteHits,
+        taskKind: "start_chat",
+        preferredDocShape: "specialized_task",
+        originalTopHitShapes: rewriteHits
+          .slice(0, 3)
+          .map((hit) => hit.docShape ?? "generic_reference"),
+      },
+      "android",
+    ),
+    false,
+  );
 });
 
 void test("docs.ask greeting inputs skip retrieval and return a guided welcome answer", async (t) => {
@@ -2141,6 +2277,56 @@ void test("docs.ask can continue a clarification by rewriting the question and r
   assert.equal(terminal.summary.includes("clarification"), false);
   assert.equal(terminal.summary.includes("no relevant"), false);
   assert.equal(terminal.answer.includes("我没有在本地 Markdown 文档库里找到"), false);
+});
+
+void test("first-message clarification follow-up reruns retrieval instead of reusing a quickstart-heavy platform slice", async () => {
+  const docsRoot = await createSendMessageFixtureDocs();
+  const dataDir = await makeTempDir("doc-assistant-first-message-followup");
+  const sessionId = "first-message-followup-session";
+
+  const first = await executeDocQuestion({
+    runId: "first-message-clarify",
+    question: "How to send my first message?",
+    sessionId,
+    mode: "extractive",
+    docsRoot,
+    dataDir,
+    maxResults: 6,
+  });
+  await updateClarificationStateAfterAnswer({
+    sessionId,
+    runId: "first-message-clarify",
+    question: "How to send my first message?",
+    hits: first.hits,
+    summary: first.answer.summary,
+    pendingQuestion: first.answer.pendingClarificationQuestion,
+    clarificationHits: first.answer.clarificationHits,
+    route: first.route,
+    dataDir,
+  });
+
+  assert.equal(first.answer.summary, "platform clarification required");
+
+  const second = await executeDocQuestion({
+    runId: "first-message-followup-android",
+    question: "Android",
+    sessionId,
+    mode: "extractive",
+    docsRoot,
+    dataDir,
+    maxResults: 6,
+  });
+
+  assert.equal(Boolean(second.answer.followUpSource), true);
+  assert.equal(second.answer.rewrittenQuestion, "How to send my first message on Android?");
+  assert.equal(
+    second.answer.citations.some((citation) =>
+      citation.path.endsWith("docs/chatsdk-android/message/send.md"),
+    ),
+    true,
+  );
+  assert.equal(second.answer.answer.includes("Step 5"), false);
+  assert.equal(second.answer.answer.includes("start a direct chat"), false);
 });
 
 void test("mixed community clarification keeps the definition and resumes only the procedural half", async () => {

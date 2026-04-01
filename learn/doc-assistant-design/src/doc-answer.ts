@@ -1,6 +1,11 @@
 import { runLearningAgentCommand } from "../../agent-design/src/index.js";
 import { detectAnswerLanguage, type AnswerLanguage } from "./answer-language.js";
-import { planDocQuestion, type DocQuestionPlan } from "./doc-search.js";
+import {
+  detectDocShape,
+  planDocQuestion,
+  type DocQuestionPlan,
+  type DocSearchDocShape,
+} from "./doc-search.js";
 import { answerWithOpenAICompatible } from "./openai-compatible.js";
 import type {
   DocAnswerReviewStatus,
@@ -54,6 +59,7 @@ type AnalyzedHit = DocSearchHit & {
   platform?: DocPlatform;
   channelKind?: DocChannelKind;
   role: AnswerRole;
+  docShape: DocSearchDocShape;
 };
 
 type GroundedAnswerKind =
@@ -351,7 +357,7 @@ function detectMessageSubtype(
   if (!hit) {
     return "generic";
   }
-  return "generic";
+  return detectMessageSubtypeFromText([hit.path, hit.heading ?? "", hit.text].join("\n"));
 }
 
 function formatMessageSubtype(subtype: MessageSubtype, language: AnswerLanguage): string {
@@ -694,6 +700,7 @@ function analyzeHits(
       detectChannelKind(hit.heading ?? "") ??
       detectChannelKind(hit.text),
     role: classifyHitRole(hit),
+    docShape: hit.docShape ?? detectDocShape(hit),
   }));
   const relevantHits = analyzedHits.filter((hit) => hit.role !== "server_irrelevant");
   const channelScopedPool = analyzedHits;
@@ -800,6 +807,15 @@ function pickBestSendHit(question: string, hits: AnalyzedHit[]): AnalyzedHit | u
   return hits
     .filter((hit) => hit.role === "send_first_message")
     .toSorted((left, right) => {
+      const scoreDocShape = (hit: AnalyzedHit): number => {
+        if (hit.docShape === "specialized_task") {
+          return 4;
+        }
+        if (hit.docShape === "quickstart_step") {
+          return 1;
+        }
+        return 0;
+      };
       const scoreStructure = (hit: AnalyzedHit): number => {
         const normalizedHeadingPath = normalizeAnswerText([hit.path, hit.heading ?? ""].join("\n"));
         let score = 0;
@@ -847,6 +863,10 @@ function pickBestSendHit(question: string, hits: AnalyzedHit[]): AnalyzedHit | u
         }
         return 0;
       };
+      const shapeDelta = scoreDocShape(right) - scoreDocShape(left);
+      if (shapeDelta !== 0) {
+        return shapeDelta;
+      }
       const structureDelta = scoreStructure(right) - scoreStructure(left);
       if (structureDelta !== 0) {
         return structureDelta;
@@ -988,6 +1008,7 @@ function buildGuideIntro(params: {
   platform?: DocPlatform;
   channelKind?: DocChannelKind;
   messageSubtype?: MessageSubtype;
+  primaryHit?: AnalyzedHit;
   overviewHit?: AnalyzedHit;
   setupHit?: AnalyzedHit;
   connectHit?: AnalyzedHit;
@@ -1008,6 +1029,12 @@ function buildGuideIntro(params: {
       return `Use the documented flow below to configure webhooks.${citation}`;
     }
     const onPlatform = platformText ? ` on ${platformText}` : "";
+    if (params.primaryHit?.docShape === "quickstart_step") {
+      if (params.answerKind === "send_message") {
+        return `The best available evidence here is a quickstart step for sending ${formatMessageSubtype(params.messageSubtype ?? "generic", "en")}${onPlatform}, so treat it as an entry point inside the larger SDK tutorial.${citation}`;
+      }
+      return `The best available evidence here comes from a quickstart step${onPlatform}, so the guidance below is an entry point within the larger SDK tutorial.${citation}`;
+    }
     if (params.answerKind === "send_message") {
       return `Use the documented flow below to send ${formatMessageSubtype(params.messageSubtype ?? "generic", "en")}${onPlatform}.${citation}`;
     }
@@ -1027,6 +1054,9 @@ function buildGuideIntro(params: {
   }
   if (webhookGuide) {
     return `下面是配置 Webhook 的文档步骤。${citation}`;
+  }
+  if (params.primaryHit?.docShape === "quickstart_step") {
+    return `当前最匹配的证据来自 quickstart 子步骤${params.platform ? `（${formatPlatform(params.platform)}）` : ""}，所以下面的内容是教程入口，不是完整的独立任务页。${citation}`;
   }
   if (params.answerKind === "send_message") {
     return `下面是发送${formatMessageSubtype(params.messageSubtype ?? "generic", "zh")}${params.platform ? `的 ${formatPlatform(params.platform)} 文档步骤` : "的文档步骤"}。${citation}`;
@@ -1506,6 +1536,29 @@ function collectApiTerms(params: {
   ).slice(0, 6);
 }
 
+function findSpecializedCompanionHit(params: {
+  hits: AnalyzedHit[];
+  answerKind: GuideAnswerKind;
+  selectedPlatform?: DocPlatform;
+}): AnalyzedHit | undefined {
+  return params.hits
+    .filter((hit) => hit.docShape === "specialized_task")
+    .filter((hit) => !params.selectedPlatform || hit.platform === params.selectedPlatform)
+    .filter((hit) => {
+      if (params.answerKind === "send_message") {
+        return hit.role === "send_first_message";
+      }
+      if (params.answerKind === "channel_creation") {
+        return hit.role !== "definition" && hit.role !== "server_irrelevant";
+      }
+      if (params.answerKind === "start_chat") {
+        return hit.role === "start_chat" || hit.role === "send_first_message";
+      }
+      return true;
+    })
+    .toSorted((left, right) => right.score - left.score)[0];
+}
+
 function buildGuideAnswer(
   question: string,
   hits: DocSearchHit[],
@@ -1624,9 +1677,22 @@ function buildGuideAnswer(
     stepHits.length > 0
       ? [...prependStepHits, ...stepHits]
       : [...prependStepHits, ...effectiveHits.slice(0, 4)];
-  const citations = dedupeCitations(citedHits);
+  const primaryHit = stepHits[0] ?? overviewHit;
+  const specializedCompanionHit =
+    primaryHit?.docShape === "quickstart_step"
+      ? findSpecializedCompanionHit({
+          hits: effectiveHits,
+          answerKind,
+          selectedPlatform: analysis.selectedPlatform,
+        })
+      : undefined;
+  const citedHitsWithCompanion =
+    specializedCompanionHit && !citedHits.includes(specializedCompanionHit)
+      ? [...citedHits, specializedCompanionHit]
+      : citedHits;
+  const citations = dedupeCitations(citedHitsWithCompanion);
   const apiTerms = collectApiTerms({
-    citedHits,
+    citedHits: citedHitsWithCompanion,
     answerKind,
     question,
   });
@@ -1671,6 +1737,20 @@ function buildGuideAnswer(
         : "- 当前命中的文档没有给出明确的发消息示例。",
     );
   }
+  if (primaryHit?.docShape === "quickstart_step") {
+    noteLines.push(
+      language === "en"
+        ? `- This citation is a quickstart subsection, so it assumes the surrounding tutorial steps are already complete.${inlineCitation(primaryHit)}`
+        : `- 当前引用的是 quickstart 子步骤，默认前面的教程步骤已经完成。${inlineCitation(primaryHit)}`,
+    );
+    if (specializedCompanionHit && specializedCompanionHit !== primaryHit) {
+      noteLines.push(
+        language === "en"
+          ? `- For the task-focused API details, continue with ${specializedCompanionHit.heading ?? specializedCompanionHit.path}.${inlineCitation(specializedCompanionHit)}`
+          : `- 如果你要看更完整的任务型 API 说明，可以继续参考 ${specializedCompanionHit.heading ?? specializedCompanionHit.path}。${inlineCitation(specializedCompanionHit)}`,
+      );
+    }
+  }
   if (analysis.shouldClarifyPlatform && options?.allowClarificationOnly === false) {
     noteLines.push(buildPlatformClarificationNote(analysis, language));
   }
@@ -1701,6 +1781,7 @@ function buildGuideAnswer(
         platform: selectedPlatform,
         channelKind: analysis.selectedChannelKind,
         messageSubtype,
+        primaryHit,
         overviewHit,
         setupHit,
         connectHit,

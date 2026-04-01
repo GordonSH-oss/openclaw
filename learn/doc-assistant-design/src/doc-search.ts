@@ -46,6 +46,18 @@ type QueryChannelKind = "direct" | "group" | "community" | "open";
 export type DocQuestionIntent = "concept" | "procedural";
 export type DocQuestionPlanKind = DocQuestionIntent | "mixed";
 export type DocRetrievalBucket = "concept" | "procedural";
+export type DocSearchDocShape =
+  | "quickstart_step"
+  | "specialized_task"
+  | "overview"
+  | "generic_reference";
+export type DocProceduralTaskKind =
+  | "first_message"
+  | "send_message"
+  | "start_chat"
+  | "channel_creation"
+  | "generic";
+export type DocPreferredDocShape = "quickstart_step" | "specialized_task";
 export type DocQuestionPlanStep = {
   intent: DocQuestionIntent;
   question: string;
@@ -308,6 +320,121 @@ export function planDocQuestion(question: string): DocQuestionPlan {
     kind: uniqueIntents.size > 1 ? "mixed" : (steps[0]?.intent ?? "procedural"),
     steps,
   };
+}
+
+export function detectProceduralTaskKind(question: string): DocProceduralTaskKind {
+  const normalized = normalizeSearchText(question);
+  const mentionsChannel =
+    normalized.includes("channel") ||
+    normalized.includes("conversation") ||
+    normalized.includes("chat") ||
+    normalized.includes("community") ||
+    normalized.includes("subchannel");
+  const mentionsMessage =
+    normalized.includes("message") ||
+    normalized.includes("text") ||
+    normalized.includes("image") ||
+    normalized.includes("file") ||
+    normalized.includes("voice") ||
+    normalized.includes("media") ||
+    normalized.includes("targeted");
+
+  if (
+    normalized.includes("create") &&
+    (mentionsChannel || normalized.includes("group") || normalized.includes("community"))
+  ) {
+    return "channel_creation";
+  }
+  if (
+    normalized.includes("first message") ||
+    normalized.includes("my first message") ||
+    normalized.includes("your first message")
+  ) {
+    return "first_message";
+  }
+  if (normalized.includes("send") && mentionsMessage) {
+    return "send_message";
+  }
+  if (
+    normalized.includes("start") ||
+    normalized.includes("begin") ||
+    normalized.includes("open") ||
+    (normalized.includes("chat") && !normalized.includes("wechat"))
+  ) {
+    return "start_chat";
+  }
+  return "generic";
+}
+
+export function detectPreferredDocShape(question: string): DocPreferredDocShape {
+  const normalized = normalizeSearchText(question);
+  if (
+    normalized.includes("quickstart") ||
+    normalized.includes("getting started") ||
+    normalized.includes("get started") ||
+    normalized.includes("from scratch") ||
+    normalized.includes("tutorial")
+  ) {
+    return "quickstart_step";
+  }
+  return "specialized_task";
+}
+
+export function detectDocShape(
+  hit: Pick<DocSearchHit, "path" | "heading" | "text">,
+): DocSearchDocShape {
+  const normalizedPath = normalizeSearchText(hit.path);
+  const normalizedHeading = normalizeSearchText(hit.heading ?? "");
+  const normalizedBody = normalizeSearchText(hit.text.slice(0, 500));
+  const combined = `${normalizedPath} ${normalizedHeading}`.trim();
+  const quickstartPage =
+    normalizedPath.includes("quickstart") ||
+    normalizedPath.includes("getting started") ||
+    normalizedPath.includes("get started") ||
+    normalizedHeading.includes("quickstart") ||
+    normalizedHeading.includes("getting started") ||
+    normalizedHeading.includes("get started");
+  const stepHeading =
+    /\bstep\s+\d+\b/.test(normalizedHeading) ||
+    normalizedHeading.startsWith("step ") ||
+    normalizedHeading.includes("send your first message") ||
+    normalizedHeading.includes("send a message");
+  const specializedPath =
+    normalizedPath.includes("/message/send") ||
+    normalizedPath.includes("/connection/connect") ||
+    normalizedPath.includes("/community channels/creating channel") ||
+    normalizedPath.includes("/community-channels/creating-channel") ||
+    normalizedPath.includes("/group channels/") ||
+    normalizedPath.includes("/group-channels/") ||
+    normalizedPath.includes("/direct system channels/") ||
+    normalizedPath.includes("/direct-system-channels/");
+  const specializedHeading =
+    normalizedHeading.includes("send a text message") ||
+    normalizedHeading.includes("send a regular message") ||
+    normalizedHeading.includes("send an image message") ||
+    normalizedHeading.includes("send a file message") ||
+    normalizedHeading.includes("send a voice message") ||
+    normalizedHeading.includes("send a media message") ||
+    normalizedHeading.includes("send a targeted message") ||
+    normalizedHeading.includes("connect") ||
+    normalizedHeading.includes("create a group") ||
+    normalizedHeading.includes("creating community channels");
+
+  if (
+    combined.includes("overview") ||
+    combined.includes("/about") ||
+    normalizedHeading.includes("about ") ||
+    normalizedHeading.includes("glossary")
+  ) {
+    return "overview";
+  }
+  if (quickstartPage && (stepHeading || normalizedBody.includes("for details"))) {
+    return "quickstart_step";
+  }
+  if (specializedPath || specializedHeading) {
+    return "specialized_task";
+  }
+  return "generic_reference";
 }
 
 function detectQuerySignals(
@@ -1306,6 +1433,100 @@ function scoreClientConnectionSemantics(
   return score;
 }
 
+function scoreDocShapeSemantics(params: {
+  chunk: DocIndexChunk;
+  signals: ReturnType<typeof detectQuerySignals>;
+  taskKind: DocProceduralTaskKind;
+  preferredDocShape: DocPreferredDocShape;
+}): number {
+  const shape = detectDocShape({
+    path: params.chunk.relativePath,
+    heading: params.chunk.heading,
+    text: params.chunk.text,
+  });
+  const normalizedQuery = params.signals.normalizedQuery;
+  const tutorialFlowRequested =
+    normalizedQuery.includes("quickstart") ||
+    normalizedQuery.includes("getting started") ||
+    normalizedQuery.includes("get started") ||
+    normalizedQuery.includes("from scratch") ||
+    normalizedQuery.includes("tutorial");
+  const platformSpecified = params.signals.platforms.length > 0;
+  let score = 0;
+
+  if (params.preferredDocShape === "specialized_task") {
+    if (shape === "specialized_task") {
+      score += 10;
+    }
+    if (shape === "quickstart_step") {
+      score -= 10;
+    }
+  } else if (params.preferredDocShape === "quickstart_step") {
+    if (shape === "quickstart_step") {
+      score += 12;
+    }
+  }
+
+  if (params.taskKind === "send_message") {
+    if (shape === "specialized_task") {
+      score += 30;
+    }
+    if (shape === "quickstart_step") {
+      score -= 22;
+    }
+    return score;
+  }
+
+  if (params.taskKind === "first_message") {
+    if (tutorialFlowRequested) {
+      if (shape === "quickstart_step") {
+        score += 24;
+      }
+      if (shape === "specialized_task") {
+        score += 8;
+      }
+      return score;
+    }
+    if (platformSpecified) {
+      if (shape === "specialized_task") {
+        score += 26;
+      }
+      if (shape === "quickstart_step") {
+        score -= 18;
+      }
+      return score;
+    }
+    if (shape === "quickstart_step") {
+      score += 18;
+    }
+    if (shape === "specialized_task") {
+      score += 10;
+    }
+    return score;
+  }
+
+  if (params.taskKind === "channel_creation") {
+    if (shape === "specialized_task") {
+      score += 22;
+    }
+    if (shape === "overview") {
+      score -= 6;
+    }
+    return score;
+  }
+
+  if (params.taskKind === "start_chat") {
+    if (shape === "quickstart_step") {
+      score += 14;
+    }
+    if (shape === "specialized_task") {
+      score += 8;
+    }
+  }
+
+  return score;
+}
+
 function scoreChannelCreationSemantics(
   pathText: string,
   headingText: string,
@@ -1570,6 +1791,10 @@ function scoreProceduralChunk(
   query: string,
   tokens: string[],
   signals: ReturnType<typeof detectQuerySignals>,
+  refinement?: {
+    taskKind?: DocProceduralTaskKind;
+    preferredDocShape?: DocPreferredDocShape;
+  },
 ): number {
   const pathText = chunk.relativePath.toLowerCase();
   const headingText = (chunk.heading ?? "").toLowerCase();
@@ -1582,6 +1807,12 @@ function scoreProceduralChunk(
   score += scoreClientConnectionSemantics(pathText, headingText, bodyText, signals);
   score += scoreWebhookSemantics(pathText, headingText, bodyText, signals);
   score += scoreChannelCreationSemantics(pathText, headingText, bodyText, signals);
+  score += scoreDocShapeSemantics({
+    chunk,
+    signals,
+    taskKind: refinement?.taskKind ?? detectProceduralTaskKind(query),
+    preferredDocShape: refinement?.preferredDocShape ?? detectPreferredDocShape(query),
+  });
   return score;
 }
 
@@ -1608,6 +1839,11 @@ function toHit(chunk: DocIndexChunk, score: number): DocSearchHit {
     snippet: normalizeSnippet(chunk.text),
     score,
     text: chunk.text,
+    docShape: detectDocShape({
+      path: chunk.relativePath,
+      heading: chunk.heading,
+      text: chunk.text,
+    }),
   };
 }
 
@@ -1625,6 +1861,10 @@ function scoreBucketedEntries(params: {
   chunks: DocIndexChunk[];
   question: string;
   bucket: DocRetrievalBucket;
+  refinement?: {
+    taskKind?: DocProceduralTaskKind;
+    preferredDocShape?: DocPreferredDocShape;
+  };
 }): Array<{
   chunk: DocIndexChunk;
   score: number;
@@ -1639,7 +1879,19 @@ function scoreBucketedEntries(params: {
   const strongTokens = getStrongQueryTokens(tokens);
   const signals = detectQuerySignals(query, tokens);
   const scoreChunkForBucket =
-    params.bucket === "concept" ? scoreConceptChunk : scoreProceduralChunk;
+    params.bucket === "concept"
+      ? (
+          chunk: DocIndexChunk,
+          query: string,
+          tokens: string[],
+          signals: ReturnType<typeof detectQuerySignals>,
+        ) => scoreConceptChunk(chunk, query, tokens, signals)
+      : (
+          chunk: DocIndexChunk,
+          query: string,
+          tokens: string[],
+          signals: ReturnType<typeof detectQuerySignals>,
+        ) => scoreProceduralChunk(chunk, query, tokens, signals, params.refinement);
   const scored = params.chunks
     .map((chunk) => {
       const pathText = chunk.relativePath.toLowerCase();
@@ -1716,6 +1968,10 @@ export async function searchDocs(params: {
   docsRoot?: string;
   dataDir?: string;
   maxResults?: number;
+  refinement?: {
+    taskKind?: DocProceduralTaskKind;
+    preferredDocShape?: DocPreferredDocShape;
+  };
 }): Promise<DocSearchHit[]> {
   const chunks = await buildDocIndex({
     docsRoot: params.docsRoot,
@@ -1730,6 +1986,7 @@ export async function searchDocs(params: {
         chunks,
         question: plan.steps[0]?.question ?? params.query,
         bucket: plan.kind,
+        refinement: params.refinement,
       }),
       plan.kind,
       maxResults,
@@ -1746,6 +2003,7 @@ export async function searchDocs(params: {
         chunks,
         question: step.question,
         bucket: step.intent,
+        refinement: step.intent === "procedural" ? params.refinement : undefined,
       }),
       step.intent,
       perBucketLimit,
