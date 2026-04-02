@@ -305,11 +305,15 @@ Claude Code 的恢复不是异常分支里的临时代码，而是 query state m
    - clarification follow-up reuse
    - agent mode answer path
    - openai-compatible answer path
+   - embedded / mock answer surface 标记
+   - prompt echo transcript replay
 
 3. 增加 trace 输出开关，至少记录：
    - 原始问题
    - `QuestionState` 快照
    - 命中 route
+   - answer surface trust
+   - output contract mode
    - clarification decision
    - top retrieval hits
    - retrieval plan 概览
@@ -330,6 +334,63 @@ Claude Code 的恢复不是异常分支里的临时代码，而是 query state m
 - `npm test` 通过
 - `npm run eval -- --docs-root <docs-root>` 可以稳定跑完
 - trace 记录不影响现有协议
+- mock / embedded run 不会再被误当成真实 answer-quality 样本
+
+## Phase 0.x：评测面可信度与 Prompt Contract 加固
+
+### 目标
+
+先堵住这次事故暴露出的两个最高风险通道：
+
+- 不可信的 answer evaluation surface
+- prompt echo 可以伪装成成功答案的输出契约
+
+### 范围
+
+- 允许改主逻辑
+- 优先处理 `agent` 路径和 eval / smoke 判定逻辑
+- 不在这一期引入完整 evidence pack 或 validator 架构
+
+### 具体工作
+
+1. 明确 answer surface trust 模型：
+   - 把 `embedded + mock/learning-*` 标记为 `non_authoritative`
+   - 把真实 remote / cli completion 标记为 `authoritative`
+   - trace 中记录 `answerSurface.kind` 和 `answerSurface.trust`
+
+2. 修改 `src/eval.ts` / `src/smoke.ts`：
+   - 遇到 `non_authoritative` surface 时，不做答案质量通过判定
+   - transcript replay 遇到 prompt echo 风格输出时，标为 invalid sample
+
+3. 加固 `src/doc-answer.ts` 输出契约：
+   - 不再把 draft answer 放进可被 parser 接收的 sentinel 区域
+   - 替换 `sliceBetweenSentinels(...)` 为更安全的 completion parser，或只在明确可信 surface 上启用
+   - prompt echo 命中时，回退到明确的 invalid output / insufficient answer，而不是接受草稿
+
+4. 同步收敛 `src/openai-compatible.ts`：
+   - 与本地 agent 路径对齐 output contract
+   - 不能继续依赖“只要返回文本并带 Sources 就算成功”
+
+5. 新增专项测试：
+   - embedded runner transcript 不可作为最终 answer 评估样本
+   - 完整 prompt echo 不会被 parser 当作最终答案
+   - sentinel / output envelope 被原样回显时，系统进入 fail-closed
+
+### 主要改动文件
+
+- `src/doc-answer.ts`
+- `src/openai-compatible.ts`
+- `src/eval.ts`
+- `src/eval.test.ts`
+- `src/smoke.ts`
+- `src/index.test.ts`
+
+### 验收标准
+
+- prompt 原样回显时，系统不会把 draft answer 当作成功输出
+- eval 报告能区分 `authoritative` 和 `non_authoritative` answer surface
+- openai-compatible 与本地 agent 路径的 output contract 行为一致
+- 这次 `push notification language` transcript replay 不会再被误判为成功答案
 
 ## Phase 1：引入 Question State
 
@@ -1517,11 +1578,13 @@ export async function buildDocAnswer(params: {
 第一版 validator 只处理规则型问题：
 
 - 缺 citation
+- citation topic mismatch
 - 混平台
 - client/server 混答
 - 该澄清未澄清
 - 结构不匹配
 - 证据裁剪后表达过度确定
+- procedural answer off-intent
 
 第一版先不做：
 
@@ -1539,11 +1602,13 @@ export async function buildDocAnswer(params: {
 export type AnswerValidationIssue = {
   code:
     | "missing_citation"
+    | "citation_topic_mismatch"
     | "cross_platform"
     | "cross_api_layer"
     | "missing_clarification"
     | "section_mismatch"
-    | "overclaim_after_trim";
+    | "overclaim_after_trim"
+    | "off_intent_answer";
   severity: "warn" | "error";
   message: string;
 };
@@ -1605,7 +1670,11 @@ export function evaluateValidationCase(...)
   -> `downgradeTo: "clarification"`
 - `cross_api_layer`
   -> `downgradeTo: "clarification"`
+- `citation_topic_mismatch`
+  -> `downgradeTo: "insufficient"`
 - `overclaim_after_trim`
+  -> `downgradeTo: "insufficient"`
+- `off_intent_answer`
   -> `downgradeTo: "insufficient"`
 
 不建议第一版自动降级的情况：
@@ -1618,10 +1687,12 @@ export function evaluateValidationCase(...)
 新增 `src/answer-validator.test.ts`：
 
 - answer 无 citation
+- citation 存在但与句子主题不匹配
 - Android 问题混入 iOS
 - client 问题混入 server api
 - evidence 已 trim 但答案仍说“文档明确说明”
 - 应澄清但未澄清
+- procedural question 命中相邻文档但答案偏题
 
 扩展 `src/eval.test.ts`：
 
@@ -2239,24 +2310,54 @@ export type DocAssistantTrace = {
 推荐实际顺序：
 
 1. Phase 0
-2. 工程项 1：索引生命周期与缓存策略
-3. 工程项 2：持久化写入必须原子化
-4. 工程项 3：阶段开关和快速回退机制
-5. Phase 1
-6. Phase 2
-7. Phase 3
-8. Phase 4
-9. Phase 5
-10. Phase 6
-11. Phase 8
-12. Phase 7
-13. Phase 9
+2. Phase 0.x
+3. 工程项 1：索引生命周期与缓存策略
+4. 工程项 2：持久化写入必须原子化
+5. 工程项 3：阶段开关和快速回退机制
+6. Phase 1
+7. Phase 2
+8. Phase 3
+9. Phase 4
+10. Phase 5
+11. Phase 6
+12. Phase 8
+13. Phase 7
+14. Phase 9
 
 说明：
 
 - `Phase 8` 提前于 `Phase 7`，因为先把 eval 拉起来，再做 retrieval memory，调优效率更高
 - `Phase 9` 放最后，因为索引增强会带来较多基线波动
 - 工程基础项放在前面，是为了避免后续所有能力都建立在易损的索引和持久化链路之上
+- `Phase 0.x` 提前，是因为 answer surface trust 和 prompt contract 不修，后续所有 eval 与 agent 观察都会继续被污染
+
+## 事故驱动优先补丁序列
+
+针对这次 `How to change the default language for push notification?` 事故，建议按下面顺序优先落地，不等待全部 Phase 完成：
+
+1. 修 `Phase 0.x`
+   - 先让 mock / embedded surface 不再污染答案评估
+   - 先让 prompt echo 不再被 parser 接收
+
+2. 在 `src/question-execution.ts` 中补 answerability gate
+   - `searchDocs(...)` 后先做 `answerable | needs_clarification | insufficient_evidence` 判定
+   - 没通过就不进入 `buildDocAnswer(...)`
+
+3. 在 `src/doc-search.ts` 中加 must-cover anchors
+   - 第一批至少覆盖 `language` / `locale` / `localization` / `default language`
+   - 相邻 Android push 文档只能作为 adjacent evidence，不能直接成为主答案来源
+
+4. 落 `Phase 6` 的 validator 最小闭环
+   - 第一批先把 `citation_topic_mismatch` 和 `off_intent_answer` 做起来
+   - 即使生成出“结构完整”的答案，也要能降级成 insufficient
+
+5. 把本次事故写成 eval case
+   - retrieval fail case
+   - answerability fail case
+   - validator downgrade case
+   - prompt echo invalid case
+
+这样做的目的不是跳过主计划，而是先把当前最危险的假阳性路径切断。
 
 ## 每期提交建议
 
@@ -2346,6 +2447,16 @@ npm test -- src/eval.test.ts
 
 这组改造能直接解决最明显的问题，而且不会一下子把 `doc-search.ts` 和 `doc-answer.ts` 全部推倒。
 
+如果按这次事故优先级执行，建议把最小闭环改成：
+
+1. Phase 0.x
+2. `search -> answerability decision -> answer` 这条主链改造
+3. must-cover anchors 的最小版
+4. validator 最小闭环
+5. 对应 eval case 全补齐
+
+这组改造能更直接解决“看起来答了，实际完全偏题”的高风险问题。
+
 ## 完成标准
 
 本轮改造完成，不以“写完所有新文件”为标准，而以这五条为标准：
@@ -2355,3 +2466,91 @@ npm test -- src/eval.test.ts
 - 回答层输入已经从原始 hits 升级到 evidence pack
 - eval 能发现澄清错误、混平台错误和缺引用错误
 - 主链代码职责明显比当前更清晰
+
+还必须额外满足这四条：
+
+- mock / embedded surface 不再作为答案质量通过依据
+- prompt echo 不再可能伪装成成功答案
+- 无法覆盖核心 intent 的检索结果会触发 insufficient / clarification，而不是直接给步骤
+- 有 citation 但明显偏题的答案会被 validator 拦住
+
+## 最终验收 Checklist
+
+以下 checklist 用于逐项核验这份计划是否已经执行完成。
+
+### A. 评测面与输出契约
+
+- [ ] `embedded + mock/learning-*` 已被标记为 `non_authoritative`
+- [ ] eval / smoke 不再把 `non_authoritative` surface 当成答案质量通过样本
+- [ ] trace 中可看到 `answerSurface.kind` 和 `answerSurface.trust`
+- [ ] `doc-answer.ts` 不再把 draft answer 放进可被 parser 接收的 sentinel 区域
+- [ ] prompt 原样回显不会被识别为最终答案
+- [ ] openai-compatible 路径与本地 agent 路径使用一致的 output contract 原则
+
+### B. Question Understanding 与 Clarification
+
+- [ ] `QuestionState` 已落地并进入主编排
+- [ ] follow-up context 已持久化关键 state，而不只保存 platform
+- [ ] clarification policy 已独立成层，不再散落在 `doc-answer.ts`
+- [ ] 平台、channel kind、api layer 缺失时能稳定触发澄清
+
+### C. Retrieval 与 Answerability
+
+- [ ] 检索已从单次 top hits 升级为 staged retrieval
+- [ ] retrieval plan 能区分 primary 和 expansion
+- [ ] retrieval trace 能解释 primary / expansion 命中
+- [ ] 检索已支持 must-cover anchors
+- [ ] answerability gate 已在 `search -> answer` 之间生效
+- [ ] 命中相邻文档但无法覆盖核心 intent 时，会降级到 clarification 或 insufficient
+
+### D. Evidence 与 Rendering
+
+- [ ] `EvidencePack` 已成为回答主输入，而不是 raw hits
+- [ ] evidence pack 支持分组、去重、summary、budget、trim trace
+- [ ] answer plan 与 render 已拆开并可单测
+- [ ] agent prompt 输入来自 plan + evidence，而不是 raw hits 平铺
+
+### E. Validation 与 Downgrade
+
+- [ ] `answer-validator.ts` 已落地
+- [ ] validator 支持 `missing_clarification`
+- [ ] validator 支持 `cross_platform`
+- [ ] validator 支持 `cross_api_layer`
+- [ ] validator 支持 `citation_topic_mismatch`
+- [ ] validator 支持 `off_intent_answer`
+- [ ] validator issue 能触发 clarification / insufficient downgrade
+- [ ] validator 结果会进入 trace 与 eval 报告
+
+### F. Memory 与 Trace
+
+- [ ] retrieval memory 与 answer memory 已拆分
+- [ ] retrieval memory 可影响加减分，但有 trace 可解释
+- [ ] trace schema 已统一定义，不是临时日志堆
+- [ ] trace 至少覆盖 state、retrieval、evidence、validation、memory 五类信息
+
+### G. Eval 与 Regression
+
+- [ ] eval 已能分别报告 retrieval / answer / validation 三层 verdict
+- [ ] 本次 `push notification language` 事故已被写成正式 eval case
+- [ ] prompt echo invalid case 已加入 eval
+- [ ] adjacent-doc / off-intent procedural case 已加入 eval
+- [ ] platform clarification 和 api-layer clarification case 已加入 eval
+
+### H. 工程与运行稳定性
+
+- [ ] 索引生命周期与缓存策略已落地
+- [ ] 持久化写入具备原子性
+- [ ] 阶段开关和快速回退机制已存在
+- [ ] evidence overflow 不会导致空回答
+- [ ] validator 误判时可关闭自动 downgrade 而不影响主链可用性
+
+### I. 最终效果验收
+
+- [ ] 泛化问题在缺关键信息时会先澄清
+- [ ] 多轮 follow-up 不只支持平台
+- [ ] 概念题不再硬套步骤结构
+- [ ] 步骤题不再基于相邻文档胡乱补全
+- [ ] mixed question 能先定义再步骤
+- [ ] insufficient evidence 会被明确说出，不再编造
+- [ ] 有 citation 但偏题的答案会被拦截
+- [ ] 系统在真实 docs-root 上可稳定跑通 `npm test`、`npm run typecheck`、`npm run eval -- --docs-root <docs-root>`
