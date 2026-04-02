@@ -24,6 +24,7 @@ export async function runDocAssistantSmoke(params: {
   summary: string;
   selectedProvider?: string;
   selectedModel?: string;
+  answerSurface?: Awaited<ReturnType<typeof executeDocQuestion>>["answer"]["answerSurface"];
 }> {
   const turns = params.turns && params.turns.length > 0 ? params.turns : [params.question];
   const sessionId = `smoke-session-${Date.now()}`;
@@ -74,5 +75,6 @@ export async function runDocAssistantSmoke(params: {
     summary: execution.answer.summary,
     selectedProvider: execution.answer.selectedProvider,
     selectedModel: execution.answer.selectedModel,
+    answerSurface: execution.answer.answerSurface,
   };
 }

@@ -157,6 +157,23 @@ function buildPrompt(question: string, hits: DocSearchHit[]): string {
   ].join("\n");
 }
 
+function isLikelyPromptScaffoldingEcho(text: string): boolean {
+  const normalized = text.toLowerCase();
+  let matches = 0;
+  for (const marker of [
+    "question:",
+    "retrieved documentation:",
+    "only use the retrieved documentation.",
+    "write a developer-helpful guide, not a search report.",
+    "include inline citations like [path:start-end].",
+  ]) {
+    if (normalized.includes(marker)) {
+      matches += 1;
+    }
+  }
+  return matches >= 3;
+}
+
 export async function answerWithOpenAICompatible(params: {
   config: OpenAICompatibleConfig;
   question: string;
@@ -207,6 +224,9 @@ export async function answerWithOpenAICompatible(params: {
   const text = extractTextContent(payload.choices?.[0]?.message?.content);
   if (!text) {
     throw new Error("OpenAI-compatible response did not contain answer text");
+  }
+  if (isLikelyPromptScaffoldingEcho(text)) {
+    throw new Error("OpenAI-compatible response echoed prompt scaffolding");
   }
 
   const answer = text.includes("Sources:")

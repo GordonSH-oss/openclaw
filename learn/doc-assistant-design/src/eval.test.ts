@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { DOC_ASSISTANT_EVAL_CASES } from "./eval-cases.js";
-import { evaluateAnswerCase, evaluateRetrievalCase } from "./eval.js";
+import { evaluateAnswerCase, evaluateAnswerSurface, evaluateRetrievalCase } from "./eval.js";
 
 void test("evaluation cases use unique ids", () => {
   const ids = new Set<string>();
@@ -153,6 +153,24 @@ void test("evaluateAnswerCase fails when clarification was expected but answer k
   );
   assert.equal(
     result.reasons.some((reason) => reason.includes("Answer did not include expected keyword")),
+    true,
+  );
+});
+
+void test("evaluateAnswerSurface fails for non-authoritative agent surfaces", () => {
+  const result = evaluateAnswerSurface({
+    mode: "agent",
+    answerSurface: {
+      kind: "learning_mock",
+      trust: "non_authoritative",
+      outputContract: "sentinel_prompt",
+      note: "rejected_prompt_scaffolding_output",
+    },
+  });
+
+  assert.equal(result.passed, false);
+  assert.equal(
+    result.reasons.some((reason) => reason.includes("non-authoritative surface")),
     true,
   );
 });

@@ -75,6 +75,13 @@ export type DocAnswerReviewStatus =
   | "approved_standard"
   | "rejected";
 
+export type DocAnswerSurface = {
+  kind: "extractive" | "learning_agent" | "learning_mock" | "openai_compatible";
+  trust: "not_applicable" | "authoritative" | "non_authoritative";
+  outputContract: "grounded_extractive" | "sentinel_prompt" | "plain_text";
+  note?: string;
+};
+
 export type DocFollowUpSource = "none" | "clarification_reuse" | "clarification_rewrite";
 
 export type DocMemoryEntryStatus = "pending_review" | "approved_standard" | "rejected";
@@ -210,6 +217,7 @@ export type DocsTerminalResult = {
   followUpSource?: DocFollowUpSource;
   continuedFromRunId?: string;
   rewrittenQuestion?: string;
+  answerSurface?: DocAnswerSurface;
 };
 
 export type DocsAdminMemoryListParams = {

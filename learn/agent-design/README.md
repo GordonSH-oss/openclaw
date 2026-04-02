@@ -36,6 +36,18 @@ workspace-memory/*
   - 现在会优先尝试消费 `learn/plugin-design` 里的 active plugin registry
 ```
 
+## 模块层级说明：shim 文件是什么
+
+`transcript/store.ts`、`workspace-memory/files.ts`、`workspace-memory/index.ts`、`workspace-memory/flush.ts` 这四个文件只做 re-export，没有实际实现。
+
+它们的存在是为了模拟 OpenClaw 的层级边界：
+
+- `agent-design` 内部只知道"有 transcript 工具集"和"有 memory 工具集"，不关心底层实现
+- 真正的 session / transcript / memory 落盘实现属于 `session-memory-design`，是独立的持久化平面
+- 这样即使 `session-memory-design` 内部重构，`agent-design` 的代码不需要改动
+
+这四个 shim 文件内都有注释解释它们为什么存在，以及应该去哪里看真正的实现。
+
 ## 学习重点
 
 - `agent-command.ts`
@@ -114,6 +126,25 @@ workspace-memory/*
     再回头看真正的 session / transcript / memory 底层是如何独立成 persistence plane 的。
 12. `../plugin-design/src/index.ts`
     最后看 agent tools 为什么能消费 plugin 提供的 memory runtime / gateway method。
+
+## 测试覆盖范围
+
+`src/index.test.ts` 目前有 12 个测试，覆盖：
+
+| 测试                        | 验证点                                                            |
+| --------------------------- | ----------------------------------------------------------------- |
+| session resolution          | 同一 sessionKey 两次 resolve 得到相同 sessionId                   |
+| embedded runner             | user/tool/assistant 三种角色都写入 transcript                     |
+| model fallback              | rate_limit 后自动换下一个候选                                     |
+| auth profile order          | cooldown 的 profile 排到后面，preferred 的排到最前                |
+| workspace skill snapshot    | 路径越界的 skill root 不被收录                                    |
+| waitForLearningAgentRun     | 可以等到 run 进入终态                                             |
+| memory_write tool           | daily memory 文件里有写入内容                                     |
+| memory_search               | curated memory 文件能被检索到                                     |
+| pre-compaction flush        | transcript 够长时触发 flush，写入 daily memory                    |
+| **abort signal cancel**     | `controller.abort()` 后 status 为 cancelled                       |
+| **cli backend**             | cli 路径写 user + assistant，transcript 只有 2 条                 |
+| plugin registry integration | plugin 提供的 memory runtime 和 gateway method 都可以被 tool 消费 |
 
 ## 建议怎么读代码里的注释
 

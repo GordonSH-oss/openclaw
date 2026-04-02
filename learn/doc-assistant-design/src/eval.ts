@@ -4,6 +4,7 @@ import { pathToFileURL } from "node:url";
 import { parseCliArgs } from "./cli.js";
 import { loadDocAssistantDotEnv } from "./env.js";
 import { DOC_ASSISTANT_EVAL_CASES, type DocAssistantEvalCase } from "./eval-cases.js";
+import type { DocAnswerSurface } from "./protocol/index.js";
 import { runDocAssistantSmoke } from "./smoke.js";
 
 type EvalCliOptions = {
@@ -25,6 +26,7 @@ type EvalResult = {
   retrieval: Awaited<ReturnType<typeof runDocAssistantSmoke>>["retrieval"];
   answer?: string;
   summary?: string;
+  answerSurface?: DocAnswerSurface;
 };
 
 function parseEvalArgs(argv: string[]): EvalCliOptions {
@@ -164,6 +166,36 @@ export function evaluateAnswerCase(params: {
   };
 }
 
+export function evaluateAnswerSurface(params: {
+  mode: "extractive" | "agent";
+  answerSurface?: DocAnswerSurface;
+}): { passed: boolean; reasons: string[] } {
+  if (params.mode !== "agent") {
+    return {
+      passed: true,
+      reasons: ["Answer surface is not relevant for extractive mode."],
+    };
+  }
+  if (!params.answerSurface) {
+    return {
+      passed: false,
+      reasons: ["Agent answer did not report answer surface metadata."],
+    };
+  }
+  if (params.answerSurface.trust === "non_authoritative") {
+    return {
+      passed: false,
+      reasons: [
+        `Agent answer used non-authoritative surface: ${params.answerSurface.kind}${params.answerSurface.note ? ` (${params.answerSurface.note})` : ""}`,
+      ],
+    };
+  }
+  return {
+    passed: true,
+    reasons: ["Answer surface is authoritative."],
+  };
+}
+
 function printUsage(): void {
   console.log(
     [
@@ -211,13 +243,18 @@ async function runEvalCase(
     answer: smoke.answer,
     summary: smoke.summary,
   });
+  const surfaceVerdict = evaluateAnswerSurface({
+    mode: options.mode,
+    answerSurface: smoke.answerSurface,
+  });
   return {
     caseDef,
-    passed: verdict.passed && answerVerdict.passed,
-    reasons: [...verdict.reasons, ...answerVerdict.reasons],
+    passed: verdict.passed && answerVerdict.passed && surfaceVerdict.passed,
+    reasons: [...verdict.reasons, ...answerVerdict.reasons, ...surfaceVerdict.reasons],
     retrieval: smoke.retrieval,
     answer: smoke.answer,
     summary: smoke.summary,
+    answerSurface: smoke.answerSurface,
   };
 }
 

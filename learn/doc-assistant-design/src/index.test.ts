@@ -2674,7 +2674,10 @@ void test("docs.ask in agent mode emits delta and returns selected model metadat
   assert.equal(client.getEvents("docs.delta").length > 0, true);
   assert.equal(terminal.selectedModel, "learning-primary");
   assert.equal(terminal.selectedProvider, "mock");
+  assert.equal(terminal.answerSurface?.trust, "non_authoritative");
   assert.equal(terminal.answer.includes("Steps") || terminal.answer.includes("Sources:"), true);
+  assert.equal(terminal.answer.includes("FINAL_ANSWER_START"), false);
+  assert.equal(terminal.answer.includes("Retrieved documentation:"), false);
   assert.equal(terminal.citations.length > 0, true);
 });
 
@@ -2880,7 +2883,65 @@ void test("agent mode can use openai-compatible backend", async (t) => {
   assert.equal(result.mode, "agent");
   assert.equal(result.selectedProvider, "openai-compatible");
   assert.equal(result.selectedModel, "gpt-test");
+  assert.equal(result.answerSurface?.trust, "authoritative");
   assert.equal(result.answer.includes("Sources:"), true);
+});
+
+void test("agent mode rejects prompt scaffolding echoes from openai-compatible responses", async (t) => {
+  const originalFetch = globalThis.fetch;
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+  globalThis.fetch = (async () =>
+    new Response(
+      JSON.stringify({
+        choices: [
+          {
+            message: {
+              content: [
+                "Question: How do I configure push settings?\n",
+                "Retrieved documentation:\n",
+                "Only use the retrieved documentation.\n",
+                "Write a developer-helpful guide, not a search report.\n",
+              ].join(""),
+            },
+          },
+        ],
+      }),
+      {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      },
+    )) as typeof fetch;
+
+  const result = await buildDocAnswer({
+    runId: "remote-echo-1",
+    question: "How do I configure push settings?",
+    mode: "agent",
+    hits: [
+      {
+        path: "docs/callsdk-ios/push-config.md",
+        heading: "Top-level object: `NCCallPushConfig`",
+        startLine: 5,
+        endLine: 10,
+        snippet: "Use NCCallPushConfig to configure push fields before starting a call.",
+        text: "Use NCCallPushConfig to configure push fields before starting a call.",
+        score: 12,
+      },
+    ],
+    openAICompatible: {
+      baseURL: "https://example.com/v1",
+      apiKey: "test-key",
+      model: "gpt-test",
+    },
+    provider: "openai-compatible",
+  });
+
+  assert.equal(result.answer.includes("Question:"), false);
+  assert.equal(result.answer.includes("Retrieved documentation:"), false);
+  assert.equal(result.answerSurface?.note, "rejected_prompt_scaffolding_output");
+  assert.equal(result.selectedProvider, undefined);
+  assert.equal(result.selectedModel, undefined);
 });
 
 void test("agent mode bypasses openai-compatible calls for clarification-shaped grounded answers", async (t) => {

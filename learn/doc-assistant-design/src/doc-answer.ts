@@ -9,6 +9,7 @@ import {
 import { answerWithOpenAICompatible } from "./openai-compatible.js";
 import type {
   DocAnswerReviewStatus,
+  DocAnswerSurface,
   DocAnswerSource,
   DocAssistantMode,
   DocCitation,
@@ -40,6 +41,7 @@ export type DocAnswerResult = {
     ok: boolean;
     reason?: string;
   }>;
+  answerSurface?: DocAnswerSurface;
 };
 
 type DocPlatform = "android" | "ios" | "web" | "flutter";
@@ -95,6 +97,17 @@ const CONCEPT_MARKER_TERMS = [
   "什么意思",
   "含义",
   "解释一下",
+];
+
+const PROMPT_ECHO_MARKERS = [
+  "you are a technical documentation assistant.",
+  "retrieved documentation:",
+  "question:",
+  "a draft answer is provided below as a starting point.",
+  "please stream the final answer between the sentinels below.",
+  "final_answer_start",
+  "final_answer_end",
+  "你刚才说的是：",
 ];
 
 function citationLabel(citation: DocCitation): string {
@@ -2011,6 +2024,57 @@ function sliceBetweenSentinels(text: string): string {
   return visible.replace(/^\s+/, "");
 }
 
+function isLikelyPromptEcho(text: string): boolean {
+  const normalized = text.toLowerCase();
+  if (normalized.includes("你刚才说的是：")) {
+    return true;
+  }
+  let matches = 0;
+  for (const marker of PROMPT_ECHO_MARKERS) {
+    if (normalized.includes(marker)) {
+      matches += 1;
+    }
+  }
+  return matches >= 3;
+}
+
+function extractAcceptedAgentAnswer(reply: string | undefined): string {
+  const raw = (reply ?? "").trim();
+  if (!raw || isLikelyPromptEcho(raw)) {
+    return "";
+  }
+  const sliced = sliceBetweenSentinels(raw).trim();
+  if (sliced && !isLikelyPromptEcho(sliced)) {
+    return sliced;
+  }
+  return raw;
+}
+
+function buildExtractiveAnswerSurface(note?: string): DocAnswerSurface {
+  return {
+    kind: "extractive",
+    trust: "not_applicable",
+    outputContract: "grounded_extractive",
+    note,
+  };
+}
+
+function buildLearningAgentSurface(params: {
+  provider?: string;
+  model?: string;
+  note?: string;
+}): DocAnswerSurface {
+  const provider = params.provider?.toLowerCase();
+  const model = params.model?.toLowerCase();
+  const isMockSurface = provider === "mock" || Boolean(model?.startsWith("learning-"));
+  return {
+    kind: isMockSurface ? "learning_mock" : "learning_agent",
+    trust: isMockSurface ? "non_authoritative" : "authoritative",
+    outputContract: "sentinel_prompt",
+    note: params.note,
+  };
+}
+
 export async function buildDocAnswer(params: {
   runId: string;
   question: string;
@@ -2025,35 +2089,60 @@ export async function buildDocAnswer(params: {
 }): Promise<DocAnswerResult> {
   const grounded = buildGroundedAnswer(params.question, params.hits);
   if (params.mode === "extractive") {
-    return grounded;
+    return {
+      ...grounded,
+      answerSurface: buildExtractiveAnswerSurface(),
+    };
   }
   if (grounded.agentPolicy === "bypass_agent") {
     return {
       ...grounded,
       mode: "agent",
+      answerSurface: buildExtractiveAnswerSurface("agent_bypassed_for_grounded_answer"),
     };
   }
   if (
     params.openAICompatible &&
     (!params.provider || params.provider === "openai" || params.provider === "openai-compatible")
   ) {
-    const remote = await answerWithOpenAICompatible({
-      config: {
-        ...params.openAICompatible,
-        model: params.model ?? params.openAICompatible.model,
-      },
-      question: params.question,
-      hits: params.hits,
-      onDelta: params.onDelta,
-    });
-    return {
-      ...grounded,
-      mode: "agent",
-      answer: remote.answer,
-      summary: `answered with ${remote.selectedProvider}/${remote.selectedModel}`,
-      selectedProvider: remote.selectedProvider,
-      selectedModel: remote.selectedModel,
-    };
+    try {
+      const remote = await answerWithOpenAICompatible({
+        config: {
+          ...params.openAICompatible,
+          model: params.model ?? params.openAICompatible.model,
+        },
+        question: params.question,
+        hits: params.hits,
+        onDelta: params.onDelta,
+      });
+      return {
+        ...grounded,
+        mode: "agent",
+        answer: remote.answer,
+        summary: `answered with ${remote.selectedProvider}/${remote.selectedModel}`,
+        selectedProvider: remote.selectedProvider,
+        selectedModel: remote.selectedModel,
+        answerSurface: {
+          kind: "openai_compatible",
+          trust: "authoritative",
+          outputContract: "plain_text",
+        },
+      };
+    } catch (error) {
+      if (!(error instanceof Error) || !error.message.includes("prompt scaffolding")) {
+        throw error;
+      }
+      return {
+        ...grounded,
+        mode: "agent",
+        answerSurface: {
+          kind: "openai_compatible",
+          trust: "authoritative",
+          outputContract: "plain_text",
+          note: "rejected_prompt_scaffolding_output",
+        },
+      };
+    }
   }
 
   const prompt = buildAgentPrompt(params.question, grounded.answer, params.hits);
@@ -2077,6 +2166,9 @@ export async function buildDocAnswer(params: {
       if (event.type !== "delta") {
         return;
       }
+      if (isLikelyPromptEcho(event.text)) {
+        return;
+      }
       const visible = sliceBetweenSentinels(event.text);
       if (!visible || visible === lastVisible) {
         return;
@@ -2090,8 +2182,9 @@ export async function buildDocAnswer(params: {
     },
   });
   const terminal = await agentRun.completion;
-  const terminalAnswer =
-    sliceBetweenSentinels(terminal.reply ?? "") || lastVisible || grounded.answer;
+  const acceptedAnswer = extractAcceptedAgentAnswer(terminal.reply);
+  const surfaceNote = acceptedAnswer ? undefined : "rejected_prompt_scaffolding_output";
+  const terminalAnswer = acceptedAnswer || lastVisible || grounded.answer;
   return {
     ...grounded,
     mode: "agent",
@@ -2103,6 +2196,11 @@ export async function buildDocAnswer(params: {
     selectedProvider: terminal.selectedProvider,
     selectedModel: terminal.selectedModel,
     attempts: terminal.attempts,
+    answerSurface: buildLearningAgentSurface({
+      provider: terminal.selectedProvider ?? params.provider,
+      model: terminal.selectedModel ?? params.model,
+      note: surfaceNote,
+    }),
   };
 }
 
@@ -2127,5 +2225,6 @@ export function buildTerminalResult(params: {
     continuedFromRunId: params.result.continuedFromRunId,
     rewrittenQuestion: params.result.rewrittenQuestion,
     attempts: params.result.attempts,
+    answerSurface: params.result.answerSurface,
   };
 }

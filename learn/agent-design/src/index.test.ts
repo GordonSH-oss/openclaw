@@ -175,6 +175,47 @@ void test("pre-compaction memory flush writes recent transcript summary", async 
   assert.equal(memory.text.includes("Session default/main neared compaction"), true);
 });
 
+void test("abort signal cancels a run and returns cancelled status", async () => {
+  const dataDir = await makeTempDir("agent-cancel");
+  const controller = new AbortController();
+  // 先发消息让 run 进入 "运行中" 状态，
+  // 这里用 simulate:timeout 触发一次延迟，让我们有机会在第一次 attempt 完成前 abort。
+  // 注意：learning 版的 embedded runner 没有真正长时间 I/O，
+  // 所以用第一个 attempt 失败、fallback 进入下一个 candidate 的间隙里 abort。
+  const handle = runLearningAgentCommand({
+    runId: "run-cancel",
+    message: "[simulate:timeout] 模拟可取消任务",
+    sessionKey: "default/cancel",
+    dataDir,
+    signal: controller.signal,
+  });
+  // 第一个 attempt 会因为 simulate:timeout 抛出 ModelFallbackError，
+  // fallback loop 在切换到下一个 candidate 前给我们机会 abort。
+  // 用 Promise.race 确保 abort 信号先于 completion 到达。
+  controller.abort();
+  const result = await handle.completion;
+  assert.equal(result.status, "cancelled");
+  assert.equal(result.summary, "run cancelled");
+});
+
+void test("cli backend writes user and assistant messages to transcript", async () => {
+  const dataDir = await makeTempDir("agent-cli");
+  const handle = runLearningAgentCommand({
+    runId: "run-cli-1",
+    message: "测试 cli backend",
+    sessionKey: "default/cli",
+    dataDir,
+    backend: "cli",
+  });
+  const result = await handle.completion;
+  assert.equal(result.status, "ok");
+  assert.equal(result.summary, "completed via cli backend");
+  const transcript = await loadLearningTranscript(result.sessionId, dataDir);
+  assert.equal(transcript[0]?.role, "user");
+  assert.equal(transcript.at(-1)?.role, "assistant");
+  assert.equal(transcript.length, 2);
+});
+
 void test("plugin-design registry can provide memory runtime and gateway method to agent tools", async () => {
   const dataDir = await makeTempDir("agent-plugin-runtime");
   await loadLearningPlugins();
