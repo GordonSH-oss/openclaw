@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { DOC_ASSISTANT_EVAL_CASES } from "./eval-cases.js";
-import { evaluateAnswerCase, evaluateAnswerSurface, evaluateRetrievalCase } from "./eval.js";
+import {
+  evaluateAnswerCase,
+  evaluateAnswerSurface,
+  evaluateRetrievalCase,
+  evaluateValidationCase,
+} from "./eval.js";
 
 void test("evaluation cases use unique ids", () => {
   const ids = new Set<string>();
@@ -40,6 +45,12 @@ void test("evaluation cases cover ios, web, and no-hit scenarios", () => {
       (caseDef) =>
         caseDef.expectedAnswerKeywords?.includes("步骤") ||
         caseDef.expectedAnswerKeywords?.includes("steps"),
+    ),
+    true,
+  );
+  assert.equal(
+    DOC_ASSISTANT_EVAL_CASES.some(
+      (caseDef) => caseDef.id === "push-notification-language-insufficient",
     ),
     true,
   );
@@ -171,6 +182,46 @@ void test("evaluateAnswerSurface fails for non-authoritative agent surfaces", ()
   assert.equal(result.passed, false);
   assert.equal(
     result.reasons.some((reason) => reason.includes("non-authoritative surface")),
+    true,
+  );
+});
+
+void test("evaluation layer treats prompt-scaffolding echoes as invalid agent samples", () => {
+  const result = evaluateAnswerSurface({
+    mode: "agent",
+    answerSurface: {
+      kind: "openai_compatible",
+      trust: "non_authoritative",
+      outputContract: "plain_text",
+      note: "rejected_prompt_scaffolding_output",
+    },
+  });
+
+  assert.equal(result.passed, false);
+  assert.equal(
+    result.reasons.some((reason) => reason.includes("non-authoritative surface")),
+    true,
+  );
+});
+
+void test("evaluateValidationCase fails when validator reports errors", () => {
+  const result = evaluateValidationCase({
+    validation: {
+      ok: false,
+      issues: [
+        {
+          code: "cross_platform",
+          severity: "error",
+          message: "answer mixes platforms",
+        },
+      ],
+      downgradeTo: "clarification",
+    },
+  });
+
+  assert.equal(result.passed, false);
+  assert.equal(
+    result.reasons.some((reason) => reason.includes("cross_platform")),
     true,
   );
 });

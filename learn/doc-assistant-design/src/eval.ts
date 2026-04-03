@@ -4,7 +4,7 @@ import { pathToFileURL } from "node:url";
 import { parseCliArgs } from "./cli.js";
 import { loadDocAssistantDotEnv } from "./env.js";
 import { DOC_ASSISTANT_EVAL_CASES, type DocAssistantEvalCase } from "./eval-cases.js";
-import type { DocAnswerSurface } from "./protocol/index.js";
+import type { DocAnswerSurface, DocAnswerValidationResult } from "./protocol/index.js";
 import { runDocAssistantSmoke } from "./smoke.js";
 
 type EvalCliOptions = {
@@ -27,6 +27,8 @@ type EvalResult = {
   answer?: string;
   summary?: string;
   answerSurface?: DocAnswerSurface;
+  validation?: DocAnswerValidationResult;
+  trace?: Awaited<ReturnType<typeof runDocAssistantSmoke>>["trace"];
 };
 
 function parseEvalArgs(argv: string[]): EvalCliOptions {
@@ -196,6 +198,30 @@ export function evaluateAnswerSurface(params: {
   };
 }
 
+export function evaluateValidationCase(params: { validation?: DocAnswerValidationResult }): {
+  passed: boolean;
+  reasons: string[];
+} {
+  if (!params.validation) {
+    return {
+      passed: true,
+      reasons: ["Validation metadata was not reported."],
+    };
+  }
+  if (params.validation.ok) {
+    return {
+      passed: true,
+      reasons: ["Validation passed."],
+    };
+  }
+  return {
+    passed: false,
+    reasons: params.validation.issues.map(
+      (issue) => `Validation issue: ${issue.code} (${issue.message})`,
+    ),
+  };
+}
+
 function printUsage(): void {
   console.log(
     [
@@ -247,14 +273,25 @@ async function runEvalCase(
     mode: options.mode,
     answerSurface: smoke.answerSurface,
   });
+  const validationVerdict = evaluateValidationCase({
+    validation: smoke.validation,
+  });
   return {
     caseDef,
-    passed: verdict.passed && answerVerdict.passed && surfaceVerdict.passed,
-    reasons: [...verdict.reasons, ...answerVerdict.reasons, ...surfaceVerdict.reasons],
+    passed:
+      verdict.passed && answerVerdict.passed && surfaceVerdict.passed && validationVerdict.passed,
+    reasons: [
+      ...verdict.reasons,
+      ...answerVerdict.reasons,
+      ...surfaceVerdict.reasons,
+      ...validationVerdict.reasons,
+    ],
     retrieval: smoke.retrieval,
     answer: smoke.answer,
     summary: smoke.summary,
     answerSurface: smoke.answerSurface,
+    validation: smoke.validation,
+    trace: smoke.trace,
   };
 }
 

@@ -178,19 +178,24 @@ export async function answerWithOpenAICompatible(params: {
   config: OpenAICompatibleConfig;
   question: string;
   hits: DocSearchHit[];
+  prompt?: string;
+  citations?: DocCitation[];
   onDelta?: (data: { text: string; delta: string }) => void;
 }): Promise<{
   answer: string;
   selectedModel: string;
   selectedProvider: string;
 }> {
-  const citations = params.hits.map((hit) => ({
-    path: hit.path,
-    heading: hit.heading,
-    startLine: hit.startLine,
-    endLine: hit.endLine,
-    snippet: hit.snippet,
-  }));
+  const citations =
+    params.citations ??
+    params.hits.map((hit) => ({
+      path: hit.path,
+      heading: hit.heading,
+      startLine: hit.startLine,
+      endLine: hit.endLine,
+      snippet: hit.snippet,
+    }));
+  const prompt = params.prompt ?? buildPrompt(params.question, params.hits);
   const model = params.config.model ?? DEFAULT_DOC_ASSISTANT_AGENT_MODEL;
   const response = await fetch(joinUrl(params.config.baseURL, "/chat/completions"), {
     method: "POST",
@@ -210,7 +215,7 @@ export async function answerWithOpenAICompatible(params: {
         },
         {
           role: "user",
-          content: buildPrompt(params.question, params.hits),
+          content: prompt,
         },
       ],
     }),

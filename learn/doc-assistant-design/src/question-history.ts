@@ -1,5 +1,5 @@
-import fs from "node:fs/promises";
 import path from "node:path";
+import { appendJsonlAtomic, readJsonlSafe } from "./persistence.js";
 import type {
   DocQuestionAnswerOutcome,
   DocQuestionHistoryEntry,
@@ -32,7 +32,8 @@ export function summarizeQuestionOutcome(terminal: DocsTerminalResult): {
   }
   if (
     terminal.summary === "platform clarification required" ||
-    terminal.summary === "channel clarification required"
+    terminal.summary === "channel clarification required" ||
+    terminal.summary === "api layer clarification required"
   ) {
     return { answered: false, answerOutcome: "clarification_required" };
   }
@@ -46,6 +47,9 @@ export function summarizeQuestionOutcome(terminal: DocsTerminalResult): {
     return { answered: true, answerOutcome: "memory_draft" };
   }
   if (terminal.summary === "no relevant documentation found") {
+    return { answered: false, answerOutcome: "no_relevant_docs" };
+  }
+  if (terminal.summary === "insufficient documentation evidence") {
     return { answered: false, answerOutcome: "no_relevant_docs" };
   }
   return { answered: true, answerOutcome: "answered" };
@@ -99,8 +103,7 @@ export async function appendQuestionHistoryEntry(params: {
   };
 
   const historyPath = getQuestionHistoryPath(params.dataDir);
-  await fs.mkdir(path.dirname(historyPath), { recursive: true });
-  await fs.appendFile(historyPath, `${JSON.stringify(normalized)}\n`, "utf-8");
+  await appendJsonlAtomic(historyPath, normalized);
   return normalized;
 }
 
@@ -109,18 +112,9 @@ export async function loadQuestionHistory(
     dataDir?: string;
   },
 ): Promise<DocQuestionHistoryEntry[]> {
-  let raw = "";
-  try {
-    raw = await fs.readFile(getQuestionHistoryPath(params?.dataDir), "utf-8");
-  } catch {
-    return [];
-  }
-
-  const entries = raw
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line) => JSON.parse(line) as DocQuestionHistoryEntry)
+  const entries = (
+    await readJsonlSafe<DocQuestionHistoryEntry>(getQuestionHistoryPath(params?.dataDir))
+  )
     .toReversed()
     .filter((entry) => (params?.userId ? entry.userId === params.userId : true))
     .filter((entry) =>

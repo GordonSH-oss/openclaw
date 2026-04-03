@@ -92,6 +92,16 @@ export const DOC_ASSISTANT_EVAL_CASES: DocAssistantEvalCase[] = [
     topK: 6,
   },
   {
+    id: "push-notification-language-insufficient",
+    title:
+      "Push notification language questions should refuse when retrieval only covers click handling or style customization",
+    question: "How to change the default language for push notification?",
+    expectedSummaryKeywords: ["insufficient documentation evidence"],
+    expectedAnswerKeywords: ["does not contain enough evidence", "reliably"],
+    discouragedAnswerKeywords: ["intent-filter", "AndroidManifest.xml", "open the target chat"],
+    topK: 5,
+  },
+  {
     id: "chat-direct-followup-android",
     title: "Ambiguous chat question followed by Android should continue the clarification",
     question: "How to chat?",
@@ -143,6 +153,15 @@ export const DOC_ASSISTANT_EVAL_CASES: DocAssistantEvalCase[] = [
     expectedSummaryKeywords: ["channel clarification required"],
     expectedAnswerKeywords: ["direct channel", "group channel", "relevant doc entry points"],
     topK: 6,
+  },
+  {
+    id: "chat-connect-api-layer-clarify",
+    title: "Generic connect questions should ask whether the user wants client SDK or Server API",
+    question: "How to connect?",
+    expectedSummaryKeywords: ["api layer clarification required"],
+    expectedAnswerKeywords: ["client sdk", "server api", "relevant doc entry points"],
+    discouragedAnswerKeywords: ["what you need", "steps", "ncengine.connect"],
+    topK: 5,
   },
   {
     id: "community-channel-concept",
@@ -555,7 +574,7 @@ export const DOC_ASSISTANT_EVAL_CASES: DocAssistantEvalCase[] = [
     title: "Off-topic infra question should produce no hits",
     question: "How do I configure Kubernetes liveness probes for this SDK?",
     expectedSummaryKeywords: ["no relevant documentation found"],
-    expectedAnswerKeywords: ["我没有在本地 Markdown 文档库里找到"],
+    expectedAnswerKeywords: ["I couldn't find local Markdown documentation"],
     allowNoHits: true,
     topK: 3,
   },

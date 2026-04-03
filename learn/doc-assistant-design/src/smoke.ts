@@ -25,6 +25,8 @@ export async function runDocAssistantSmoke(params: {
   selectedProvider?: string;
   selectedModel?: string;
   answerSurface?: Awaited<ReturnType<typeof executeDocQuestion>>["answer"]["answerSurface"];
+  validation?: Awaited<ReturnType<typeof executeDocQuestion>>["answer"]["validation"];
+  trace?: Awaited<ReturnType<typeof executeDocQuestion>>["answer"]["trace"];
 }> {
   const turns = params.turns && params.turns.length > 0 ? params.turns : [params.question];
   const sessionId = `smoke-session-${Date.now()}`;
@@ -51,6 +53,7 @@ export async function runDocAssistantSmoke(params: {
       hits: execution.hits,
       summary: execution.answer.summary,
       pendingQuestion: execution.answer.pendingClarificationQuestion,
+      clarificationKind: execution.answer.pendingClarificationKind,
       clarificationHits: execution.answer.clarificationHits,
       route: execution.route,
       dataDir: params.dataDir,
@@ -76,5 +79,7 @@ export async function runDocAssistantSmoke(params: {
     selectedProvider: execution.answer.selectedProvider,
     selectedModel: execution.answer.selectedModel,
     answerSurface: execution.answer.answerSurface,
+    validation: execution.answer.validation,
+    trace: execution.answer.trace,
   };
 }

@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { readJsonSafe, writeJsonAtomic } from "./persistence.js";
 import { resolveDocAssistantDataDir } from "./user-store.js";
 
 export type DocIndexChunk = {
@@ -14,6 +15,16 @@ export type DocIndexChunk = {
   text: string;
   tokens: string[];
 };
+
+export type DocIndexMetadata = {
+  schemaVersion: string;
+  docsRoot: string;
+  builtAt: number;
+  fileCount: number;
+  contentHash?: string;
+};
+
+const DOC_INDEX_SCHEMA_VERSION = "2026-04-02";
 
 function hashText(value: string): string {
   return createHash("sha256").update(value).digest("hex").slice(0, 16);
@@ -60,6 +71,10 @@ export function getDocIndexPath(dataDir?: string): string {
   return path.join(resolveDocAssistantDataDir(dataDir), "doc-index.json");
 }
 
+export function getDocIndexMetadataPath(dataDir?: string): string {
+  return path.join(resolveDocAssistantDataDir(dataDir), "doc-index.meta.json");
+}
+
 async function collectMarkdownFiles(root: string, current = root): Promise<string[]> {
   const entries = await fs.readdir(current, { withFileTypes: true });
   const files: string[] = [];
@@ -77,6 +92,15 @@ async function collectMarkdownFiles(root: string, current = root): Promise<strin
     }
   }
   return files.toSorted((a, b) => a.localeCompare(b));
+}
+
+async function computeContentHash(files: string[]): Promise<string> {
+  const fingerprint = createHash("sha256");
+  for (const filePath of files) {
+    const stat = await fs.stat(filePath);
+    fingerprint.update(`${filePath}:${stat.size}:${Math.trunc(stat.mtimeMs)}\n`);
+  }
+  return fingerprint.digest("hex").slice(0, 24);
 }
 
 function trimChunkText(lines: string[]): string {
@@ -211,7 +235,70 @@ export async function buildDocIndex(params?: {
   }
 
   const indexPath = getDocIndexPath(params?.dataDir);
-  await fs.mkdir(path.dirname(indexPath), { recursive: true });
-  await fs.writeFile(indexPath, JSON.stringify(chunks, null, 2), "utf-8");
+  const metadata: DocIndexMetadata = {
+    schemaVersion: DOC_INDEX_SCHEMA_VERSION,
+    docsRoot,
+    builtAt: Date.now(),
+    fileCount: files.length,
+    contentHash: await computeContentHash(files),
+  };
+  await writeJsonAtomic(indexPath, chunks);
+  await writeJsonAtomic(getDocIndexMetadataPath(params?.dataDir), metadata);
   return chunks;
+}
+
+export async function loadCachedDocIndex(params?: {
+  docsRoot?: string;
+  dataDir?: string;
+}): Promise<DocIndexChunk[] | null> {
+  const docsRoot = path.resolve(params?.docsRoot ?? resolveDefaultDocsRoot());
+  const metadata = await readJsonSafe<DocIndexMetadata | null>(
+    getDocIndexMetadataPath(params?.dataDir),
+    null,
+  );
+  if (
+    !metadata ||
+    metadata.docsRoot !== docsRoot ||
+    metadata.schemaVersion !== DOC_INDEX_SCHEMA_VERSION
+  ) {
+    return null;
+  }
+  return await readJsonSafe<DocIndexChunk[] | null>(getDocIndexPath(params?.dataDir), null);
+}
+
+export async function isDocIndexFresh(params?: {
+  docsRoot?: string;
+  dataDir?: string;
+}): Promise<boolean> {
+  const docsRoot = path.resolve(params?.docsRoot ?? resolveDefaultDocsRoot());
+  const metadata = await readJsonSafe<DocIndexMetadata | null>(
+    getDocIndexMetadataPath(params?.dataDir),
+    null,
+  );
+  if (
+    !metadata ||
+    metadata.docsRoot !== docsRoot ||
+    metadata.schemaVersion !== DOC_INDEX_SCHEMA_VERSION
+  ) {
+    return false;
+  }
+  const files = await collectMarkdownFiles(docsRoot);
+  if (files.length !== metadata.fileCount) {
+    return false;
+  }
+  const contentHash = await computeContentHash(files);
+  return metadata.contentHash === contentHash;
+}
+
+export async function rebuildDocIndexIfNeeded(params?: {
+  docsRoot?: string;
+  dataDir?: string;
+}): Promise<DocIndexChunk[]> {
+  if (await isDocIndexFresh(params)) {
+    const cached = await loadCachedDocIndex(params);
+    if (cached) {
+      return cached;
+    }
+  }
+  return await buildDocIndex(params);
 }

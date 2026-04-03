@@ -187,6 +187,55 @@ async function createPushFixtureDocs(): Promise<string> {
   return docsRoot;
 }
 
+async function createPushLanguageDriftFixtureDocs(): Promise<string> {
+  const docsRoot = await makeTempDir("doc-assistant-push-language-drift-docs");
+  await fs.mkdir(path.join(docsRoot, "docs", "chatsdk-android", "push"), { recursive: true });
+  await fs.writeFile(
+    path.join(docsRoot, "docs", "chatsdk-android", "push", "handle-push-notification-click.md"),
+    [
+      "# Handle push notification click",
+      "",
+      "## Use PushMessageReceiver",
+      "",
+      "You can customize click behavior through `PushMessageReceiver.onNotificationMessageClicked()`.",
+      "",
+      "Add an `intent-filter` so notification taps can open the target conversation page.",
+      "",
+    ].join("\n"),
+    "utf-8",
+  );
+  await fs.writeFile(
+    path.join(docsRoot, "docs", "chatsdk-android", "push", "config-push-notification-style.md"),
+    [
+      "# Customize push notification style",
+      "",
+      "When the app receives a push notification, the system displays a notification.",
+      "",
+      "Use `PushMessageReceiver.onNotificationMessageArrived()` to intercept the incoming FCM data message and apply custom notification display logic.",
+      "",
+    ].join("\n"),
+    "utf-8",
+  );
+  return docsRoot;
+}
+
+async function createPushLanguageCoverageFixtureDocs(): Promise<string> {
+  const docsRoot = await createPushLanguageDriftFixtureDocs();
+  await fs.writeFile(
+    path.join(docsRoot, "docs", "chatsdk-android", "push", "set-push-notification-language.md"),
+    [
+      "# Set push notification language",
+      "",
+      "Configure the push notification language and localization behavior for Android push notifications.",
+      "",
+      "Set the default language or locale that the push payload should use before the notification is displayed.",
+      "",
+    ].join("\n"),
+    "utf-8",
+  );
+  return docsRoot;
+}
+
 async function createClientConnectFixtureDocs(): Promise<string> {
   const docsRoot = await makeTempDir("doc-assistant-connect-docs");
   await fs.mkdir(path.join(docsRoot, "docs", "chatsdk-android", "connection"), { recursive: true });
@@ -1422,13 +1471,60 @@ void test("buildDocAnswer turns explicit-platform chat questions into a step gui
   });
 
   assert.equal(result.summary.startsWith("guided answer from "), true);
-  assert.equal(result.answer.includes("What you need"), true);
+  assert.equal(result.answer.includes("What you need"), false);
   assert.equal(result.answer.includes("Steps"), true);
   assert.equal(result.answer.includes("Key APIs or docs"), true);
   assert.equal(result.answer.includes("根据本地文档"), false);
   assert.equal(result.answer.includes("当前命中的文档主要支持你"), false);
   assert.equal(result.answer.includes("`DirectChannel"), true);
   assert.equal(result.answer.includes("sendMessage"), true);
+  assert.equal(result.answer.includes("\n1. "), false);
+  assert.equal(result.answer.includes("token acquisition"), false);
+  assert.equal(result.answer.includes("connection establishment"), false);
+});
+
+void test("buildDocAnswer does not turn connection status metadata into direct-chat steps", async () => {
+  const result = await buildDocAnswer({
+    runId: "direct-chat-ios-status-codes-1",
+    question: "How to start a direct chat on iOS?",
+    mode: "extractive",
+    hits: [
+      {
+        path: "docs/chatsdk-ios/connection/connect.md",
+        heading: "Connection status codes",
+        startLine: 162,
+        endLine: 190,
+        snippet: "Connection status codes for iOS chat.",
+        text: "Connection status codes for iOS chat clients.",
+        score: 97,
+      },
+      {
+        path: "docs/chatsdk-ios/quickstart.md",
+        heading: "Step 2: Initialize the SDK",
+        startLine: 65,
+        endLine: 121,
+        snippet: "Initialize the SDK before using chat features.",
+        text: "Import the Chat SDK and call `NCEngine.initialize(_:)` before using chat features.",
+        score: 96,
+      },
+      {
+        path: "docs/chatsdk-ios/quickstart.md",
+        heading: "Step 5: Send a message",
+        startLine: 199,
+        endLine: 255,
+        snippet: "Create a direct channel and send the first message.",
+        text: 'Create `DirectChannel("userId")`, build `SendTextMessageParams`, and call `channel.sendMessage(...)`.',
+        score: 95,
+      },
+    ],
+  });
+
+  assert.equal(result.answer.includes("Connection status codes"), false);
+  assert.equal(result.answer.includes("Complete this step as documented"), false);
+  assert.equal(result.answer.includes("What you need"), false);
+  assert.equal(result.answer.includes("\n1. "), false);
+  assert.equal(result.answer.includes("`NCEngine.initialize(_:)`"), false);
+  assert.equal(result.answer.includes("`NCEngine.initialize`"), false);
 });
 
 void test("buildDocAnswer keeps generic send-message questions as platform clarification answers", async () => {
@@ -1818,6 +1914,65 @@ void test("buildDocAnswer refuses concept answers when docs only mention the ter
     true,
   );
   assert.equal(result.answer.includes("Disconnect and disable push"), false);
+});
+
+void test("buildDocAnswer refuses overview pages that only mention the concept term incidentally", async () => {
+  const result = await buildDocAnswer({
+    runId: "concept-weak-2",
+    question: "what is Nexconn",
+    mode: "extractive",
+    hits: [
+      {
+        path: "docs/chatsdk-android/group-channels/overview.md",
+        heading: "Group channel overview",
+        startLine: 6,
+        endLine: 16,
+        snippet:
+          "Group channels are a common multi-user messaging pattern in chat apps. Nexconn group channels support member management, muting, offline push notifications, and message history sync.",
+        text: "Group channels are a common multi-user messaging pattern in chat apps. Nexconn group channels support member management, muting, offline push notifications, and message history sync.",
+        score: 53,
+      },
+    ],
+  });
+
+  assert.equal(result.summary, "no relevant documentation found");
+  assert.equal(result.citations.length, 0);
+  assert.equal(result.answer.includes("directly defines"), true);
+});
+
+void test("executeDocQuestion returns insufficient evidence when push language anchors are not covered", async () => {
+  const docsRoot = await createPushLanguageDriftFixtureDocs();
+
+  const result = await executeDocQuestion({
+    runId: "push-language-1",
+    question: "How to change the default language for push notification?",
+    mode: "extractive",
+    docsRoot,
+    maxResults: 5,
+  });
+
+  assert.equal(result.route, "search");
+  assert.equal(result.answer.summary, "insufficient documentation evidence");
+  assert.equal(result.answer.answer.includes("enough evidence"), true);
+  assert.equal(result.answer.answer.includes("intent-filter"), false);
+  assert.equal(result.hits.length > 0, true);
+});
+
+void test("search prefers push language docs over adjacent push notification pages", async () => {
+  const docsRoot = await createPushLanguageCoverageFixtureDocs();
+
+  const hits = await searchDocs({
+    query: "How to change the default language for push notification?",
+    docsRoot,
+    maxResults: 3,
+  });
+
+  assert.equal(hits[0]?.path.endsWith("set-push-notification-language.md"), true);
+  assert.equal(hits[0]?.heading, "Set push notification language");
+  assert.equal(
+    hits.some((hit) => hit.path.endsWith("handle-push-notification-click.md")),
+    true,
+  );
 });
 
 void test("buildDocAnswer accepts overview pages as concept evidence", async () => {
@@ -2212,7 +2367,7 @@ void test("docs.ask continues a clarification with an Android follow-up by reusi
   assert.equal(terminal.continuedFromRunId, "followup-reuse-clarify");
   assert.equal(terminal.rewrittenQuestion, "How to chat on Android?");
   assert.equal(terminal.answer.includes("Android"), true);
-  assert.equal(terminal.answer.includes("Steps"), true);
+  assert.equal(terminal.answer.includes("步骤"), true);
   assert.equal(terminal.answer.includes("我没有在本地 Markdown 文档库里找到"), false);
   assert.equal(terminal.answer.includes("平台相关的问题"), false);
 

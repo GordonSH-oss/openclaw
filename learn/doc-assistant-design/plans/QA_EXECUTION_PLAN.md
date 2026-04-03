@@ -2478,79 +2478,107 @@ npm test -- src/eval.test.ts
 
 以下 checklist 用于逐项核验这份计划是否已经执行完成。
 
+### 当前执行状态（2026-04-02）
+
+截至本次实现与核验，下面这份 checklist 已全部完成。
+
+- 已落地：
+  - `QuestionState`
+  - `ClarificationPolicy`
+  - staged retrieval
+  - `EvidencePack`
+  - answerability gate
+  - `answer-plan`
+  - `answer-render`
+  - `answer-validator`
+  - `retrieval-memory`
+  - `feature-flags`
+  - `persistence`
+  - `trace`
+  - `smoke-cases`
+  - 索引生命周期与缓存
+- 已验证：
+  - `npm run typecheck` 通过
+  - `npm test` 全量通过
+  - `npm run eval -- --report-file .tmp-eval-report.json` 通过，结果 `47/47`
+  - `npm run eval -- --docs-root /Users/admin/Workspace@RongCloud/For-production/rc-new/docs --report-file .tmp-eval-report-real-docs.json` 通过，结果 `47/47`
+- 额外说明：
+  - `prompt echo invalid case` 通过 `src/eval.test.ts` 与 `src/index.test.ts` 的 output-contract 回归测试覆盖，而不是 docs corpus eval case。
+  - 当前 OpenClaw 仓库自己的 `docs/` 不是这套 Chat/Call SDK eval case 的目标语料；本计划里的 “真实 docs-root” 指的是实际 SDK 文档语料根目录。
+
 ### A. 评测面与输出契约
 
-- [ ] `embedded + mock/learning-*` 已被标记为 `non_authoritative`
-- [ ] eval / smoke 不再把 `non_authoritative` surface 当成答案质量通过样本
-- [ ] trace 中可看到 `answerSurface.kind` 和 `answerSurface.trust`
-- [ ] `doc-answer.ts` 不再把 draft answer 放进可被 parser 接收的 sentinel 区域
-- [ ] prompt 原样回显不会被识别为最终答案
-- [ ] openai-compatible 路径与本地 agent 路径使用一致的 output contract 原则
+- [x] `embedded + mock/learning-*` 已被标记为 `non_authoritative`
+- [x] eval / smoke 不再把 `non_authoritative` surface 当成答案质量通过样本
+- [x] trace 中可看到 `answerSurface.kind` 和 `answerSurface.trust`
+- [x] `doc-answer.ts` 不再把 draft answer 放进可被 parser 接收的 sentinel 区域
+- [x] prompt 原样回显不会被识别为最终答案
+- [x] openai-compatible 路径与本地 agent 路径使用一致的 output contract 原则
 
 ### B. Question Understanding 与 Clarification
 
-- [ ] `QuestionState` 已落地并进入主编排
-- [ ] follow-up context 已持久化关键 state，而不只保存 platform
-- [ ] clarification policy 已独立成层，不再散落在 `doc-answer.ts`
-- [ ] 平台、channel kind、api layer 缺失时能稳定触发澄清
+- [x] `QuestionState` 已落地并进入主编排
+- [x] follow-up context 已持久化关键 state，而不只保存 platform
+- [x] clarification policy 已独立成层，不再散落在 `doc-answer.ts`
+- [x] 平台、channel kind、api layer 缺失时能稳定触发澄清
 
 ### C. Retrieval 与 Answerability
 
-- [ ] 检索已从单次 top hits 升级为 staged retrieval
-- [ ] retrieval plan 能区分 primary 和 expansion
-- [ ] retrieval trace 能解释 primary / expansion 命中
-- [ ] 检索已支持 must-cover anchors
-- [ ] answerability gate 已在 `search -> answer` 之间生效
-- [ ] 命中相邻文档但无法覆盖核心 intent 时，会降级到 clarification 或 insufficient
+- [x] 检索已从单次 top hits 升级为 staged retrieval
+- [x] retrieval plan 能区分 primary 和 expansion
+- [x] retrieval trace 能解释 primary / expansion 命中
+- [x] 检索已支持 must-cover anchors
+- [x] answerability gate 已在 `search -> answer` 之间生效
+- [x] 命中相邻文档但无法覆盖核心 intent 时，会降级到 clarification 或 insufficient
 
 ### D. Evidence 与 Rendering
 
-- [ ] `EvidencePack` 已成为回答主输入，而不是 raw hits
-- [ ] evidence pack 支持分组、去重、summary、budget、trim trace
-- [ ] answer plan 与 render 已拆开并可单测
-- [ ] agent prompt 输入来自 plan + evidence，而不是 raw hits 平铺
+- [x] `EvidencePack` 已成为回答主输入，而不是 raw hits
+- [x] evidence pack 支持分组、去重、summary、budget、trim trace
+- [x] answer plan 与 render 已拆开并可单测
+- [x] agent prompt 输入来自 plan + evidence，而不是 raw hits 平铺
 
 ### E. Validation 与 Downgrade
 
-- [ ] `answer-validator.ts` 已落地
-- [ ] validator 支持 `missing_clarification`
-- [ ] validator 支持 `cross_platform`
-- [ ] validator 支持 `cross_api_layer`
-- [ ] validator 支持 `citation_topic_mismatch`
-- [ ] validator 支持 `off_intent_answer`
-- [ ] validator issue 能触发 clarification / insufficient downgrade
-- [ ] validator 结果会进入 trace 与 eval 报告
+- [x] `answer-validator.ts` 已落地
+- [x] validator 支持 `missing_clarification`
+- [x] validator 支持 `cross_platform`
+- [x] validator 支持 `cross_api_layer`
+- [x] validator 支持 `citation_topic_mismatch`
+- [x] validator 支持 `off_intent_answer`
+- [x] validator issue 能触发 clarification / insufficient downgrade
+- [x] validator 结果会进入 trace 与 eval 报告
 
 ### F. Memory 与 Trace
 
-- [ ] retrieval memory 与 answer memory 已拆分
-- [ ] retrieval memory 可影响加减分，但有 trace 可解释
-- [ ] trace schema 已统一定义，不是临时日志堆
-- [ ] trace 至少覆盖 state、retrieval、evidence、validation、memory 五类信息
+- [x] retrieval memory 与 answer memory 已拆分
+- [x] retrieval memory 可影响加减分，但有 trace 可解释
+- [x] trace schema 已统一定义，不是临时日志堆
+- [x] trace 至少覆盖 state、retrieval、evidence、validation、memory 五类信息
 
 ### G. Eval 与 Regression
 
-- [ ] eval 已能分别报告 retrieval / answer / validation 三层 verdict
-- [ ] 本次 `push notification language` 事故已被写成正式 eval case
-- [ ] prompt echo invalid case 已加入 eval
-- [ ] adjacent-doc / off-intent procedural case 已加入 eval
-- [ ] platform clarification 和 api-layer clarification case 已加入 eval
+- [x] eval 已能分别报告 retrieval / answer / validation 三层 verdict
+- [x] 本次 `push notification language` 事故已被写成正式 eval case
+- [x] prompt echo invalid case 已加入 eval
+- [x] adjacent-doc / off-intent procedural case 已加入 eval
+- [x] platform clarification 和 api-layer clarification case 已加入 eval
 
 ### H. 工程与运行稳定性
 
-- [ ] 索引生命周期与缓存策略已落地
-- [ ] 持久化写入具备原子性
-- [ ] 阶段开关和快速回退机制已存在
-- [ ] evidence overflow 不会导致空回答
-- [ ] validator 误判时可关闭自动 downgrade 而不影响主链可用性
+- [x] 索引生命周期与缓存策略已落地
+- [x] 持久化写入具备原子性
+- [x] 阶段开关和快速回退机制已存在
+- [x] evidence overflow 不会导致空回答
+- [x] validator 误判时可关闭自动 downgrade 而不影响主链可用性
 
 ### I. 最终效果验收
 
-- [ ] 泛化问题在缺关键信息时会先澄清
-- [ ] 多轮 follow-up 不只支持平台
-- [ ] 概念题不再硬套步骤结构
-- [ ] 步骤题不再基于相邻文档胡乱补全
-- [ ] mixed question 能先定义再步骤
-- [ ] insufficient evidence 会被明确说出，不再编造
-- [ ] 有 citation 但偏题的答案会被拦截
-- [ ] 系统在真实 docs-root 上可稳定跑通 `npm test`、`npm run typecheck`、`npm run eval -- --docs-root <docs-root>`
+- [x] 泛化问题在缺关键信息时会先澄清
+- [x] 多轮 follow-up 不只支持平台
+- [x] 概念题不再硬套步骤结构
+- [x] 步骤题不再基于相邻文档胡乱补全
+- [x] mixed question 能先定义再步骤
+- [x] insufficient evidence 会被明确说出，不再编造
+- [x] 有 citation 但偏题的答案会被拦截
+- [x] 系统在真实 docs-root 上可稳定跑通 `npm test`、`npm run typecheck`、`npm run eval -- --docs-root <docs-root>`

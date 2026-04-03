@@ -1,13 +1,18 @@
 import { runLearningAgentCommand } from "../../agent-design/src/index.js";
 import { detectAnswerLanguage, type AnswerLanguage } from "./answer-language.js";
+import { buildAnswerPlan } from "./answer-plan.js";
+import { buildAgentPromptFromPlan } from "./answer-render.js";
+import type { ClarificationDecision } from "./clarification-policy.js";
 import {
   detectDocShape,
   planDocQuestion,
   type DocQuestionPlan,
   type DocSearchDocShape,
 } from "./doc-search.js";
+import { buildEvidencePack, type EvidencePack } from "./evidence-pack.js";
 import { answerWithOpenAICompatible } from "./openai-compatible.js";
 import type {
+  DocAnswerValidationResult,
   DocAnswerReviewStatus,
   DocAnswerSurface,
   DocAnswerSource,
@@ -18,6 +23,12 @@ import type {
   DocsTerminalResult,
   OpenAICompatibleConfig,
 } from "./protocol/index.js";
+import {
+  buildQuestionState,
+  detectQuestionApiLayer,
+  detectQuestionChannelKind,
+  detectQuestionPlatform,
+} from "./question-state.js";
 import { resolveDocAssistantAgentScratchDataDir } from "./session-store.js";
 
 export type DocAnswerResult = {
@@ -34,6 +45,7 @@ export type DocAnswerResult = {
   continuedFromRunId?: string;
   rewrittenQuestion?: string;
   pendingClarificationQuestion?: string;
+  pendingClarificationKind?: "platform" | "channel_kind" | "api_layer" | "product";
   clarificationHits?: DocSearchHit[];
   attempts?: Array<{
     provider: string;
@@ -42,6 +54,8 @@ export type DocAnswerResult = {
     reason?: string;
   }>;
   answerSurface?: DocAnswerSurface;
+  validation?: DocAnswerValidationResult;
+  trace?: Record<string, unknown>;
 };
 
 type DocPlatform = "android" | "ios" | "web" | "flutter";
@@ -71,9 +85,13 @@ type GroundedAnswerKind =
   | "start_chat"
   | "channel_creation"
   | "generic_guide"
+  | "insufficient"
   | "no_hit";
 
-type GuideAnswerKind = Exclude<GroundedAnswerKind, "clarification" | "concept" | "no_hit">;
+type GuideAnswerKind = Exclude<
+  GroundedAnswerKind,
+  "clarification" | "concept" | "no_hit" | "insufficient"
+>;
 type AgentRewritePolicy = "rewrite_allowed" | "bypass_agent";
 type MessageSubtype = "text" | "image" | "file" | "voice" | "targeted" | "generic";
 
@@ -120,6 +138,10 @@ function renderSourcesAppendix(citations: DocCitation[]): string {
     return "Sources:\n- none";
   }
   return ["Sources:", ...citations.map((citation) => `- ${citationLabel(citation)}`)].join("\n");
+}
+
+function stripListMarker(line: string): string {
+  return line.replace(/^\s*-\s+/, "");
 }
 
 function sectionLabel(
@@ -195,51 +217,11 @@ function normalizeAnswerText(text: string): string {
 }
 
 function detectPlatform(value: string): DocPlatform | undefined {
-  const normalized = normalizeAnswerText(value);
-  if (normalized.includes("android")) {
-    return "android";
-  }
-  if (normalized.includes("ios")) {
-    return "ios";
-  }
-  if (normalized.includes("web")) {
-    return "web";
-  }
-  if (normalized.includes("flutter")) {
-    return "flutter";
-  }
-  return undefined;
+  return detectQuestionPlatform(value);
 }
 
 function detectChannelKind(value: string): DocChannelKind | undefined {
-  const normalized = normalizeAnswerText(value);
-  if (normalized.includes("open channel")) {
-    return "open";
-  }
-  if (
-    normalized.includes("community channel") ||
-    normalized.includes("subchannel") ||
-    normalized.includes("private subchannel")
-  ) {
-    return "community";
-  }
-  if (
-    normalized.includes("direct system channels") ||
-    normalized.includes("direct channel") ||
-    normalized.includes("one to one") ||
-    normalized.includes("directchannel")
-  ) {
-    return "direct";
-  }
-  if (
-    normalized.includes("group channel") ||
-    normalized.includes("create a group") ||
-    normalized.includes("creategroupparams") ||
-    normalized.includes("groupchannel")
-  ) {
-    return "group";
-  }
-  return undefined;
+  return detectQuestionChannelKind(value);
 }
 
 function formatChannelKind(kind: DocChannelKind): string {
@@ -255,19 +237,12 @@ function formatChannelKind(kind: DocChannelKind): string {
   return "community channel / subchannel";
 }
 
-function detectQuestionChannelKind(question: string): DocChannelKind | undefined {
+function detectExplicitQuestionChannelKind(question: string): DocChannelKind | undefined {
   return detectChannelKind(question);
 }
 
 function isExplicitServerApiQuestion(question: string): boolean {
-  const normalized = normalizeAnswerText(question);
-  return (
-    normalized.includes("server api") ||
-    normalized.includes("platform chat api") ||
-    normalized.includes("rest api") ||
-    normalized.includes("http api") ||
-    normalized.includes("api endpoint")
-  );
+  return detectQuestionApiLayer(question) === "server";
 }
 
 function isChannelFocusedQuestion(question: string): boolean {
@@ -333,9 +308,7 @@ function wantsEndToEndSdkFlow(question: string): boolean {
     normalized.includes("set up") ||
     normalized.includes("import") ||
     normalized.includes("initialize") ||
-    normalized.includes("connect") ||
-    normalized.includes("start a direct chat") ||
-    normalized.includes("start chat")
+    normalized.includes("connect")
   );
 }
 
@@ -678,9 +651,17 @@ function looksLikeDefinitionEvidence(question: string, hit: AnalyzedHit): boolea
     return false;
   }
   if (focusTerms.length === 1) {
+    const focusTerm = focusTerms[0];
+    const hasDirectDefinitionSentence =
+      normalizedSnippet.includes(`${focusTerm} is `) ||
+      normalizedSnippet.includes(`${focusTerm} refers to `) ||
+      normalizedSnippet.includes(`${focusTerm} means `) ||
+      normalizedBody.includes(`${focusTerm} is `) ||
+      normalizedBody.includes(`${focusTerm} refers to `) ||
+      normalizedBody.includes(`${focusTerm} means `);
     return (
       (hasDefinitionSignal || hasOverviewFocusSignal) &&
-      (hasFocusInHeadingPath || normalizedSnippet.includes(focusTerms[0]))
+      (hasFocusInHeadingPath || hasDirectDefinitionSentence)
     );
   }
   return (hasDefinitionSignal || hasOverviewFocusSignal) && hasFocusInHeadingPath;
@@ -703,7 +684,7 @@ function analyzeHits(
   usedHits: AnalyzedHit[];
 } {
   const explicitPlatform = detectPlatform(question);
-  const explicitChannelKind = detectQuestionChannelKind(question);
+  const explicitChannelKind = detectExplicitQuestionChannelKind(question);
   const analyzedHits = hits.map((hit) => ({
     ...hit,
     platform:
@@ -817,79 +798,133 @@ function pickBestHit(hits: AnalyzedHit[], roles: AnswerRole[]): AnalyzedHit | un
 
 function pickBestSendHit(question: string, hits: AnalyzedHit[]): AnalyzedHit | undefined {
   const requestedSubtype = detectMessageSubtype(question);
-  return hits
-    .filter((hit) => hit.role === "send_first_message")
-    .toSorted((left, right) => {
-      const scoreDocShape = (hit: AnalyzedHit): number => {
-        if (hit.docShape === "specialized_task") {
-          return 4;
-        }
-        if (hit.docShape === "quickstart_step") {
-          return 1;
-        }
-        return 0;
-      };
-      const scoreStructure = (hit: AnalyzedHit): number => {
+  const sendHits = hits.filter((hit) => hit.role === "send_first_message");
+  if (requestedSubtype === "generic") {
+    const defaultTextHit = sendHits
+      .filter((hit) => {
         const normalizedHeadingPath = normalizeAnswerText([hit.path, hit.heading ?? ""].join("\n"));
-        let score = 0;
-        if (
-          normalizedHeadingPath.includes("/message/") ||
-          normalizedHeadingPath.includes("message send")
-        ) {
-          score += 3;
-        }
         if (
           normalizedHeadingPath.includes("send a text message") ||
-          normalizedHeadingPath.includes("send a regular message") ||
+          normalizedHeadingPath.includes("send a regular message")
+        ) {
+          return true;
+        }
+        if (
           normalizedHeadingPath.includes("send an image message") ||
           normalizedHeadingPath.includes("send a file message") ||
           normalizedHeadingPath.includes("send a voice message") ||
-          normalizedHeadingPath.includes("send a media message") ||
           normalizedHeadingPath.includes("send a targeted message")
         ) {
-          score += 2;
+          return false;
         }
-        if (normalizedHeadingPath.includes("step ")) {
-          score -= 1;
-        }
-        return score;
-      };
-      const scoreSubtype = (hit: AnalyzedHit): number => {
         const subtype = detectMessageSubtypeFromText([hit.heading ?? "", hit.text].join("\n"));
-        if (requestedSubtype !== "generic") {
-          if (subtype === requestedSubtype) {
-            return 3;
+        return subtype === "text" || subtype === "generic";
+      })
+      .toSorted((left, right) => {
+        const scoreHit = (hit: AnalyzedHit): number => {
+          const normalized = normalizeAnswerText([hit.path, hit.heading ?? ""].join("\n"));
+          let score = hit.score;
+          if (hit.docShape === "specialized_task") {
+            score += 24;
+          }
+          if (hit.docShape === "quickstart_step") {
+            score -= 18;
+          }
+          if (normalized.includes("read receipt")) {
+            score -= 12;
           }
           if (
-            requestedSubtype === "image" &&
-            normalizeAnswerText([hit.heading ?? "", hit.text].join("\n")).includes("media message")
+            normalized.includes("send a text message") ||
+            normalized.includes("send a regular message")
           ) {
-            return 2;
+            score += 16;
           }
-          return 0;
+          if (
+            normalized.includes("send an image message") ||
+            normalized.includes("send a file message") ||
+            normalized.includes("send a voice message")
+          ) {
+            score -= 8;
+          }
+          return score;
+        };
+        return scoreHit(right) - scoreHit(left);
+      })[0];
+    if (defaultTextHit) {
+      return defaultTextHit;
+    }
+  }
+  return sendHits.toSorted((left, right) => {
+    const scoreDocShape = (hit: AnalyzedHit): number => {
+      if (hit.docShape === "specialized_task") {
+        return 4;
+      }
+      if (hit.docShape === "quickstart_step") {
+        return 1;
+      }
+      return 0;
+    };
+    const scoreStructure = (hit: AnalyzedHit): number => {
+      const normalizedHeadingPath = normalizeAnswerText([hit.path, hit.heading ?? ""].join("\n"));
+      let score = 0;
+      if (
+        normalizedHeadingPath.includes("/message/") ||
+        normalizedHeadingPath.includes("message send")
+      ) {
+        score += 3;
+      }
+      if (
+        normalizedHeadingPath.includes("send a text message") ||
+        normalizedHeadingPath.includes("send a regular message") ||
+        normalizedHeadingPath.includes("send an image message") ||
+        normalizedHeadingPath.includes("send a file message") ||
+        normalizedHeadingPath.includes("send a voice message") ||
+        normalizedHeadingPath.includes("send a media message") ||
+        normalizedHeadingPath.includes("send a targeted message")
+      ) {
+        score += 2;
+      }
+      if (normalizedHeadingPath.includes("step ")) {
+        score -= 1;
+      }
+      return score;
+    };
+    const scoreSubtype = (hit: AnalyzedHit): number => {
+      const subtype = detectMessageSubtypeFromText([hit.heading ?? "", hit.text].join("\n"));
+      if (requestedSubtype !== "generic") {
+        if (subtype === requestedSubtype) {
+          return 3;
         }
-        if (subtype === "text" || subtype === "generic") {
+        if (
+          requestedSubtype === "image" &&
+          normalizeAnswerText([hit.heading ?? "", hit.text].join("\n")).includes("media message")
+        ) {
           return 2;
         }
-        if (subtype === "targeted") {
-          return 1;
-        }
         return 0;
-      };
-      const shapeDelta = scoreDocShape(right) - scoreDocShape(left);
-      if (shapeDelta !== 0) {
-        return shapeDelta;
       }
-      const structureDelta = scoreStructure(right) - scoreStructure(left);
-      if (structureDelta !== 0) {
-        return structureDelta;
+      if (subtype === "text" || subtype === "generic") {
+        return 2;
       }
-      const subtypeDelta = scoreSubtype(right) - scoreSubtype(left);
-      if (subtypeDelta !== 0) {
-        return subtypeDelta;
+      if (subtype === "targeted") {
+        return 1;
       }
-      return right.score - left.score;
-    })[0];
+      return 0;
+    };
+    const shapeDelta = scoreDocShape(right) - scoreDocShape(left);
+    if (shapeDelta !== 0) {
+      return shapeDelta;
+    }
+    const structureDelta = scoreStructure(right) - scoreStructure(left);
+    if (structureDelta !== 0) {
+      return structureDelta;
+    }
+    const subtypeDelta = scoreSubtype(right) - scoreSubtype(left);
+    if (subtypeDelta !== 0) {
+      return subtypeDelta;
+    }
+    return right.score - left.score;
+  })[0];
 }
 
 function pickBestHitByPredicate(
@@ -913,8 +948,33 @@ function buildClarificationAnswer(
   language: AnswerLanguage,
 ): GroundedAnswerResult {
   const platformHits = analysis.relevantHits.filter((hit) => hit.platform !== undefined);
+  const normalizedQuestion = normalizeAnswerText(question);
   const bestByPlatform = new Map<DocPlatform, AnalyzedHit>();
-  for (const hit of platformHits) {
+  const rankedPlatformHits = platformHits.toSorted((left, right) => {
+    const scoreHit = (hit: AnalyzedHit): number => {
+      const normalized = normalizeAnswerText([hit.path, hit.heading ?? ""].join("\n"));
+      let score = hit.score;
+      if (hit.docShape === "specialized_task") {
+        score += 30;
+      }
+      if (hit.docShape === "quickstart_step") {
+        score -= 12;
+      }
+      if (
+        (normalizedQuestion.includes("send") || normalizedQuestion.includes("first message")) &&
+        (normalized.includes("send a text message") ||
+          normalized.includes("send a regular message"))
+      ) {
+        score += 28;
+      }
+      if (normalizedQuestion.includes("direct chat") && normalized.includes("direct channel")) {
+        score += 24;
+      }
+      return score;
+    };
+    return scoreHit(right) - scoreHit(left);
+  });
+  for (const hit of rankedPlatformHits) {
     if (hit.platform && !bestByPlatform.has(hit.platform)) {
       bestByPlatform.set(hit.platform, hit);
     }
@@ -934,6 +994,11 @@ function buildClarificationAnswer(
       language === "en"
         ? `This question depends on the target platform. Choose ${platformText}, and the answer can be narrowed to the matching implementation steps.`
         : `这是一个和平台相关的问题。请告诉我你要看 ${platformText} 中的哪一个平台，我会按对应平台整理开始聊天的步骤。`,
+      normalizedQuestion.includes("direct channel")
+        ? language === "en"
+          ? "In these SDK docs, a one-to-one chat is typically represented by a `DirectChannel` object."
+          : "在这些 SDK 文档里，一对一聊天通常会通过 `DirectChannel` 对象来表示。"
+        : "",
       examples.length > 0
         ? [language === "en" ? "Relevant doc entry points:" : "相关文档入口：", ...examples].join(
             "\n",
@@ -949,10 +1014,14 @@ function buildClarificationAnswer(
     agentPolicy: "bypass_agent",
     answerSource: "generated",
     reviewStatus: "not_applicable",
+    pendingClarificationQuestion: question,
+    pendingClarificationKind: "platform",
+    clarificationHits: analysis.relevantHits,
   };
 }
 
 function buildChannelClarificationAnswer(
+  question: string,
   analysis: ReturnType<typeof analyzeHits>,
   language: AnswerLanguage,
 ): GroundedAnswerResult {
@@ -991,7 +1060,75 @@ function buildChannelClarificationAnswer(
     agentPolicy: "bypass_agent",
     answerSource: "generated",
     reviewStatus: "not_applicable",
+    pendingClarificationQuestion: question,
+    pendingClarificationKind: "channel_kind",
+    clarificationHits: analysis.analyzedHits,
   };
+}
+
+function buildApiLayerClarificationAnswer(
+  question: string,
+  hits: DocSearchHit[],
+  language: AnswerLanguage,
+): GroundedAnswerResult {
+  const categorized = new Map<"client" | "server", DocSearchHit>();
+  for (const hit of hits) {
+    const apiLayer = detectQuestionApiLayer([hit.path, hit.heading ?? "", hit.text].join("\n"));
+    if (apiLayer && !categorized.has(apiLayer)) {
+      categorized.set(apiLayer, hit);
+    }
+  }
+  const citations = dedupeCitations(Array.from(categorized.values()));
+  const examples = Array.from(categorized.entries()).map(
+    ([kind, hit]) =>
+      `- ${kind === "client" ? "Client SDK" : "Server API"}: ${hit.heading ?? hit.path} ${inlineCitation(hit)}`,
+  );
+
+  return {
+    mode: "extractive",
+    answer: [
+      language === "en"
+        ? "This question is ambiguous between the client SDK flow and the Server API path. Tell me which one you need and I will narrow the implementation path."
+        : "这个问题同时可能指客户端 SDK 流程，也可能指 Server API 路径。请告诉我你要看哪一种，我再收敛到对应步骤。",
+      examples.length > 0
+        ? [language === "en" ? "Relevant doc entry points:" : "相关文档入口：", ...examples].join(
+            "\n",
+          )
+        : "",
+      renderSourcesAppendix(citations),
+    ]
+      .filter(Boolean)
+      .join("\n\n"),
+    summary: "api layer clarification required",
+    citations,
+    answerKind: "clarification",
+    agentPolicy: "bypass_agent",
+    answerSource: "generated",
+    reviewStatus: "not_applicable",
+    pendingClarificationQuestion: question,
+    pendingClarificationKind: "api_layer",
+    clarificationHits: hits,
+  };
+}
+
+export function renderClarificationAnswer(params: {
+  decision: ClarificationDecision;
+  question: string;
+  hits: DocSearchHit[];
+  language?: AnswerLanguage;
+  mode: DocAssistantMode;
+}): DocAnswerResult {
+  const language = params.language ?? detectAnswerLanguage(params.question, params.hits);
+  if (params.decision.kind === "api_layer") {
+    return buildApiLayerClarificationAnswer(params.question, params.hits, language);
+  }
+
+  const analysis = analyzeHits(params.question, params.hits);
+  if (params.decision.kind === "channel_kind") {
+    return buildChannelClarificationAnswer(params.question, analysis, language);
+  }
+
+  return buildClarificationAnswer(params.question, analysis, language);
 }
 
 function buildNoHitAnswer(question: string, language: AnswerLanguage): GroundedAnswerResult {
@@ -1015,6 +1152,35 @@ function buildNoHitAnswer(question: string, language: AnswerLanguage): GroundedA
   };
 }
 
+export function buildInsufficientEvidenceAnswer(
+  question: string,
+  language: AnswerLanguage,
+  reason?: string,
+): GroundedAnswerResult {
+  return {
+    mode: "extractive",
+    answer: [
+      language === "en"
+        ? `The retrieved local documentation does not contain enough evidence to answer "${question}" reliably.`
+        : `当前检索到的本地文档不足以可靠回答“${question}”。`,
+      reason
+        ? language === "en"
+          ? `Why this was not answered: ${reason}.`
+          : `未直接作答的原因：${reason}。`
+        : language === "en"
+          ? "Try a more specific query, or add documentation that explicitly covers this task."
+          : "你可以换更具体的关键词，或者补充明确覆盖这个任务的文档。",
+      renderSourcesAppendix([]),
+    ].join("\n\n"),
+    summary: "insufficient documentation evidence",
+    citations: [],
+    answerKind: "insufficient",
+    agentPolicy: "bypass_agent",
+    answerSource: "generated",
+    reviewStatus: "not_applicable",
+  };
+}
+
 function buildGuideIntro(params: {
   language: AnswerLanguage;
   answerKind: GuideAnswerKind;
@@ -1030,6 +1196,12 @@ function buildGuideIntro(params: {
 }): string {
   const citation = params.overviewHit ? ` ${inlineCitation(params.overviewHit)}` : "";
   const platformText = params.platform ? formatPlatform(params.platform) : undefined;
+  const genericFriendlyMessageSubtype =
+    params.messageSubtype === "text"
+      ? params.language === "en"
+        ? "a message"
+        : "消息"
+      : formatMessageSubtype(params.messageSubtype ?? "generic", params.language);
   const webhookGuide = [
     params.overviewHit,
     params.setupHit,
@@ -1044,12 +1216,12 @@ function buildGuideIntro(params: {
     const onPlatform = platformText ? ` on ${platformText}` : "";
     if (params.primaryHit?.docShape === "quickstart_step") {
       if (params.answerKind === "send_message") {
-        return `The best available evidence here is a quickstart step for sending ${formatMessageSubtype(params.messageSubtype ?? "generic", "en")}${onPlatform}, so treat it as an entry point inside the larger SDK tutorial.${citation}`;
+        return `The best available evidence here is a quickstart step for sending ${genericFriendlyMessageSubtype}${onPlatform}, so treat it as an entry point inside the larger SDK tutorial.${citation}`;
       }
       return `The best available evidence here comes from a quickstart step${onPlatform}, so the guidance below is an entry point within the larger SDK tutorial.${citation}`;
     }
     if (params.answerKind === "send_message") {
-      return `Use the documented flow below to send ${formatMessageSubtype(params.messageSubtype ?? "generic", "en")}${onPlatform}.${citation}`;
+      return `Use the documented flow below to send ${genericFriendlyMessageSubtype}${onPlatform}.${citation}`;
     }
     if (params.channelKind === "group") {
       return `Use the documented flow below to create a group channel${onPlatform}.${citation}`;
@@ -1072,7 +1244,7 @@ function buildGuideIntro(params: {
     return `当前最匹配的证据来自 quickstart 子步骤${params.platform ? `（${formatPlatform(params.platform)}）` : ""}，所以下面的内容是教程入口，不是完整的独立任务页。${citation}`;
   }
   if (params.answerKind === "send_message") {
-    return `下面是发送${formatMessageSubtype(params.messageSubtype ?? "generic", "zh")}${params.platform ? `的 ${formatPlatform(params.platform)} 文档步骤` : "的文档步骤"}。${citation}`;
+    return `下面是发送${genericFriendlyMessageSubtype}${params.platform ? `的 ${formatPlatform(params.platform)} 文档步骤` : "的文档步骤"}。${citation}`;
   }
   if (params.platform && (params.channelHit || params.sendHit)) {
     return `下面是 ${formatPlatform(params.platform)} 的对应文档步骤，用来开始当前聊天流程。${citation}`;
@@ -1467,24 +1639,212 @@ function buildCommunityCreationServerRule(
   };
 }
 
+function isGenericProceduralReferenceQuestion(question: string): boolean {
+  const normalizedQuestion = normalizeAnswerText(question);
+  return !(
+    normalizedQuestion.includes("chat") ||
+    normalizedQuestion.includes("channel") ||
+    normalizedQuestion.includes("message") ||
+    normalizedQuestion.includes("community") ||
+    normalizedQuestion.includes("webhook") ||
+    normalizedQuestion.includes("connect") ||
+    normalizedQuestion.includes("conversation") ||
+    normalizedQuestion.includes("send ") ||
+    normalizedQuestion.startsWith("send ")
+  );
+}
+
+function isReleaseNotesQuestion(question: string): boolean {
+  const normalizedQuestion = normalizeAnswerText(question);
+  return (
+    normalizedQuestion.includes("release notes") ||
+    normalizedQuestion.includes("version history") ||
+    normalizedQuestion.includes("what was added")
+  );
+}
+
+function isPushClickQuestion(question: string): boolean {
+  const normalizedQuestion = normalizeAnswerText(question);
+  return (
+    normalizedQuestion.includes("push notification") &&
+    (normalizedQuestion.includes("click") ||
+      normalizedQuestion.includes("open") ||
+      normalizedQuestion.includes("conversation"))
+  );
+}
+
+function filterQuestionScopedGuideHits(question: string, hits: AnalyzedHit[]): AnalyzedHit[] {
+  const normalizedQuestion = normalizeAnswerText(question);
+  let scopedHits = hits;
+
+  const explicitProduct = normalizedQuestion.includes("callsdk")
+    ? "callsdk"
+    : normalizedQuestion.includes("chatsdk")
+      ? "chatsdk"
+      : undefined;
+  if (explicitProduct) {
+    const productScoped = scopedHits.filter((hit) => {
+      const normalized = normalizeAnswerText([hit.path, hit.heading ?? "", hit.text].join("\n"));
+      if (explicitProduct === "callsdk") {
+        return !normalized.includes("chatsdk");
+      }
+      return !normalized.includes("callsdk");
+    });
+    if (productScoped.length > 0) {
+      scopedHits = productScoped;
+    }
+  }
+
+  const explicitPlatform = normalizedQuestion.includes("android")
+    ? "android"
+    : normalizedQuestion.includes("ios")
+      ? "ios"
+      : normalizedQuestion.includes("web")
+        ? "web"
+        : normalizedQuestion.includes("flutter")
+          ? "flutter"
+          : undefined;
+  if (explicitPlatform) {
+    const conflictingTerms =
+      explicitPlatform === "ios"
+        ? ["android specific", "android-specific object"]
+        : explicitPlatform === "android"
+          ? ["ios specific", "ios-specific object"]
+          : explicitPlatform === "web"
+            ? ["android specific", "ios specific", "flutter"]
+            : ["android specific", "ios specific", "web"];
+    const platformScoped = scopedHits.filter((hit) => {
+      const normalized = normalizeAnswerText([hit.heading ?? "", hit.text].join("\n"));
+      return !conflictingTerms.some((term) => normalized.includes(term));
+    });
+    if (platformScoped.length > 0) {
+      scopedHits = platformScoped;
+    }
+  }
+
+  if (isReleaseNotesQuestion(question)) {
+    const releaseHits = scopedHits.filter((hit) => {
+      const normalized = normalizeAnswerText([hit.path, hit.heading ?? "", hit.text].join("\n"));
+      return (
+        normalized.includes("release notes") ||
+        normalized.includes("new features") ||
+        normalized.includes("added") ||
+        /^v?\d+\s+\d+\s+\d+/.test(normalized)
+      );
+    });
+    if (releaseHits.length > 0) {
+      scopedHits = releaseHits;
+    }
+  }
+
+  if (isPushClickQuestion(question)) {
+    const navigationHits = scopedHits.filter((hit) => {
+      const normalized = normalizeAnswerText([hit.path, hit.heading ?? "", hit.text].join("\n"));
+      return (
+        hit.role === "navigation" ||
+        normalized.includes("handle push notification click") ||
+        normalized.includes("notification click") ||
+        normalized.includes("channel page") ||
+        normalized.includes("conversation page")
+      );
+    });
+    if (navigationHits.length > 0) {
+      scopedHits = navigationHits;
+    }
+  }
+
+  if (
+    normalizedQuestion.includes("targeted message") ||
+    normalizedQuestion.includes("specific members")
+  ) {
+    const targetedHits = scopedHits.filter((hit) => {
+      const normalized = normalizeAnswerText([hit.path, hit.heading ?? "", hit.text].join("\n"));
+      return normalized.includes("targeted message") || normalized.includes("directeduserids");
+    });
+    if (targetedHits.length > 0) {
+      scopedHits = targetedHits;
+    }
+  }
+
+  return scopedHits;
+}
+
+function buildGenericProcedureLine(hit: AnalyzedHit, language: AnswerLanguage): string {
+  const snippet = hit.snippet.trim();
+  if (language === "en") {
+    if (/^(run|use|call|open|configure|set|add|review)\b/i.test(snippet)) {
+      return `${snippet}${inlineCitation(hit)}`;
+    }
+    return `${hit.heading ?? "Documented step"}: ${snippet}${inlineCitation(hit)}`;
+  }
+  if (/^(运行|使用|调用|打开|配置|设置|添加|查看)/u.test(snippet)) {
+    return `${snippet}${inlineCitation(hit)}`;
+  }
+  return `${hit.heading ?? "文档步骤"}：${snippet}${inlineCitation(hit)}`;
+}
+
+function buildGenericProcedureAnswer(params: {
+  question: string;
+  language: AnswerLanguage;
+  effectiveHits: AnalyzedHit[];
+}): GroundedAnswerResult {
+  const citations = dedupeCitations(params.effectiveHits.slice(0, 4));
+  const citedHits = params.effectiveHits.filter((hit) =>
+    citations.some(
+      (citation) =>
+        citation.path === hit.path &&
+        citation.startLine === hit.startLine &&
+        citation.endLine === hit.endLine,
+    ),
+  );
+
+  return {
+    mode: "extractive",
+    answer: [
+      params.language === "en"
+        ? "Use the documented steps below."
+        : "下面是文档里可直接执行的步骤。",
+      [
+        sectionLabel(params.language, "steps"),
+        ...citedHits.map(
+          (hit, index) => `${index + 1}. ${buildGenericProcedureLine(hit, params.language)}`,
+        ),
+      ].join("\n"),
+      renderSourcesAppendix(citations),
+    ]
+      .filter(Boolean)
+      .join("\n\n"),
+    summary: `guided answer from ${citations.length} documentation chunks`,
+    citations,
+    answerKind: "generic_guide",
+    agentPolicy: "rewrite_allowed",
+    answerSource: "generated",
+    reviewStatus: "not_applicable",
+  };
+}
+
 function detectGuideAnswerKind(params: {
   question: string;
   analysis: ReturnType<typeof analyzeHits>;
   channelHit?: AnalyzedHit;
   sendHit?: AnalyzedHit;
 }): GuideAnswerKind {
+  const normalizedQuestion = normalizeAnswerText(params.question);
+  if (
+    isSendMessageQuestion(params.question) ||
+    (params.sendHit && !isStartChatQuestion(params.question))
+  ) {
+    return "send_message";
+  }
+  if (normalizedQuestion.includes("direct channel")) {
+    return "start_chat";
+  }
   if (
     params.analysis.selectedChannelKind === "community" ||
     params.analysis.selectedChannelKind === "group" ||
     isChannelCreationQuestion(params.question)
   ) {
     return "channel_creation";
-  }
-  if (
-    isSendMessageQuestion(params.question) ||
-    (params.sendHit && !isStartChatQuestion(params.question))
-  ) {
-    return "send_message";
   }
   if (isStartChatQuestion(params.question) || params.channelHit) {
     return "start_chat";
@@ -1514,6 +1874,14 @@ function pickMessageParamsTerm(codeTerms: string[], subtype: MessageSubtype): st
   return candidates.find((candidate) => codeTerms.some((term) => term.includes(candidate)));
 }
 
+function canonicalizeApiTerm(term: string): string {
+  return term
+    .trim()
+    .replace(/\(_:\)/g, "")
+    .replace(/\(\)/g, "")
+    .replace(/\s+/g, " ");
+}
+
 function collectApiTerms(params: {
   citedHits: AnalyzedHit[];
   answerKind: GuideAnswerKind;
@@ -1523,30 +1891,25 @@ function collectApiTerms(params: {
     params.answerKind === "start_chat" ||
     normalizeAnswerText(params.question).includes("direct channel");
 
-  return Array.from(
-    new Set(
-      params.citedHits
-        .flatMap((hit) => extractCodeTerms([hit.heading ?? "", hit.text].join("\n")))
-        .filter((term) => {
-          if (term.includes("sendMessage") || term.includes("directedUserIds")) {
-            return true;
-          }
-          if (term.includes("MessageParams")) {
-            return true;
-          }
-          if (term.includes("NCEngine")) {
-            return params.answerKind !== "send_message";
-          }
-          if (term.includes("intent-filter")) {
-            return params.answerKind !== "send_message";
-          }
-          if (term.includes("Channel")) {
-            return includeDirectChannel;
-          }
-          return false;
-        }),
-    ),
-  ).slice(0, 6);
+  const seen = new Set<string>();
+  const collected: string[] = [];
+  for (const term of params.citedHits
+    .flatMap((hit) => extractCodeTerms([hit.heading ?? "", hit.text].join("\n")))
+    .map(canonicalizeApiTerm)) {
+    const allowed =
+      term.includes("sendMessage") ||
+      term.includes("directedUserIds") ||
+      term.includes("MessageParams") ||
+      (term.includes("NCEngine") && params.answerKind !== "send_message") ||
+      (term.includes("intent-filter") && params.answerKind !== "send_message") ||
+      (term.includes("Channel") && includeDirectChannel);
+    if (!allowed || seen.has(term)) {
+      continue;
+    }
+    seen.add(term);
+    collected.push(term);
+  }
+  return collected.slice(0, 6);
 }
 
 function findSpecializedCompanionHit(params: {
@@ -1585,7 +1948,7 @@ function buildGuideAnswer(
 ): GroundedAnswerResult {
   const analysis = analyzeHits(question, hits);
   if (analysis.shouldClarifyChannelKind) {
-    return buildChannelClarificationAnswer(analysis, language);
+    return buildChannelClarificationAnswer(question, analysis, language);
   }
   if (analysis.shouldClarifyPlatform && options?.allowClarificationOnly !== false) {
     return buildClarificationAnswer(question, analysis, language);
@@ -1604,29 +1967,89 @@ function buildGuideAnswer(
   if (effectiveHits.length === 0) {
     return buildNoHitAnswer(question, language);
   }
+  const scopedHits = filterQuestionScopedGuideHits(question, effectiveHits);
+  const workingHits = scopedHits.length > 0 ? scopedHits : effectiveHits;
 
-  const importHit = pickBestHitByPredicate(effectiveHits, (_hit, normalizedHeadingPath) =>
+  if (isGenericProceduralReferenceQuestion(question)) {
+    return buildGenericProcedureAnswer({
+      question,
+      language,
+      effectiveHits: workingHits,
+    });
+  }
+  if (isReleaseNotesQuestion(question) || isPushClickQuestion(question)) {
+    return buildGenericProcedureAnswer({
+      question,
+      language,
+      effectiveHits: workingHits.slice(0, 4),
+    });
+  }
+
+  const normalizedQuestion = normalizeAnswerText(question);
+  const isConnectionMetadataHit = (hit: AnalyzedHit | undefined): boolean => {
+    if (!hit) {
+      return false;
+    }
+    const normalizedHeadingPath = normalizeAnswerText([hit.path, hit.heading ?? ""].join("\n"));
+    const normalizedBody = normalizeAnswerText(hit.text);
+    return (
+      normalizedHeadingPath.includes("status code") ||
+      normalizedHeadingPath.includes("error code") ||
+      normalizedHeadingPath.includes("monitor status") ||
+      normalizedHeadingPath.includes("reconnection") ||
+      normalizedBody.includes("status code") ||
+      normalizedBody.includes("error code")
+    );
+  };
+
+  const importHit = pickBestHitByPredicate(workingHits, (_hit, normalizedHeadingPath) =>
     normalizedHeadingPath.includes("import"),
   );
   const initializeHit = pickBestHitByPredicate(
-    effectiveHits,
+    workingHits,
     (_hit, normalizedHeadingPath, normalizedBody) =>
       normalizedHeadingPath.includes("initialize") ||
       normalizedBody.includes("ncengine initialize"),
   );
-  const setupHit = importHit ?? initializeHit ?? pickBestHit(effectiveHits, ["setup"]);
+  const setupHit = importHit ?? initializeHit ?? pickBestHit(workingHits, ["setup"]);
   const connectHit =
     pickBestHitByPredicate(
-      effectiveHits,
+      workingHits,
       (_hit, normalizedHeadingPath, normalizedBody) =>
-        normalizedHeadingPath.includes("connect") ||
-        normalizedHeadingPath.includes("connection") ||
-        normalizedBody.includes("ncengine connect") ||
-        normalizedBody.includes("connect the user"),
-    ) ?? pickBestHit(effectiveHits, ["connect"]);
-  const navigationHit = pickBestHit(effectiveHits, ["navigation"]);
-  const channelHit = pickBestHit(effectiveHits, ["start_chat", "platform"]);
-  const sendHit = pickBestSendHit(question, effectiveHits);
+        !normalizedHeadingPath.includes("status code") &&
+        !normalizedHeadingPath.includes("error code") &&
+        !normalizedHeadingPath.includes("monitor status") &&
+        !normalizedHeadingPath.includes("reconnection") &&
+        !normalizedBody.includes("status code") &&
+        !normalizedBody.includes("error code") &&
+        (normalizedHeadingPath.includes("connect") ||
+          normalizedHeadingPath.includes("connection") ||
+          normalizedBody.includes("ncengine connect") ||
+          normalizedBody.includes("connect the user")),
+    ) ?? pickBestHit(workingHits, ["connect"]);
+  const effectiveConnectHit = isConnectionMetadataHit(connectHit) ? undefined : connectHit;
+  const navigationHit = pickBestHit(workingHits, ["navigation"]);
+  const channelHit = pickBestHit(workingHits, ["start_chat", "platform"]);
+  const preferredGenericSendHit =
+    detectMessageSubtype(question) === "generic" &&
+    (normalizedQuestion.includes("first message") || isSendMessageQuestion(question))
+      ? pickBestHitByPredicate(
+          workingHits,
+          (_hit, normalizedHeadingPath) =>
+            normalizedHeadingPath.includes("send a text message") ||
+            normalizedHeadingPath.includes("send a regular message"),
+        )
+      : undefined;
+  const specializedSendHit = pickBestSendHit(
+    question,
+    workingHits.filter((hit) => hit.docShape === "specialized_task"),
+  );
+  const sendHit =
+    preferredGenericSendHit ??
+    (normalizedQuestion.includes("first message") ||
+    (isSendMessageQuestion(question) && !wantsEndToEndSdkFlow(question))
+      ? (specializedSendHit ?? pickBestSendHit(question, workingHits))
+      : pickBestSendHit(question, workingHits));
   const answerKind = detectGuideAnswerKind({
     question,
     analysis,
@@ -1635,13 +2058,13 @@ function buildGuideAnswer(
   });
   const messageSubtype =
     answerKind === "send_message" ? detectMessageSubtype(question, sendHit) : "generic";
-  const includeEndToEndSections = answerKind !== "send_message" || wantsEndToEndSdkFlow(question);
-  const overviewHit = pickBestHit(effectiveHits, ["platform", "start_chat", "setup"]);
+  const includeEndToEndSections = answerKind === "generic_guide" || wantsEndToEndSdkFlow(question);
+  const overviewHit = pickBestHit(workingHits, ["platform", "start_chat", "setup"]);
   const webhookGuide =
     normalizeAnswerText(question).includes("webhook") ||
-    effectiveHits.some((hit) => isWebhookHit(hit));
+    workingHits.some((hit) => isWebhookHit(hit));
   const webhookStepHits = webhookGuide
-    ? effectiveHits.filter((hit) => {
+    ? workingHits.filter((hit) => {
         const normalizedHeadingPath = normalizeAnswerText([hit.path, hit.heading ?? ""].join("\n"));
         const normalizedBody = normalizeAnswerText(hit.text);
         return (
@@ -1661,21 +2084,40 @@ function buildGuideAnswer(
     ? []
     : answerKind === "send_message"
       ? includeEndToEndSections
-        ? [importHit, initializeHit, connectHit].filter((hit): hit is AnalyzedHit => Boolean(hit))
+        ? [importHit, initializeHit, effectiveConnectHit].filter((hit): hit is AnalyzedHit =>
+            Boolean(hit),
+          )
         : []
-      : [importHit, initializeHit, connectHit, navigationHit, channelHit].filter(
-          (hit): hit is AnalyzedHit => Boolean(hit),
-        );
+      : answerKind === "start_chat" || answerKind === "channel_creation"
+        ? includeEndToEndSections
+          ? [importHit, initializeHit, effectiveConnectHit].filter((hit): hit is AnalyzedHit =>
+              Boolean(hit),
+            )
+          : []
+        : [importHit, initializeHit, effectiveConnectHit, navigationHit, channelHit].filter(
+            (hit): hit is AnalyzedHit => Boolean(hit),
+          );
   const stepHits = webhookGuide
     ? webhookStepHits.length > 0
       ? webhookStepHits
-      : effectiveHits.filter((hit) => isWebhookHit(hit)).slice(0, 3)
+      : workingHits.filter((hit) => isWebhookHit(hit)).slice(0, 3)
     : answerKind === "send_message"
       ? [sendHit].filter((hit): hit is AnalyzedHit => Boolean(hit))
-      : [importHit, initializeHit, connectHit, navigationHit, channelHit, sendHit].filter(
-          (hit, index, all): hit is AnalyzedHit => Boolean(hit) && all.indexOf(hit) === index,
-        );
-  const autoSharedRule = buildCommunityCreationServerRule(question, effectiveHits, language);
+      : answerKind === "start_chat" || answerKind === "channel_creation"
+        ? [navigationHit, channelHit, sendHit].filter(
+            (hit, index, all): hit is AnalyzedHit => Boolean(hit) && all.indexOf(hit) === index,
+          )
+        : [
+            importHit,
+            initializeHit,
+            effectiveConnectHit,
+            navigationHit,
+            channelHit,
+            sendHit,
+          ].filter(
+            (hit, index, all): hit is AnalyzedHit => Boolean(hit) && all.indexOf(hit) === index,
+          );
+  const autoSharedRule = buildCommunityCreationServerRule(question, workingHits, language);
   const prependStepLines = Array.from(
     new Set([
       ...(autoSharedRule ? [autoSharedRule.line] : []),
@@ -1689,12 +2131,12 @@ function buildGuideAnswer(
   const citedHits =
     stepHits.length > 0
       ? [...prependStepHits, ...stepHits]
-      : [...prependStepHits, ...effectiveHits.slice(0, 4)];
+      : [...prependStepHits, ...workingHits.slice(0, 4)];
   const primaryHit = stepHits[0] ?? overviewHit;
   const specializedCompanionHit =
     primaryHit?.docShape === "quickstart_step"
       ? findSpecializedCompanionHit({
-          hits: effectiveHits,
+          hits: workingHits,
           answerKind,
           selectedPlatform: analysis.selectedPlatform,
         })
@@ -1711,14 +2153,13 @@ function buildGuideAnswer(
   });
 
   const noteLines: string[] = [];
-  const normalizedQuestion = normalizeAnswerText(question);
   const isCommunityProvisioningFlow =
     analysis.selectedChannelKind === "community" &&
     (normalizedQuestion.includes("create") || normalizedQuestion.includes("get"));
   const sdkChatFlow =
     !webhookGuide &&
     !isCommunityProvisioningFlow &&
-    (effectiveHits.some((hit) => normalizeAnswerText(hit.path).includes("chatsdk")) ||
+    (workingHits.some((hit) => normalizeAnswerText(hit.path).includes("chatsdk")) ||
       Boolean(channelHit) ||
       Boolean(sendHit) ||
       Boolean(connectHit));
@@ -1804,19 +2245,21 @@ function buildGuideAnswer(
       needHits.length > 0
         ? [
             sectionLabel(language, "need"),
-            ...needHits.map((hit) => buildNeedLine(hit, language)),
+            ...needHits.map((hit) => stripListMarker(buildNeedLine(hit, language))),
           ].join("\n")
         : "",
       combinedStepLines.length > 0
         ? [
             sectionLabel(language, "steps"),
-            ...combinedStepLines.map((line, index) => `${index + 1}. ${line}`),
+            ...combinedStepLines.map((line) => `- ${stripListMarker(line)}`),
           ].join("\n")
         : "",
       apiTerms.length > 0
-        ? [sectionLabel(language, "apis"), ...apiTerms.map((term) => `- \`${term}\``)].join("\n")
+        ? [sectionLabel(language, "apis"), ...apiTerms.map((term) => `\`${term}\``)].join("\n")
         : "",
-      noteLines.length > 0 ? [sectionLabel(language, "notes"), ...noteLines].join("\n") : "",
+      noteLines.length > 0
+        ? [sectionLabel(language, "notes"), ...noteLines.map(stripListMarker)].join("\n")
+        : "",
       renderSourcesAppendix(citations),
     ]
       .filter(Boolean)
@@ -1925,8 +2368,12 @@ function buildMixedAnswer(
   };
 }
 
-function buildGroundedAnswer(question: string, hits: DocSearchHit[]): GroundedAnswerResult {
-  const language = detectAnswerLanguage(question, hits);
+function buildGroundedAnswer(
+  question: string,
+  hits: DocSearchHit[],
+  languageOverride?: AnswerLanguage,
+): GroundedAnswerResult {
+  const language = languageOverride ?? detectAnswerLanguage(question, hits);
   if (hits.length === 0) {
     return buildNoHitAnswer(question, language);
   }
@@ -1942,73 +2389,33 @@ function buildGroundedAnswer(question: string, hits: DocSearchHit[]): GroundedAn
   return buildGuideAnswer(question, hits, language);
 }
 
-function buildAgentPrompt(question: string, groundedAnswer: string, hits: DocSearchHit[]): string {
+function buildAgentPrompt(
+  question: string,
+  groundedAnswer: string,
+  hits: DocSearchHit[],
+  evidence?: EvidencePack,
+): string {
+  const renderedEvidence =
+    evidence ??
+    buildEvidencePack({
+      state: buildQuestionState(question),
+      hits,
+    });
+  const state = renderedEvidence.questionState ?? buildQuestionState(question);
   const language = detectAnswerLanguage(question, hits);
-  const grouped = hits.reduce<Map<string, DocSearchHit[]>>((acc, hit) => {
-    const platform = detectPlatform(hit.path) ?? detectPlatform(hit.heading ?? "") ?? "general";
-    const role = classifyHitRole(hit);
-    const key = `${platform}/${role}`;
-    const current = acc.get(key) ?? [];
-    current.push(hit);
-    acc.set(key, current);
-    return acc;
-  }, new Map());
-
-  const evidence = grouped.size
-    ? Array.from(grouped.entries())
-        .map(([group, groupHits]) =>
-          [
-            `Evidence Group: ${group}`,
-            ...groupHits
-              .slice(0, 2)
-              .map(
-                (hit, index) =>
-                  `Source ${index + 1}\nPath: ${hit.path}\nHeading: ${hit.heading ?? "(none)"}\nLines: ${hit.startLine}-${hit.endLine}\nSnippet: ${hit.snippet}`,
-              ),
-          ].join("\n\n"),
-        )
-        .join("\n\n---\n\n")
-    : "No relevant documentation was retrieved.";
-
-  return [
-    language === "en"
-      ? "You are a technical documentation assistant. Answer only from the retrieved evidence."
-      : "你是一个技术文档助手。只能根据提供的检索结果回答。",
-    language === "en"
-      ? "For how-to, integration, and configuration questions, answer as a developer-helpful guide instead of a search report."
-      : "如果问题是 how-to / 集成 / 配置类问题，回答目标是给开发者一份自然、可执行的步骤指南，而不是复述检索结果。",
-    language === "en"
-      ? "For concept questions such as what is / what's / explain, prioritize a definition, key points, and relevant settings instead of forcing a step-by-step guide."
-      : "如果问题是 what is / what's / explain / 是什么 这类概念解释问题，请优先给出定义、关键点和相关配置，不要硬套步骤指南。",
-    language === "en"
-      ? "If the question depends on platform and the evidence spans multiple platforms while the user did not specify one, ask for the platform instead of guessing."
-      : "如果问题依赖平台，且证据同时覆盖多个平台而用户没有说明平台，请先要求用户确认平台，不要猜。",
-    language === "en"
-      ? "If the evidence is insufficient, say so clearly and do not invent details."
-      : "如果证据不足，请明确说本地文档不足，不要编造。",
-    language === "en"
-      ? "Answer in English and place citations at the end of the relevant sentence, for example [path:start-end]."
-      : "用中文回答，并把引用放到对应句子末尾，例如 [path:start-end]。",
-    language === "en"
-      ? "For procedural answers, prefer: What you need, Steps, Key APIs or docs, Notes, Sources."
-      : "步骤类回答优先使用：准备工作、步骤、关键 API / 文档、注意事项、Sources。",
-    language === "en"
-      ? "For concept answers, prefer: Definition, Key points, Notes, Sources."
-      : "概念类回答优先使用：定义、关键点、补充说明、Sources。",
-    "",
-    `Question: ${question}`,
-    "",
-    "Retrieved documentation:",
-    evidence,
-    "",
-    language === "en"
-      ? "A draft answer is provided below as a starting point. If any part conflicts with the retrieved evidence, correct or remove it."
-      : "下面会给出一版草稿答案作为起点。如果草稿和检索证据冲突，请以证据为准并改正或删除冲突内容。",
-    "Please stream the final answer between the sentinels below.",
-    "FINAL_ANSWER_START",
-    groundedAnswer,
-    "FINAL_ANSWER_END",
-  ].join("\n");
+  const plan = buildAnswerPlan({
+    question,
+    state,
+    evidence: renderedEvidence,
+  });
+  return buildAgentPromptFromPlan({
+    question,
+    state,
+    language,
+    plan,
+    evidence: renderedEvidence,
+    draftAnswer: groundedAnswer,
+  });
 }
 
 function sliceBetweenSentinels(text: string): string {
@@ -2078,8 +2485,10 @@ function buildLearningAgentSurface(params: {
 export async function buildDocAnswer(params: {
   runId: string;
   question: string;
+  language?: AnswerLanguage;
   mode: DocAssistantMode;
   hits: DocSearchHit[];
+  evidence?: EvidencePack;
   dataDir?: string;
   backend?: "embedded" | "cli";
   provider?: string;
@@ -2087,11 +2496,43 @@ export async function buildDocAnswer(params: {
   openAICompatible?: OpenAICompatibleConfig;
   onDelta?: (data: { text: string; delta: string }) => void;
 }): Promise<DocAnswerResult> {
-  const grounded = buildGroundedAnswer(params.question, params.hits);
+  const evidenceHits: DocSearchHit[] =
+    params.evidence?.groups.flatMap((group) =>
+      group.citations.map((citation) => ({
+        ...citation,
+        score: group.score,
+        text: citation.snippet,
+        retrievalBucket:
+          group.purpose === "definition" || group.purpose === "overview" ? "concept" : "procedural",
+      })),
+    ) ?? params.hits;
+  const renderedEvidence =
+    params.evidence ??
+    buildEvidencePack({
+      state: buildQuestionState(params.question),
+      hits: evidenceHits,
+    });
+  const state = renderedEvidence.questionState ?? buildQuestionState(params.question);
+  const answerPlan = buildAnswerPlan({
+    question: params.question,
+    state,
+    evidence: renderedEvidence,
+  });
+  const grounded = buildGroundedAnswer(params.question, evidenceHits, params.language);
   if (params.mode === "extractive") {
     return {
       ...grounded,
       answerSurface: buildExtractiveAnswerSurface(),
+      trace: renderedEvidence
+        ? {
+            answerPlan,
+            evidence: {
+              groupCount: renderedEvidence.groups.length,
+              warnings: renderedEvidence.warnings,
+              trimEvents: renderedEvidence.trimEvents,
+            },
+          }
+        : undefined,
     };
   }
   if (grounded.agentPolicy === "bypass_agent") {
@@ -2113,6 +2554,8 @@ export async function buildDocAnswer(params: {
         },
         question: params.question,
         hits: params.hits,
+        prompt: buildAgentPrompt(params.question, grounded.answer, evidenceHits, renderedEvidence),
+        citations: grounded.citations,
         onDelta: params.onDelta,
       });
       return {
@@ -2145,7 +2588,7 @@ export async function buildDocAnswer(params: {
     }
   }
 
-  const prompt = buildAgentPrompt(params.question, grounded.answer, params.hits);
+  const prompt = buildAgentPrompt(params.question, grounded.answer, evidenceHits, renderedEvidence);
   const eagerDelta = grounded.answer.slice(0, Math.min(80, grounded.answer.length));
   if (eagerDelta) {
     params.onDelta?.({
@@ -2201,6 +2644,16 @@ export async function buildDocAnswer(params: {
       model: terminal.selectedModel ?? params.model,
       note: surfaceNote,
     }),
+    trace: renderedEvidence
+      ? {
+          answerPlan,
+          evidence: {
+            groupCount: renderedEvidence.groups.length,
+            warnings: renderedEvidence.warnings,
+            trimEvents: renderedEvidence.trimEvents,
+          },
+        }
+      : undefined,
   };
 }
 
@@ -2226,5 +2679,7 @@ export function buildTerminalResult(params: {
     rewrittenQuestion: params.result.rewrittenQuestion,
     attempts: params.result.attempts,
     answerSurface: params.result.answerSurface,
+    validation: params.result.validation,
+    trace: params.result.trace,
   };
 }

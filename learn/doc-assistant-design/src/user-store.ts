@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
-import fs from "node:fs/promises";
 import path from "node:path";
+import { readJsonSafe, writeJsonAtomic } from "./persistence.js";
 import type { DocUserRecord } from "./protocol/index.js";
 
 const DEFAULT_DATA_DIR = path.resolve(process.cwd(), ".mini-doc-assistant-data");
@@ -16,18 +16,11 @@ export function getDocUserStorePath(dataDir?: string): string {
 }
 
 export async function loadDocUserStore(dataDir?: string): Promise<DocUserStore> {
-  try {
-    const raw = await fs.readFile(getDocUserStorePath(dataDir), "utf-8");
-    return JSON.parse(raw) as DocUserStore;
-  } catch {
-    return {};
-  }
+  return await readJsonSafe<DocUserStore>(getDocUserStorePath(dataDir), {});
 }
 
 export async function saveDocUserStore(store: DocUserStore, dataDir?: string): Promise<void> {
-  const root = resolveDocAssistantDataDir(dataDir);
-  await fs.mkdir(root, { recursive: true });
-  await fs.writeFile(getDocUserStorePath(dataDir), JSON.stringify(store, null, 2), "utf-8");
+  await writeJsonAtomic(getDocUserStorePath(dataDir), store);
 }
 
 export async function createTempDocUser(params?: {

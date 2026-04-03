@@ -166,6 +166,7 @@ async function launchDocAssistantRun(params: {
         hits: execution.hits,
         summary: answer.summary,
         pendingQuestion: answer.pendingClarificationQuestion,
+        clarificationKind: answer.pendingClarificationKind,
         clarificationHits: answer.clarificationHits,
         route: execution.route,
         dataDir: params.state.config.dataDir,

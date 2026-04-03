@@ -64,6 +64,13 @@ export type DocSearchHit = DocCitation & {
   score: number;
   text: string;
   retrievalBucket?: "concept" | "procedural";
+  retrievalPurpose?:
+    | "primary_concept"
+    | "primary_procedural"
+    | "prerequisite"
+    | "overview"
+    | "adjacent"
+    | "api";
   docShape?: "quickstart_step" | "specialized_task" | "overview" | "generic_reference";
 };
 
@@ -80,6 +87,26 @@ export type DocAnswerSurface = {
   trust: "not_applicable" | "authoritative" | "non_authoritative";
   outputContract: "grounded_extractive" | "sentinel_prompt" | "plain_text";
   note?: string;
+};
+
+export type DocAnswerValidationIssue = {
+  code:
+    | "missing_citation"
+    | "citation_topic_mismatch"
+    | "cross_platform"
+    | "cross_api_layer"
+    | "missing_clarification"
+    | "section_mismatch"
+    | "overclaim_after_trim"
+    | "off_intent_answer";
+  severity: "warn" | "error";
+  message: string;
+};
+
+export type DocAnswerValidationResult = {
+  ok: boolean;
+  issues: DocAnswerValidationIssue[];
+  downgradeTo?: "clarification" | "insufficient";
 };
 
 export type DocFollowUpSource = "none" | "clarification_reuse" | "clarification_rewrite";
@@ -218,6 +245,8 @@ export type DocsTerminalResult = {
   continuedFromRunId?: string;
   rewrittenQuestion?: string;
   answerSurface?: DocAnswerSurface;
+  validation?: DocAnswerValidationResult;
+  trace?: Record<string, unknown>;
 };
 
 export type DocsAdminMemoryListParams = {

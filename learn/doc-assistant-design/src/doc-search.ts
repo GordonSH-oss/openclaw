@@ -1,5 +1,7 @@
-import { buildDocIndex, tokenize, type DocIndexChunk } from "./doc-index.js";
+import { rebuildDocIndexIfNeeded, tokenize, type DocIndexChunk } from "./doc-index.js";
 import type { DocCitation, DocSearchHit } from "./protocol/index.js";
+import type { QuestionState } from "./question-state.js";
+import type { RetrievalPurpose } from "./retrieval-plan.js";
 
 const PLATFORM_TOKENS = [
   "ios",
@@ -28,6 +30,13 @@ const PRODUCT_TOKENS = [
 ];
 
 type DocTier = "primary" | "partial";
+type MustCoverAnchorRule = {
+  required: string[];
+  anyOf: string[];
+  positiveBoost: number;
+  missingPenalty: number;
+  partialBoost: number;
+};
 type QueryIntent =
   | "start"
   | "send"
@@ -58,6 +67,10 @@ export type DocProceduralTaskKind =
   | "channel_creation"
   | "generic";
 export type DocPreferredDocShape = "quickstart_step" | "specialized_task";
+export type RetrievalOverrides = {
+  preferredPaths?: string[];
+  discouragedPaths?: string[];
+};
 export type DocQuestionPlanStep = {
   intent: DocQuestionIntent;
   question: string;
@@ -95,6 +108,51 @@ const GENERIC_QUERY_TOKENS = new Set([
   "up",
   "use",
   "what",
+]);
+
+const COVERAGE_STOP_TOKENS = new Set([
+  "android",
+  "api",
+  "call",
+  "callsdk",
+  "channel",
+  "channels",
+  "chat",
+  "chatsdk",
+  "client",
+  "community",
+  "config",
+  "configure",
+  "connect",
+  "connection",
+  "create",
+  "default",
+  "direct",
+  "first",
+  "flutter",
+  "group",
+  "initialize",
+  "ios",
+  "language",
+  "locale",
+  "localization",
+  "message",
+  "messages",
+  "notification",
+  "notifications",
+  "open",
+  "platform",
+  "preference",
+  "push",
+  "quickstart",
+  "sdk",
+  "send",
+  "server",
+  "settings",
+  "setup",
+  "start",
+  "targeted",
+  "web",
 ]);
 
 const CONCEPT_QUERY_MARKERS = [
@@ -172,6 +230,16 @@ const REFERENCE_PRONOUN_PATTERNS = [
   /那些/gu,
 ];
 
+const MUST_COVER_ANCHOR_RULES: MustCoverAnchorRule[] = [
+  {
+    required: ["push", "notification"],
+    anyOf: ["language", "locale", "localization", "default language"],
+    positiveBoost: 88,
+    missingPenalty: 72,
+    partialBoost: 24,
+  },
+];
+
 function countTokenMatches(haystack: string, token: string): number {
   if (!haystack.includes(token)) {
     return 0;
@@ -183,8 +251,14 @@ function countTokenMatches(haystack: string, token: string): number {
 function normalizeSearchText(text: string): string {
   return text
     .toLowerCase()
+    .replace(/\bchat\s+sdk\b/g, "chatsdk")
+    .replace(/\bcall\s+sdk\b/g, "callsdk")
+    .replace(/\bchat\s+ui\b/g, "chatui")
+    .replace(/\bcall\s+plus\b/g, "callplus")
     .replace(/\bjavascript\b/g, "web")
     .replace(/\bjs\b/g, "web")
+    .replace(/\blanguages\b/g, "language")
+    .replace(/\blocalisation\b/g, "localization")
     .replace(/\bset\s+up\b/g, "setup")
     .replace(/\bsub[\s\-_/]*channels?\b/g, "subchannel")
     .replace(/\bprivate[\s\-_/]*sub[\s\-_/]*channels?\b/g, "private subchannel")
@@ -195,6 +269,7 @@ function normalizeSearchText(text: string): string {
     .replace(/\bprivate messages?\b/g, "direct channel")
     .replace(/\bdirect chats?\b/g, "direct channel")
     .replace(/\bprivate chats?\b/g, "direct channel")
+    .replace(/\bcommunity chats?\b/g, "community channel")
     .replace(/\bsingle chats?\b/g, "direct channel")
     .replace(/[^a-z0-9\u4e00-\u9fff]+/gi, " ")
     .trim();
@@ -753,6 +828,13 @@ function getStrongQueryTokens(tokens: string[]): string[] {
   return tokens.filter((token) => token.length >= 4 && !GENERIC_QUERY_TOKENS.has(token));
 }
 
+function getCoverageCriticalQueryTokens(tokens: string[]): string[] {
+  return tokens.filter(
+    (token) =>
+      token.length >= 4 && !GENERIC_QUERY_TOKENS.has(token) && !COVERAGE_STOP_TOKENS.has(token),
+  );
+}
+
 function scoreBasenameSemantics(
   basenameStem: string,
   headingText: string,
@@ -991,6 +1073,31 @@ function scorePathSemantics(
     }
   }
 
+  if (
+    signals.normalizedQuery.includes("push notification") &&
+    (signals.normalizedQuery.includes("click") || signals.normalizedQuery.includes("conversation"))
+  ) {
+    if (normalizedPath.includes("handle push notification click")) {
+      score += 44;
+    }
+    if (normalizedPath.includes("config push notification style")) {
+      score -= 22;
+    }
+    if (normalizedPath.includes("disconnect")) {
+      score -= 28;
+    }
+  }
+
+  if (
+    (signals.normalizedQuery.includes("call summary") ||
+      (signals.normalizedQuery.includes("call") &&
+        signals.normalizedQuery.includes("conversation") &&
+        signals.normalizedQuery.includes("insert"))) &&
+    normalizedPath.includes("integration to chat")
+  ) {
+    score += 42;
+  }
+
   if (signals.products.includes("callsdk")) {
     if (
       normalizedPath.includes("chatsdk") ||
@@ -999,9 +1106,34 @@ function scorePathSemantics(
     ) {
       score -= 36;
     }
+    if (normalizedPath.includes("callsdk")) {
+      score += 34;
+    }
+    if (
+      normalizedPath.includes("one to one call") ||
+      normalizedPath.includes("group call") ||
+      normalizedPath.includes("push config")
+    ) {
+      score += 24;
+    }
+  }
+  if (signals.products.includes("chatsdk") && normalizedPath.includes("callsdk")) {
+    score -= 24;
+  }
+  if (signals.normalizedQuery.includes("chatsdk") && normalizedPath.includes("callsdk")) {
+    score -= 32;
+  }
+  if (signals.normalizedQuery.includes("callsdk") && normalizedPath.includes("chatsdk")) {
+    score -= 32;
   }
   if (signals.intents.includes("release") && normalizedPath.includes("release notes")) {
     score += 24;
+  }
+  if (
+    (signals.intents.includes("install") || signals.intents.includes("initialize")) &&
+    normalizedPath.includes("quickstart")
+  ) {
+    score += 16;
   }
   if (
     signals.normalizedQuery.includes("open channel") &&
@@ -1289,6 +1421,20 @@ function scoreClientChatStartSemantics(
     score += 16;
   }
   if (
+    signals.normalizedQuery.includes("import") &&
+    (normalizedHeading.includes("import") || normalizedPath.includes("/import"))
+  ) {
+    score += 22;
+  }
+  if (
+    (signals.normalizedQuery.includes("initialize") || signals.normalizedQuery.includes("init")) &&
+    (normalizedHeading.includes("initialize") ||
+      normalizedPath.includes("quickstart") ||
+      normalizedPath.includes("/init"))
+  ) {
+    score += 24;
+  }
+  if (
     normalizedHeading.includes("direct channel") ||
     normalizedHeading.includes("channel overview")
   ) {
@@ -1301,6 +1447,29 @@ function scoreClientChatStartSemantics(
       normalizedBody.includes("direct channel"))
   ) {
     score += 26;
+  }
+  if (
+    signals.normalizedQuery.includes("push notification") &&
+    (signals.normalizedQuery.includes("click") || signals.normalizedQuery.includes("conversation"))
+  ) {
+    if (normalizedHeading.includes("navigate to the channel page")) {
+      score += 82;
+    }
+    if (normalizedHeading.includes("handle push notification clicks")) {
+      score += 36;
+    }
+    if (normalizedHeading.includes("use pushmessagereceiver")) {
+      score += 12;
+    }
+    if (normalizedBody.includes("intent filter") || normalizedBody.includes("androidmanifest")) {
+      score += 30;
+    }
+    if (normalizedBody.includes("conversation page") || normalizedBody.includes("channel page")) {
+      score += 26;
+    }
+    if (normalizedBody.includes("onnotificationmessagearrived")) {
+      score -= 18;
+    }
   }
 
   if (normalizedBody.includes("direct channel")) {
@@ -1346,10 +1515,28 @@ function scoreClientChatStartSemantics(
     score += 28;
   }
   if (
+    signals.normalizedQuery.includes("specific members") &&
+    (normalizedHeading.includes("targeted message") || normalizedBody.includes("directeduserids"))
+  ) {
+    score += 28;
+  }
+  if (
     signals.normalizedQuery.includes("release notes") &&
     normalizedHeading.includes("new features")
   ) {
     score += 14;
+  }
+  if (
+    (signals.normalizedQuery.includes("call summary") ||
+      (signals.normalizedQuery.includes("call") &&
+        signals.normalizedQuery.includes("conversation") &&
+        signals.normalizedQuery.includes("insert"))) &&
+    (normalizedHeading.includes("conversation ui") ||
+      normalizedHeading.includes("call log") ||
+      normalizedBody.includes("call summary") ||
+      normalizedBody.includes("call end information"))
+  ) {
+    score += 30;
   }
   if (normalizedBody.includes("server api")) {
     score -= 28;
@@ -1783,7 +1970,49 @@ function scoreSharedChunk(
   score += scoreChannelKindAlignment(pathText, headingText, bodyText, signals);
   score += scorePathSemantics(pathText, headingText, signals);
   score += scoreBasenameSemantics(basenameStem, headingText, signals);
+  score += scoreMustCoverAnchorCoverage(chunk, signals);
   return score;
+}
+
+function countMatchedMustCoverAnchors(text: string, anchors: string[]): number {
+  return anchors.filter((anchor) => text.includes(normalizeSearchText(anchor))).length;
+}
+
+function detectMustCoverAnchorRule(
+  signals: ReturnType<typeof detectQuerySignals>,
+): MustCoverAnchorRule | undefined {
+  return MUST_COVER_ANCHOR_RULES.find((rule) =>
+    rule.required.every((anchor) => signals.normalizedQuery.includes(normalizeSearchText(anchor))),
+  );
+}
+
+function scoreMustCoverAnchorCoverage(
+  chunk: DocIndexChunk,
+  signals: ReturnType<typeof detectQuerySignals>,
+): number {
+  const rule = detectMustCoverAnchorRule(signals);
+  if (!rule) {
+    return 0;
+  }
+
+  const normalizedText = normalizeSearchText(
+    [chunk.relativePath, chunk.heading ?? "", chunk.text.slice(0, 1200)].join("\n"),
+  );
+  const matchedRequired = countMatchedMustCoverAnchors(normalizedText, rule.required);
+  const matchedAnchors = countMatchedMustCoverAnchors(normalizedText, rule.anyOf);
+  const missingRequired = rule.required.length - matchedRequired;
+
+  if (matchedRequired === rule.required.length && matchedAnchors > 0) {
+    return rule.positiveBoost + matchedAnchors * 18;
+  }
+  if (matchedAnchors > 0) {
+    return rule.partialBoost + matchedAnchors * 12 - missingRequired * 8;
+  }
+  if (matchedRequired === rule.required.length) {
+    return -rule.missingPenalty;
+  }
+
+  return 0;
 }
 
 function scoreProceduralChunk(
@@ -1813,6 +2042,25 @@ function scoreProceduralChunk(
     taskKind: refinement?.taskKind ?? detectProceduralTaskKind(query),
     preferredDocShape: refinement?.preferredDocShape ?? detectPreferredDocShape(query),
   });
+  if (
+    signals.normalizedQuery.includes("push notification") &&
+    (signals.normalizedQuery.includes("click") ||
+      signals.normalizedQuery.includes("conversation") ||
+      signals.normalizedQuery.includes("open"))
+  ) {
+    if (headingText.includes("navigate to the channel page")) {
+      score += 160;
+    }
+    if (headingText.includes("navigate to the channel matching the message")) {
+      score += 160;
+    }
+    if (headingText.includes("implement the default navigation behavior")) {
+      score += 64;
+    }
+    if (headingText.includes("use pushmessagereceiver") && !bodyText.includes("intent filter")) {
+      score -= 24;
+    }
+  }
   return score;
 }
 
@@ -1865,6 +2113,7 @@ function scoreBucketedEntries(params: {
     taskKind?: DocProceduralTaskKind;
     preferredDocShape?: DocPreferredDocShape;
   };
+  overrides?: RetrievalOverrides;
 }): Array<{
   chunk: DocIndexChunk;
   score: number;
@@ -1877,6 +2126,7 @@ function scoreBucketedEntries(params: {
   const tokens = expandQueryTokens(query, tokenize(query));
   const scoringTokens = tokens.filter((token) => !GENERIC_QUERY_TOKENS.has(token));
   const strongTokens = getStrongQueryTokens(tokens);
+  const coverageTokens = getCoverageCriticalQueryTokens(tokens);
   const signals = detectQuerySignals(query, tokens);
   const scoreChunkForBucket =
     params.bucket === "concept"
@@ -1895,10 +2145,24 @@ function scoreBucketedEntries(params: {
   const scored = params.chunks
     .map((chunk) => {
       const pathText = chunk.relativePath.toLowerCase();
+      const preferredBoost = params.overrides?.preferredPaths?.some((prefix) =>
+        pathText.includes(prefix.toLowerCase()),
+      )
+        ? 36
+        : 0;
+      const discouragedPenalty = params.overrides?.discouragedPaths?.some((prefix) =>
+        pathText.includes(prefix.toLowerCase()),
+      )
+        ? 42
+        : 0;
       return {
         chunk,
-        score: scoreChunkForBucket(chunk, query, scoringTokens, signals),
+        score:
+          scoreChunkForBucket(chunk, query, scoringTokens, signals) +
+          preferredBoost -
+          discouragedPenalty,
         strongOverlap: countUniqueTokenOverlap(chunk.tokens, strongTokens),
+        coverageOverlap: countUniqueTokenOverlap(chunk.tokens, coverageTokens),
         tier: detectDocTier(pathText),
         basenameStem: getBasenameStem(pathText),
         pathPlatforms: getPathPlatforms(pathText),
@@ -1936,8 +2200,15 @@ function scoreBucketedEntries(params: {
     });
 
   const bestStrongOverlap = scored.reduce((best, entry) => Math.max(best, entry.strongOverlap), 0);
+  const bestCoverageOverlap = scored.reduce(
+    (best, entry) => Math.max(best, entry.coverageOverlap),
+    0,
+  );
   const bestScore = scored.reduce((best, entry) => Math.max(best, entry.score), 0);
   if (strongTokens.length > 0 && bestStrongOverlap === 0 && bestScore < 45) {
+    return [];
+  }
+  if (coverageTokens.length > 0 && bestCoverageOverlap === 0 && bestScore < 90) {
     return [];
   }
 
@@ -1956,11 +2227,143 @@ function toBucketedHits(
   entries: ReturnType<typeof scoreBucketedEntries>,
   bucket: DocRetrievalBucket,
   limit: number,
+  purpose?: RetrievalPurpose,
 ): DocSearchHit[] {
   return entries.slice(0, limit).map((entry) => ({
     ...toHit(entry.chunk, entry.score),
     retrievalBucket: bucket,
+    retrievalPurpose: purpose,
   }));
+}
+
+export async function loadDocChunks(params?: {
+  docsRoot?: string;
+  dataDir?: string;
+}): Promise<DocIndexChunk[]> {
+  return await rebuildDocIndexIfNeeded({
+    docsRoot: params?.docsRoot,
+    dataDir: params?.dataDir,
+  });
+}
+
+export function searchDocsForBucket(params: {
+  chunks: DocIndexChunk[];
+  question: string;
+  bucket: DocRetrievalBucket;
+  limit: number;
+  purpose?: RetrievalPurpose;
+  refinement?: {
+    taskKind?: DocProceduralTaskKind;
+    preferredDocShape?: DocPreferredDocShape;
+  };
+  overrides?: RetrievalOverrides;
+}): DocSearchHit[] {
+  return toBucketedHits(
+    scoreBucketedEntries({
+      chunks: params.chunks,
+      question: params.question,
+      bucket: params.bucket,
+      refinement: params.refinement,
+      overrides: params.overrides,
+    }),
+    params.bucket,
+    params.limit,
+    params.purpose,
+  );
+}
+
+function buildPurposeQuery(params: {
+  question: string;
+  purpose: RetrievalPurpose;
+  state?: QuestionState;
+}): {
+  question: string;
+  bucket: DocRetrievalBucket;
+  refinement?: {
+    taskKind?: DocProceduralTaskKind;
+    preferredDocShape?: DocPreferredDocShape;
+  };
+} {
+  if (params.purpose === "overview") {
+    const referent = params.state?.referent ?? params.question;
+    return {
+      question: `what is ${referent}`.trim(),
+      bucket: "concept",
+    };
+  }
+  if (params.purpose === "prerequisite") {
+    const normalizedQuestion = normalizeSearchText(params.question);
+    const quickstartHints =
+      normalizedQuestion.includes("first message") ||
+      normalizedQuestion.includes("quickstart") ||
+      normalizedQuestion.includes("from scratch")
+        ? "quickstart initialize connect setup"
+        : normalizedQuestion.includes("import") || normalizedQuestion.includes("initialize")
+          ? "import initialize quickstart setup"
+          : "quickstart initialize connect setup";
+    return {
+      question: `${params.question} ${quickstartHints}`.trim(),
+      bucket: "procedural",
+      refinement: {
+        taskKind: params.state?.taskKind ?? detectProceduralTaskKind(params.question),
+        preferredDocShape:
+          normalizedQuestion.includes("first message") ||
+          normalizedQuestion.includes("quickstart") ||
+          normalizedQuestion.includes("from scratch")
+            ? "quickstart_step"
+            : "specialized_task",
+      },
+    };
+  }
+  if (params.purpose === "api") {
+    return {
+      question: `${params.question} api`,
+      bucket: "procedural",
+      refinement: {
+        taskKind: params.state?.taskKind ?? detectProceduralTaskKind(params.question),
+        preferredDocShape: "specialized_task",
+      },
+    };
+  }
+  if (params.purpose === "primary_concept") {
+    return {
+      question: params.question,
+      bucket: "concept",
+    };
+  }
+  return {
+    question: params.question,
+    bucket: "procedural",
+    refinement: {
+      taskKind: params.state?.taskKind ?? detectProceduralTaskKind(params.question),
+      preferredDocShape:
+        params.state?.taskKind === "first_message" ? "quickstart_step" : "specialized_task",
+    },
+  };
+}
+
+export function searchDocsForPurpose(params: {
+  chunks: DocIndexChunk[];
+  question: string;
+  purpose: RetrievalPurpose;
+  state?: QuestionState;
+  limit: number;
+  overrides?: RetrievalOverrides;
+}): DocSearchHit[] {
+  const prepared = buildPurposeQuery({
+    question: params.question,
+    purpose: params.purpose,
+    state: params.state,
+  });
+  return searchDocsForBucket({
+    chunks: params.chunks,
+    question: prepared.question,
+    bucket: prepared.bucket,
+    limit: params.limit,
+    purpose: params.purpose,
+    refinement: prepared.refinement,
+    overrides: params.overrides,
+  });
 }
 
 export async function searchDocs(params: {
@@ -1972,8 +2375,9 @@ export async function searchDocs(params: {
     taskKind?: DocProceduralTaskKind;
     preferredDocShape?: DocPreferredDocShape;
   };
+  overrides?: RetrievalOverrides;
 }): Promise<DocSearchHit[]> {
-  const chunks = await buildDocIndex({
+  const chunks = await loadDocChunks({
     docsRoot: params.docsRoot,
     dataDir: params.dataDir,
   });
@@ -1981,16 +2385,15 @@ export async function searchDocs(params: {
   const maxResults = params.maxResults ?? 5;
 
   if (plan.kind === "concept" || plan.kind === "procedural") {
-    return toBucketedHits(
-      scoreBucketedEntries({
-        chunks,
-        question: plan.steps[0]?.question ?? params.query,
-        bucket: plan.kind,
-        refinement: params.refinement,
-      }),
-      plan.kind,
-      maxResults,
-    );
+    return searchDocsForBucket({
+      chunks,
+      question: plan.steps[0]?.question ?? params.query,
+      bucket: plan.kind,
+      limit: maxResults,
+      purpose: plan.kind === "concept" ? "primary_concept" : "primary_procedural",
+      refinement: params.refinement,
+      overrides: params.overrides,
+    });
   }
 
   const merged: DocSearchHit[] = [];
@@ -1998,16 +2401,15 @@ export async function searchDocs(params: {
   const perBucketLimit = Math.max(2, maxResults);
   const bucketHitsByStep = plan.steps.map((step) => ({
     step,
-    hits: toBucketedHits(
-      scoreBucketedEntries({
-        chunks,
-        question: step.question,
-        bucket: step.intent,
-        refinement: step.intent === "procedural" ? params.refinement : undefined,
-      }),
-      step.intent,
-      perBucketLimit,
-    ),
+    hits: searchDocsForBucket({
+      chunks,
+      question: step.question,
+      bucket: step.intent,
+      limit: perBucketLimit,
+      purpose: step.intent === "concept" ? "primary_concept" : "primary_procedural",
+      refinement: step.intent === "procedural" ? params.refinement : undefined,
+      overrides: params.overrides,
+    }),
   }));
 
   for (const entry of bucketHitsByStep) {

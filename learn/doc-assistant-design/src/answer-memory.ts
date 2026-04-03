@@ -1,11 +1,16 @@
 import { randomUUID } from "node:crypto";
-import fs from "node:fs/promises";
 import path from "node:path";
 import {
   isMemoryEntryEligibleForLookup,
   isTerminalResultCacheable,
 } from "./answer-cache-policy.js";
 import { tokenize } from "./doc-index.js";
+import {
+  appendJsonlAtomic,
+  readJsonlSafe,
+  writeJsonAtomic,
+  writeTextAtomic,
+} from "./persistence.js";
 import type {
   AnswerMemoryEntry,
   AnswerMemoryMatch,
@@ -104,15 +109,12 @@ function toIndexItem(entry: AnswerMemoryEntry): AnswerMemoryIndexItem {
 }
 
 async function persistAnswerMemory(entries: AnswerMemoryEntry[], dataDir?: string): Promise<void> {
-  const root = resolveDocAssistantDataDir(dataDir);
-  await fs.mkdir(root, { recursive: true });
-  await fs.writeFile(
+  await writeTextAtomic(
     getAnswerMemoryPath(dataDir),
     entries.map((entry) => JSON.stringify(entry)).join("\n") + (entries.length ? "\n" : ""),
-    "utf-8",
   );
   const index = entries.map((entry) => toIndexItem(entry));
-  await fs.writeFile(getAnswerMemoryIndexPath(dataDir), JSON.stringify(index, null, 2), "utf-8");
+  await writeJsonAtomic(getAnswerMemoryIndexPath(dataDir), index);
 }
 
 export async function replaceAnswerMemoryEntries(
@@ -126,9 +128,7 @@ async function appendReviewQueueEvent(
   dataDir: string | undefined,
   event: ReviewQueueEvent,
 ): Promise<void> {
-  const queuePath = getReviewQueuePath(dataDir);
-  await fs.mkdir(path.dirname(queuePath), { recursive: true });
-  await fs.appendFile(queuePath, `${JSON.stringify(event)}\n`, "utf-8");
+  await appendJsonlAtomic(getReviewQueuePath(dataDir), event);
 }
 
 function sortEntries(entries: AnswerMemoryEntry[]): AnswerMemoryEntry[] {
@@ -136,19 +136,7 @@ function sortEntries(entries: AnswerMemoryEntry[]): AnswerMemoryEntry[] {
 }
 
 export async function loadAnswerMemoryEntries(dataDir?: string): Promise<AnswerMemoryEntry[]> {
-  let raw = "";
-  try {
-    raw = await fs.readFile(getAnswerMemoryPath(dataDir), "utf-8");
-  } catch {
-    return [];
-  }
-  return sortEntries(
-    raw
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .filter(Boolean)
-      .map((line) => JSON.parse(line) as AnswerMemoryEntry),
-  );
+  return sortEntries(await readJsonlSafe<AnswerMemoryEntry>(getAnswerMemoryPath(dataDir)));
 }
 
 function countOverlap(left: string[], right: string[]): number {
