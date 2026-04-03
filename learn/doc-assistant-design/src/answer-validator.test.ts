@@ -134,6 +134,41 @@ void test("validateAnswer does not require referent coverage for ordinary proced
   assert.equal(result.ok, true);
 });
 
+void test("validateAnswer downgrades procedural answers when action and object only match across unrelated citations", () => {
+  const state = buildQuestionState("How to create a user?");
+  const evidence = buildEvidencePack({
+    state,
+    hits: [
+      makeHit(
+        "docs/platform-chat-api/community-channel/usergroup/add-user-to-usergroup.md",
+        "Request body",
+        "Add a user to a community channel user group through this request body.",
+        "procedural",
+      ),
+      makeHit(
+        "docs/chatsdk-ios/group-channels/manage-group-channel.md",
+        "Create a group",
+        "Call GroupChannel.createGroup(params:completion:) to create a new group.",
+        "procedural",
+      ),
+    ],
+  });
+  const result = validateAnswer({
+    question: state.rawQuestion,
+    state,
+    evidence,
+    answer: "Steps\n1. Call GroupChannel.createGroup(params:completion:) to create a new group.",
+    summary: "guided answer from 2 documentation chunks",
+    citations: evidence.groups.flatMap((group) => group.citations),
+  });
+
+  assert.equal(result.downgradeTo, "insufficient");
+  assert.equal(
+    result.issues.some((issue) => issue.code === "off_intent_answer"),
+    true,
+  );
+});
+
 void test("validateAnswer downgrades answers that turn status metadata into steps", () => {
   const state = buildQuestionState("How to start a direct chat on iOS?");
   const evidence = buildEvidencePack({

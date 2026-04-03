@@ -53,6 +53,103 @@ const GENERIC_QUESTION_TOKENS = new Set([
   "with",
 ]);
 
+const PROCEDURAL_ACTION_TOKENS = [
+  "accept",
+  "add",
+  "begin",
+  "check",
+  "configure",
+  "connect",
+  "create",
+  "delete",
+  "destroy",
+  "dismiss",
+  "get",
+  "initialize",
+  "install",
+  "join",
+  "leave",
+  "list",
+  "load",
+  "open",
+  "query",
+  "receive",
+  "reload",
+  "remove",
+  "retrieve",
+  "send",
+  "set up",
+  "setup",
+  "start",
+  "update",
+  "use",
+];
+
+const PROCEDURAL_FOCUS_STOP_TOKENS = new Set([
+  "accept",
+  "action",
+  "add",
+  "android",
+  "answer",
+  "api",
+  "app",
+  "begin",
+  "browser",
+  "call",
+  "channel",
+  "channels",
+  "chat",
+  "check",
+  "client",
+  "community",
+  "configure",
+  "connect",
+  "conversation",
+  "create",
+  "default",
+  "delete",
+  "destroy",
+  "direct",
+  "dismiss",
+  "documented",
+  "feature",
+  "first",
+  "flutter",
+  "group",
+  "initialize",
+  "install",
+  "ios",
+  "join",
+  "leave",
+  "list",
+  "load",
+  "message",
+  "messages",
+  "notification",
+  "notifications",
+  "open",
+  "platform",
+  "procedural",
+  "push",
+  "query",
+  "receive",
+  "reload",
+  "remove",
+  "retrieve",
+  "sdk",
+  "send",
+  "server",
+  "setup",
+  "start",
+  "steps",
+  "subchannel",
+  "task",
+  "update",
+  "use",
+  "web",
+  "webhook",
+]);
+
 function isConceptDefinitionQuestion(question: string): boolean {
   const normalized = normalizeAnswerabilityText(question);
   return (
@@ -78,6 +175,46 @@ function extractCoverageTokens(text: string): string[] {
   );
 }
 
+function extractProceduralActionTokens(question: string): string[] {
+  return PROCEDURAL_ACTION_TOKENS.filter((token) => hasNormalizedAnchor(question, token));
+}
+
+function extractProceduralFocusTokens(question: string): string[] {
+  return Array.from(
+    new Set(
+      normalizeAnswerabilityText(question)
+        .split(/\s+/)
+        .filter(
+          (token) =>
+            token.length >= 4 &&
+            !GENERIC_QUESTION_TOKENS.has(token) &&
+            !PROCEDURAL_FOCUS_STOP_TOKENS.has(token),
+        ),
+    ),
+  );
+}
+
+function hitCoversProceduralFocus(params: {
+  hit: DocSearchHit;
+  actionTokens: string[];
+  focusTokens: string[];
+}): boolean {
+  return (
+    params.actionTokens.some((token) =>
+      hasNormalizedAnchor(
+        [params.hit.path, params.hit.heading ?? "", params.hit.snippet, params.hit.text].join("\n"),
+        token,
+      ),
+    ) &&
+    params.focusTokens.some((token) =>
+      hasNormalizedAnchor(
+        [params.hit.path, params.hit.heading ?? "", params.hit.snippet, params.hit.text].join("\n"),
+        token,
+      ),
+    )
+  );
+}
+
 function normalizeAnswerabilityText(text: string): string {
   return text
     .toLowerCase()
@@ -85,6 +222,16 @@ function normalizeAnswerabilityText(text: string): string {
     .replace(/\blocalisation\b/g, "localization")
     .replace(/[^a-z0-9\u4e00-\u9fff]+/gi, " ")
     .trim();
+}
+
+function hasNormalizedAnchor(text: string, anchor: string): boolean {
+  const normalizedText = normalizeAnswerabilityText(text);
+  const normalizedAnchor = normalizeAnswerabilityText(anchor);
+  if (!normalizedText || !normalizedAnchor) {
+    return false;
+  }
+  const padded = ` ${normalizedText} `;
+  return padded.includes(` ${normalizedAnchor} `);
 }
 
 function countMatchedAnchors(text: string, anchors: string[]): string[] {
@@ -184,6 +331,27 @@ export function decideAnswerability(params: {
   }
 
   if (state.intent !== "concept") {
+    const proceduralActionTokens = extractProceduralActionTokens(params.question);
+    const proceduralFocusTokens = extractProceduralFocusTokens(params.question);
+    if (
+      proceduralActionTokens.length > 0 &&
+      proceduralFocusTokens.length > 0 &&
+      !authoritativeHits.some((hit) =>
+        hitCoversProceduralFocus({
+          hit,
+          actionTokens: proceduralActionTokens,
+          focusTokens: proceduralFocusTokens,
+        }),
+      )
+    ) {
+      return {
+        verdict: "insufficient_evidence",
+        reason: "retrieved evidence does not cover the requested object and action together",
+        requiredAnchors: [...proceduralActionTokens, ...proceduralFocusTokens],
+        matchedAnchors: proceduralFocusTokens.filter((token) => normalizedEvidence.includes(token)),
+      };
+    }
+
     const hasTaskAction =
       normalizedEvidence.includes("send") ||
       normalizedEvidence.includes("create") ||

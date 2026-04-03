@@ -171,6 +171,51 @@ async function createLifecycleFixtureDocs(): Promise<string> {
   return docsRoot;
 }
 
+async function createProceduralObjectMismatchFixtureDocs(): Promise<string> {
+  const docsRoot = await makeTempDir("doc-assistant-object-mismatch-docs");
+  await fs.mkdir(
+    path.join(docsRoot, "docs", "platform-chat-api", "community-channel", "usergroup"),
+    {
+      recursive: true,
+    },
+  );
+  await fs.mkdir(path.join(docsRoot, "docs", "chatsdk-ios", "group-channels"), {
+    recursive: true,
+  });
+  await fs.writeFile(
+    path.join(
+      docsRoot,
+      "docs",
+      "platform-chat-api",
+      "community-channel",
+      "usergroup",
+      "add-user-to-usergroup.md",
+    ),
+    [
+      "# Add user to user group",
+      "",
+      "## Request body",
+      "",
+      "Add a user to an existing community channel user group with this request body.",
+      "",
+    ].join("\n"),
+    "utf-8",
+  );
+  await fs.writeFile(
+    path.join(docsRoot, "docs", "chatsdk-ios", "group-channels", "manage-group-channel.md"),
+    [
+      "# Manage group channel",
+      "",
+      "## Create a group",
+      "",
+      "Call `GroupChannel.createGroup(params:completion:)` to create a new group.",
+      "",
+    ].join("\n"),
+    "utf-8",
+  );
+  return docsRoot;
+}
+
 async function createPushFixtureDocs(): Promise<string> {
   const docsRoot = await makeTempDir("doc-assistant-push-docs");
   await fs.mkdir(path.join(docsRoot, "callsdk-ios"), { recursive: true });
@@ -2834,6 +2879,42 @@ void test("docs.ask in agent mode emits delta and returns selected model metadat
   assert.equal(terminal.answer.includes("FINAL_ANSWER_START"), false);
   assert.equal(terminal.answer.includes("Retrieved documentation:"), false);
   assert.equal(terminal.citations.length > 0, true);
+});
+
+void test("docs.ask downgrades procedural object mismatches to insufficient evidence", async (t) => {
+  const docsRoot = await createProceduralObjectMismatchFixtureDocs();
+  const dataDir = await makeTempDir("doc-assistant-object-mismatch");
+  const { client } = await createHarness({ docsRoot, dataDir });
+  t.after(() => client.close());
+
+  const user = responseResult<UserCreateResult>(await client.request("docs.user.create"));
+  responseResult<DocsAcceptedResult>(
+    await client.request("docs.ask", {
+      userId: user.userId,
+      question: "How to create a user?",
+      idempotencyKey: "object-mismatch-1",
+      mode: "extractive",
+    }),
+  );
+
+  const terminal = eventData<DocsTerminalResult>(
+    await client.waitForEvent("docs.completed", (frame) => {
+      const data = eventData<{ runId: string }>(frame);
+      return data.runId === "object-mismatch-1";
+    }),
+  );
+  assert.equal(terminal.summary, "insufficient documentation evidence");
+  assert.equal(terminal.reviewStatus, "not_applicable");
+  assert.equal(terminal.memoryEntryId, undefined);
+
+  const history = responseResult<{
+    total: number;
+    entries: Array<{ answered: boolean; answerOutcome: string; reviewStatus?: string }>;
+  }>(await client.request("docs.history.list", { userId: user.userId }));
+  assert.equal(history.total, 1);
+  assert.equal(history.entries[0]?.answered, false);
+  assert.equal(history.entries[0]?.answerOutcome, "no_relevant_docs");
+  assert.equal(history.entries[0]?.reviewStatus, "not_applicable");
 });
 
 void test("agent mode preserves clarification answers instead of letting the mock agent rewrite them", async () => {

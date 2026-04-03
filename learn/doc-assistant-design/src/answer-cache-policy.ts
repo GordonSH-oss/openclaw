@@ -20,6 +20,9 @@ export function isTerminalResultCacheable(terminal: DocsTerminalResult): boolean
   if (terminal.answerSource && terminal.answerSource !== "generated") {
     return false;
   }
+  if (terminal.answerSurface?.trust === "non_authoritative") {
+    return false;
+  }
   return !isNonCacheableSummary(terminal.summary);
 }
 
