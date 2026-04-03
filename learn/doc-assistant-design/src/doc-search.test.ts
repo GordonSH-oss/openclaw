@@ -33,3 +33,53 @@ void test("searchDocs drops off-intent infra queries when docs have no coverage 
 
   assert.equal(hits.length, 0);
 });
+
+void test("searchDocs prefers direct-channel docs over send-message docs for direct-channel creation", async () => {
+  const docsRoot = await makeTempDir("doc-search-direct-channel-creation");
+  await fs.mkdir(path.join(docsRoot, "docs", "chatsdk-web", "direct-system-channels"), {
+    recursive: true,
+  });
+  await fs.mkdir(path.join(docsRoot, "docs", "chatsdk-web", "message"), {
+    recursive: true,
+  });
+  await fs.writeFile(
+    path.join(docsRoot, "docs", "chatsdk-web", "direct-system-channels", "overview.md"),
+    [
+      "# Direct channel overview",
+      "",
+      "A direct channel enables one-to-one messaging between two users on Web.",
+      "",
+      "## Create a channel instance",
+      "",
+      "Create `DirectChannel('<target-user-id>')` as the Web direct channel instance.",
+      "",
+    ].join("\n"),
+    "utf-8",
+  );
+  await fs.writeFile(
+    path.join(docsRoot, "docs", "chatsdk-web", "message", "send.md"),
+    [
+      "# Send a text message",
+      "",
+      "Create `DirectChannel('<target-user-id>')`, then build `SendTextMessageParams` and call `channel.sendMessage(...)`.",
+      "",
+    ].join("\n"),
+    "utf-8",
+  );
+
+  const hits = await searchDocs({
+    query: "How to create a direct channel on Web?",
+    docsRoot,
+    maxResults: 4,
+  });
+
+  const directIndex = hits.findIndex((hit) =>
+    hit.path.endsWith("docs/chatsdk-web/direct-system-channels/overview.md"),
+  );
+  const sendIndex = hits.findIndex((hit) => hit.path.endsWith("docs/chatsdk-web/message/send.md"));
+
+  assert.equal(directIndex !== -1, true);
+  assert.equal(sendIndex !== -1, true);
+  assert.equal(directIndex < sendIndex, true);
+  assert.equal(hits[0]?.path.endsWith("docs/chatsdk-web/direct-system-channels/overview.md"), true);
+});

@@ -1,4 +1,5 @@
-import { detectProceduralTaskKind, planDocQuestion } from "./doc-search.js";
+import { detectProceduralTaskKind, planDocQuestion } from "./question-planning.js";
+import { normalizeSearchText } from "./search-text.js";
 
 export type QuestionLanguage = "zh" | "en";
 export type QuestionIntent = "concept" | "procedural" | "mixed";
@@ -33,23 +34,7 @@ export type QuestionState = {
 };
 
 export function normalizeQuestionText(text: string): string {
-  return text
-    .toLowerCase()
-    .replace(/\bjavascript\b/g, "web")
-    .replace(/\bjs\b/g, "web")
-    .replace(/\blanguages\b/g, "language")
-    .replace(/\blocalisation\b/g, "localization")
-    .replace(/\bdms?\b/g, "direct channel")
-    .replace(/\bdirect messages?\b/g, "direct channel")
-    .replace(/\bprivate messages?\b/g, "direct channel")
-    .replace(/\bdirect chats?\b/g, "direct channel")
-    .replace(/\bprivate chats?\b/g, "direct channel")
-    .replace(/\bcommunity chats?\b/g, "community channel")
-    .replace(/\b1[\s\-_/]*to[\s\-_/]*1\b/g, "one to one")
-    .replace(/\b1[\s\-_/]*on[\s\-_/]*1\b/g, "one to one")
-    .replace(/[^a-z0-9\u4e00-\u9fff]+/gi, " ")
-    .replace(/\s+/g, " ")
-    .trim();
+  return normalizeSearchText(text).replace(/\s+/g, " ").trim();
 }
 
 export function detectQuestionLanguage(question: string): QuestionLanguage {

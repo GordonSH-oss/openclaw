@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   detectClarificationFollowUpQuestion,
   extractQuestionStatePatchFromFollowUp,
+  isStoredClarificationFollowUpAllowed,
 } from "./follow-up-context.js";
 
 void test("detectClarificationFollowUpQuestion still accepts short platform-only replies", () => {
@@ -38,4 +39,47 @@ void test("extractQuestionStatePatchFromFollowUp returns a mergeable state patch
     apiLayer: "server",
   });
   assert.equal(extractQuestionStatePatchFromFollowUp("Android 怎么初始化 Chat SDK？"), null);
+});
+
+void test("isStoredClarificationFollowUpAllowed enforces clarification kind and candidate platforms", () => {
+  assert.equal(
+    isStoredClarificationFollowUpAllowed(
+      {
+        clarificationKind: "platform",
+        candidatePlatforms: ["android", "flutter"],
+      },
+      { platform: "android" },
+    ),
+    true,
+  );
+  assert.equal(
+    isStoredClarificationFollowUpAllowed(
+      {
+        clarificationKind: "platform",
+        candidatePlatforms: ["android", "flutter"],
+      },
+      { platform: "web" },
+    ),
+    false,
+  );
+  assert.equal(
+    isStoredClarificationFollowUpAllowed(
+      {
+        clarificationKind: "channel_kind",
+        candidatePlatforms: [],
+      },
+      { channelKind: "group" },
+    ),
+    true,
+  );
+  assert.equal(
+    isStoredClarificationFollowUpAllowed(
+      {
+        clarificationKind: "api_layer",
+        candidatePlatforms: [],
+      },
+      { platform: "android" },
+    ),
+    false,
+  );
 });

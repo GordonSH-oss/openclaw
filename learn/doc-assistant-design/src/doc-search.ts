@@ -1,35 +1,41 @@
 import { rebuildDocIndexIfNeeded, tokenize, type DocIndexChunk } from "./doc-index.js";
+import {
+  countMatchingPlatforms,
+  detectDocShape,
+  detectDocTier,
+  getBasenameStem,
+  getPathPlatforms,
+  getTierWeight,
+  type DocSearchDocShape,
+  type DocTier,
+} from "./doc-shape.js";
 import type { DocCitation, DocSearchHit } from "./protocol/index.js";
+import {
+  detectPreferredDocShape,
+  detectProceduralTaskKind,
+  planDocQuestion,
+  type DocPreferredDocShape,
+  type DocProceduralTaskKind,
+  type DocQuestionIntent,
+  type DocQuestionPlan,
+  type DocQuestionPlanKind,
+  type DocQuestionPlanStep,
+} from "./question-planning.js";
 import type { QuestionState } from "./question-state.js";
 import type { RetrievalPurpose } from "./retrieval-plan.js";
+import {
+  GENERIC_QUERY_TOKENS,
+  PLATFORM_TOKENS,
+  PRODUCT_TOKENS,
+  countTokenMatches,
+  countTokenOverlap,
+  countUniqueTokenOverlap,
+  getCoverageCriticalQueryTokens,
+  getStrongQueryTokens,
+  normalizeSearchText,
+  normalizeSnippet,
+} from "./search-text.js";
 
-const PLATFORM_TOKENS = [
-  "ios",
-  "android",
-  "web",
-  "javascript",
-  "js",
-  "flutter",
-  "windows",
-  "linux",
-  "mac",
-  "macos",
-];
-
-const PRODUCT_TOKENS = [
-  "chatsdk",
-  "chatui",
-  "callplus",
-  "callsdk",
-  "calllib",
-  "callkit",
-  "imlib",
-  "imkit",
-  "chat",
-  "server",
-];
-
-type DocTier = "primary" | "partial";
 type MustCoverAnchorRule = {
   required: string[];
   anyOf: string[];
@@ -52,108 +58,21 @@ type QueryIntent =
   | "release";
 
 type QueryChannelKind = "direct" | "group" | "community" | "open";
-export type DocQuestionIntent = "concept" | "procedural";
-export type DocQuestionPlanKind = DocQuestionIntent | "mixed";
 export type DocRetrievalBucket = "concept" | "procedural";
-export type DocSearchDocShape =
-  | "quickstart_step"
-  | "specialized_task"
-  | "overview"
-  | "generic_reference";
-export type DocProceduralTaskKind =
-  | "first_message"
-  | "send_message"
-  | "start_chat"
-  | "channel_creation"
-  | "generic";
-export type DocPreferredDocShape = "quickstart_step" | "specialized_task";
 export type RetrievalOverrides = {
   preferredPaths?: string[];
   discouragedPaths?: string[];
 };
-export type DocQuestionPlanStep = {
-  intent: DocQuestionIntent;
-  question: string;
-  order: number;
+export { detectDocShape, detectPreferredDocShape, detectProceduralTaskKind, planDocQuestion };
+export type {
+  DocPreferredDocShape,
+  DocProceduralTaskKind,
+  DocQuestionIntent,
+  DocQuestionPlan,
+  DocQuestionPlanKind,
+  DocQuestionPlanStep,
+  DocSearchDocShape,
 };
-export type DocQuestionPlan = {
-  kind: DocQuestionPlanKind;
-  steps: DocQuestionPlanStep[];
-};
-
-const GENERIC_QUERY_TOKENS = new Set([
-  "a",
-  "an",
-  "and",
-  "answer",
-  "call",
-  "configure",
-  "for",
-  "how",
-  "i",
-  "in",
-  "is",
-  "it",
-  "just",
-  "know",
-  "let",
-  "me",
-  "of",
-  "sdk",
-  "settings",
-  "show",
-  "the",
-  "this",
-  "to",
-  "up",
-  "use",
-  "what",
-]);
-
-const COVERAGE_STOP_TOKENS = new Set([
-  "android",
-  "api",
-  "call",
-  "callsdk",
-  "channel",
-  "channels",
-  "chat",
-  "chatsdk",
-  "client",
-  "community",
-  "config",
-  "configure",
-  "connect",
-  "connection",
-  "create",
-  "default",
-  "direct",
-  "first",
-  "flutter",
-  "group",
-  "initialize",
-  "ios",
-  "language",
-  "locale",
-  "localization",
-  "message",
-  "messages",
-  "notification",
-  "notifications",
-  "open",
-  "platform",
-  "preference",
-  "push",
-  "quickstart",
-  "sdk",
-  "send",
-  "server",
-  "settings",
-  "setup",
-  "start",
-  "targeted",
-  "web",
-]);
 
 const CONCEPT_QUERY_MARKERS = [
   "what",
@@ -215,21 +134,6 @@ const PROCEDURAL_NOISE_TERMS = [
   "history",
 ];
 
-const REFERENCE_PRONOUN_PATTERNS = [
-  /\bit\b/giu,
-  /\bthis\b/giu,
-  /\bthat\b/giu,
-  /\bthem\b/giu,
-  /\bthese\b/giu,
-  /\bthose\b/giu,
-  /它/gu,
-  /它们/gu,
-  /这个/gu,
-  /那个/gu,
-  /这些/gu,
-  /那些/gu,
-];
-
 const MUST_COVER_ANCHOR_RULES: MustCoverAnchorRule[] = [
   {
     required: ["push", "notification"],
@@ -239,278 +143,6 @@ const MUST_COVER_ANCHOR_RULES: MustCoverAnchorRule[] = [
     partialBoost: 24,
   },
 ];
-
-function countTokenMatches(haystack: string, token: string): number {
-  if (!haystack.includes(token)) {
-    return 0;
-  }
-  const matches = haystack.match(new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g"));
-  return Math.min(matches?.length ?? 0, 4);
-}
-
-function normalizeSearchText(text: string): string {
-  return text
-    .toLowerCase()
-    .replace(/\bchat\s+sdk\b/g, "chatsdk")
-    .replace(/\bcall\s+sdk\b/g, "callsdk")
-    .replace(/\bchat\s+ui\b/g, "chatui")
-    .replace(/\bcall\s+plus\b/g, "callplus")
-    .replace(/\bjavascript\b/g, "web")
-    .replace(/\bjs\b/g, "web")
-    .replace(/\blanguages\b/g, "language")
-    .replace(/\blocalisation\b/g, "localization")
-    .replace(/\bset\s+up\b/g, "setup")
-    .replace(/\bsub[\s\-_/]*channels?\b/g, "subchannel")
-    .replace(/\bprivate[\s\-_/]*sub[\s\-_/]*channels?\b/g, "private subchannel")
-    .replace(/\b1[\s\-_/]*to[\s\-_/]*1\b/g, "one to one")
-    .replace(/\b1[\s\-_/]*on[\s\-_/]*1\b/g, "one to one")
-    .replace(/\bdms?\b/g, "direct channel")
-    .replace(/\bdirect messages?\b/g, "direct channel")
-    .replace(/\bprivate messages?\b/g, "direct channel")
-    .replace(/\bdirect chats?\b/g, "direct channel")
-    .replace(/\bprivate chats?\b/g, "direct channel")
-    .replace(/\bcommunity chats?\b/g, "community channel")
-    .replace(/\bsingle chats?\b/g, "direct channel")
-    .replace(/[^a-z0-9\u4e00-\u9fff]+/gi, " ")
-    .trim();
-}
-
-function normalizeSnippet(text: string, maxLength = 220): string {
-  const compact = text.replace(/\s+/g, " ").trim();
-  if (compact.length <= maxLength) {
-    return compact;
-  }
-  return `${compact.slice(0, maxLength - 1)}…`;
-}
-
-function trimQuestionSegment(text: string): string {
-  return text
-    .trim()
-    .replace(/^[,;:，；：]+/u, "")
-    .replace(/[?？!！.。]+$/u, "")
-    .trim();
-}
-
-function splitQuestionIntoSegments(question: string): string[] {
-  const normalized = question
-    .replace(/([?？])/gu, "$1\n")
-    .replace(/\b(and then|then)\b/giu, "\n")
-    .replace(/((?:what(?:'s| is| are)?|define|explain)\b[^?\n]{0,200}?)(\bhow to\b)/iu, "$1\n$2")
-    .replace(/(是什么[^?\n]{0,200}?)(如何|怎么|创建)/gu, "$1\n$2");
-  const segments = normalized
-    .split(/\n+/)
-    .map((part) => trimQuestionSegment(part))
-    .filter(Boolean);
-  return segments.length > 0 ? segments : [trimQuestionSegment(question)].filter(Boolean);
-}
-
-function extractQuestionReferent(question: string): string | undefined {
-  const trimmed = trimQuestionSegment(question);
-  if (!trimmed) {
-    return undefined;
-  }
-
-  const normalized = normalizeSearchText(trimmed);
-  const prioritizedPhrases = [
-    "community channel",
-    "subchannel",
-    "group channel",
-    "direct channel",
-    "offline messages",
-    "webhook",
-    "push notification",
-  ];
-  const prioritized = prioritizedPhrases.find((phrase) => normalized.includes(phrase));
-  if (prioritized) {
-    return prioritized;
-  }
-
-  const stripped = trimmed
-    .replace(/^(?:what(?:'s| is| are)?|define|definition of|explain|about)\s+/iu, "")
-    .replace(/^(?:什么是|什么叫|请解释(?:一下)?|解释一下|介绍(?:一下)?|关于)\s*/u, "")
-    .replace(/^(?:a|an|the)\s+/iu, "")
-    .replace(/[?？!！.。]+$/u, "")
-    .trim();
-  return stripped || undefined;
-}
-
-function hasReferencePronoun(question: string): boolean {
-  return REFERENCE_PRONOUN_PATTERNS.some((pattern) =>
-    new RegExp(pattern.source, pattern.flags).test(question),
-  );
-}
-
-function rewriteQuestionWithReferent(question: string, referent: string): string {
-  let rewritten = question;
-  for (const pattern of REFERENCE_PRONOUN_PATTERNS) {
-    rewritten = rewritten.replace(pattern, referent);
-  }
-  return rewritten.replace(/\s+/g, " ").trim();
-}
-
-function inheritReferentsAcrossSegments(rawSteps: string[]): string[] {
-  const steps: string[] = [];
-  let lastConceptReferent: string | undefined;
-
-  for (const rawStep of rawSteps) {
-    const intent = detectQuestionIntentForSegment(rawStep);
-    let stepQuestion = rawStep;
-    if (intent === "concept") {
-      lastConceptReferent = extractQuestionReferent(rawStep) ?? lastConceptReferent;
-    } else if (lastConceptReferent && hasReferencePronoun(rawStep)) {
-      const normalizedReferent = normalizeSearchText(lastConceptReferent);
-      if (normalizedReferent && !normalizeSearchText(rawStep).includes(normalizedReferent)) {
-        stepQuestion = rewriteQuestionWithReferent(rawStep, lastConceptReferent);
-      }
-    }
-    steps.push(stepQuestion);
-  }
-
-  return steps;
-}
-
-function detectQuestionIntentForSegment(question: string): DocQuestionIntent {
-  const normalized = normalizeSearchText(question);
-  if (PROCEDURAL_QUERY_MARKERS.some((marker) => normalized.includes(marker))) {
-    return "procedural";
-  }
-  if (CONCEPT_QUERY_MARKERS.some((marker) => normalized.includes(marker))) {
-    return "concept";
-  }
-  if (normalized.split(" ").length <= 5 && !normalized.includes("sdk")) {
-    return "concept";
-  }
-  return "procedural";
-}
-
-export function planDocQuestion(question: string): DocQuestionPlan {
-  const rawSteps = inheritReferentsAcrossSegments(splitQuestionIntoSegments(question));
-  const steps = rawSteps.map((stepQuestion, index) => ({
-    question: stepQuestion,
-    intent: detectQuestionIntentForSegment(stepQuestion),
-    order: index,
-  }));
-  const uniqueIntents = new Set(steps.map((step) => step.intent));
-  return {
-    kind: uniqueIntents.size > 1 ? "mixed" : (steps[0]?.intent ?? "procedural"),
-    steps,
-  };
-}
-
-export function detectProceduralTaskKind(question: string): DocProceduralTaskKind {
-  const normalized = normalizeSearchText(question);
-  const mentionsChannel =
-    normalized.includes("channel") ||
-    normalized.includes("conversation") ||
-    normalized.includes("chat") ||
-    normalized.includes("community") ||
-    normalized.includes("subchannel");
-  const mentionsMessage =
-    normalized.includes("message") ||
-    normalized.includes("text") ||
-    normalized.includes("image") ||
-    normalized.includes("file") ||
-    normalized.includes("voice") ||
-    normalized.includes("media") ||
-    normalized.includes("targeted");
-
-  if (
-    normalized.includes("create") &&
-    (mentionsChannel || normalized.includes("group") || normalized.includes("community"))
-  ) {
-    return "channel_creation";
-  }
-  if (
-    normalized.includes("first message") ||
-    normalized.includes("my first message") ||
-    normalized.includes("your first message")
-  ) {
-    return "first_message";
-  }
-  if (normalized.includes("send") && mentionsMessage) {
-    return "send_message";
-  }
-  if (
-    normalized.includes("start") ||
-    normalized.includes("begin") ||
-    normalized.includes("open") ||
-    (normalized.includes("chat") && !normalized.includes("wechat"))
-  ) {
-    return "start_chat";
-  }
-  return "generic";
-}
-
-export function detectPreferredDocShape(question: string): DocPreferredDocShape {
-  const normalized = normalizeSearchText(question);
-  if (
-    normalized.includes("quickstart") ||
-    normalized.includes("getting started") ||
-    normalized.includes("get started") ||
-    normalized.includes("from scratch") ||
-    normalized.includes("tutorial")
-  ) {
-    return "quickstart_step";
-  }
-  return "specialized_task";
-}
-
-export function detectDocShape(
-  hit: Pick<DocSearchHit, "path" | "heading" | "text">,
-): DocSearchDocShape {
-  const normalizedPath = normalizeSearchText(hit.path);
-  const normalizedHeading = normalizeSearchText(hit.heading ?? "");
-  const normalizedBody = normalizeSearchText(hit.text.slice(0, 500));
-  const combined = `${normalizedPath} ${normalizedHeading}`.trim();
-  const quickstartPage =
-    normalizedPath.includes("quickstart") ||
-    normalizedPath.includes("getting started") ||
-    normalizedPath.includes("get started") ||
-    normalizedHeading.includes("quickstart") ||
-    normalizedHeading.includes("getting started") ||
-    normalizedHeading.includes("get started");
-  const stepHeading =
-    /\bstep\s+\d+\b/.test(normalizedHeading) ||
-    normalizedHeading.startsWith("step ") ||
-    normalizedHeading.includes("send your first message") ||
-    normalizedHeading.includes("send a message");
-  const specializedPath =
-    normalizedPath.includes("/message/send") ||
-    normalizedPath.includes("/connection/connect") ||
-    normalizedPath.includes("/community channels/creating channel") ||
-    normalizedPath.includes("/community-channels/creating-channel") ||
-    normalizedPath.includes("/group channels/") ||
-    normalizedPath.includes("/group-channels/") ||
-    normalizedPath.includes("/direct system channels/") ||
-    normalizedPath.includes("/direct-system-channels/");
-  const specializedHeading =
-    normalizedHeading.includes("send a text message") ||
-    normalizedHeading.includes("send a regular message") ||
-    normalizedHeading.includes("send an image message") ||
-    normalizedHeading.includes("send a file message") ||
-    normalizedHeading.includes("send a voice message") ||
-    normalizedHeading.includes("send a media message") ||
-    normalizedHeading.includes("send a targeted message") ||
-    normalizedHeading.includes("connect") ||
-    normalizedHeading.includes("create a group") ||
-    normalizedHeading.includes("creating community channels");
-
-  if (
-    combined.includes("overview") ||
-    combined.includes("/about") ||
-    normalizedHeading.includes("about ") ||
-    normalizedHeading.includes("glossary")
-  ) {
-    return "overview";
-  }
-  if (quickstartPage && (stepHeading || normalizedBody.includes("for details"))) {
-    return "quickstart_step";
-  }
-  if (specializedPath || specializedHeading) {
-    return "specialized_task";
-  }
-  return "generic_reference";
-}
 
 function detectQuerySignals(
   query: string,
@@ -523,6 +155,8 @@ function detectQuerySignals(
   normalizedTokens: string[];
   intents: QueryIntent[];
 } {
+  // Keep query analysis centralized so the later rankers can stay mostly pure:
+  // they only consume normalized signals instead of re-parsing raw text.
   const normalizedQuery = normalizeSearchText(query);
   const normalizedTokens = tokenize(normalizedQuery);
   return {
@@ -762,77 +396,6 @@ function detectQueryIntents(normalizedQuery: string, normalizedTokens: string[])
   }
 
   return Array.from(intents);
-}
-
-function detectDocTier(pathText: string): DocTier {
-  if (pathText.includes("/partials/")) {
-    return "partial";
-  }
-  return "primary";
-}
-
-function getTierWeight(tier: DocTier): number {
-  if (tier === "primary") {
-    return 3;
-  }
-  return 2;
-}
-
-function getBasenameStem(pathText: string): string {
-  const filename = pathText.split("/").at(-1) ?? pathText;
-  return normalizeSearchText(filename.replace(/\.(md|mdx)$/i, ""));
-}
-
-function getPathPlatforms(pathText: string): string[] {
-  return PLATFORM_TOKENS.filter((token) => pathText.includes(token));
-}
-
-function countMatchingPlatforms(pathPlatforms: string[], queryPlatforms: string[]): number {
-  if (queryPlatforms.length === 0) {
-    return 0;
-  }
-  const querySet = new Set(queryPlatforms);
-  let matches = 0;
-  for (const platform of pathPlatforms) {
-    if (querySet.has(platform)) {
-      matches += 1;
-    }
-  }
-  return matches;
-}
-
-function countTokenOverlap(left: string[], right: string[]): number {
-  const rightSet = new Set(right);
-  let overlap = 0;
-  for (const token of left) {
-    if (rightSet.has(token)) {
-      overlap += 1;
-    }
-  }
-  return overlap;
-}
-
-function countUniqueTokenOverlap(left: string[], right: string[]): number {
-  const leftSet = new Set(left);
-  const rightSet = new Set(right);
-  let overlap = 0;
-  for (const token of leftSet) {
-    if (rightSet.has(token)) {
-      overlap += 1;
-    }
-  }
-  return overlap;
-}
-
-function getStrongQueryTokens(tokens: string[]): string[] {
-  return tokens.filter((token) => token.length >= 4 && !GENERIC_QUERY_TOKENS.has(token));
-}
-
-function getCoverageCriticalQueryTokens(tokens: string[]): string[] {
-  return tokens.filter(
-    (token) =>
-      token.length >= 4 && !GENERIC_QUERY_TOKENS.has(token) && !COVERAGE_STOP_TOKENS.has(token),
-  );
 }
 
 function scoreBasenameSemantics(
@@ -2002,6 +1565,9 @@ function scoreMustCoverAnchorCoverage(
   const matchedAnchors = countMatchedMustCoverAnchors(normalizedText, rule.anyOf);
   const missingRequired = rule.required.length - matchedRequired;
 
+  // This rule family exists for cases where partial semantic overlap is
+  // misleading. If the query requires both "push notification" and a locale
+  // angle, penalize docs that match only the generic push side.
   if (matchedRequired === rule.required.length && matchedAnchors > 0) {
     return rule.positiveBoost + matchedAnchors * 18;
   }
@@ -2170,6 +1736,9 @@ function scoreBucketedEntries(params: {
     })
     .filter((entry) => entry.score > 0)
     .map((entry, _index, all) => {
+      // When multiple chunks share the same basename, prefer the stronger tier
+      // and better platform match instead of letting partials crowd out the
+      // primary page variant.
       const bestTierForBasename = all.reduce<DocTier>((best, candidate) => {
         if (candidate.basenameStem !== entry.basenameStem || candidate.score <= 0) {
           return best;
@@ -2205,6 +1774,9 @@ function scoreBucketedEntries(params: {
     0,
   );
   const bestScore = scored.reduce((best, entry) => Math.max(best, entry.score), 0);
+  // Bail out when we only found weak fuzzy matches and none of the stronger
+  // terms appear in the candidate set. This is what blocks infra questions
+  // from drifting into random SDK quickstarts.
   if (strongTokens.length > 0 && bestStrongOverlap === 0 && bestScore < 45) {
     return [];
   }
@@ -2412,6 +1984,8 @@ export async function searchDocs(params: {
     }),
   }));
 
+  // Keep the best hit from each step first so mixed questions preserve both
+  // the concept answer and the procedural answer instead of letting one bucket dominate.
   for (const entry of bucketHitsByStep) {
     const hit = entry.hits[0];
     if (!hit) {

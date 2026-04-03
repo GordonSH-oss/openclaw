@@ -83,6 +83,12 @@ node --import ../gateway-design/node_modules/tsx/dist/loader.mjs src/index.ts
 npm test
 ```
 
+## 排查指南
+
+如果你要复盘某一轮问答为什么答错，先看这份文档：
+
+- `learn/doc-assistant-design/QA_DEBUG_GUIDE.md`
+
 ## 部署文档
 
 这一节记录一套可手动执行的部署流程，适合当前这个 learning 包在内网测试机上运行。

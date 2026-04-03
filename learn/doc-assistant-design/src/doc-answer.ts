@@ -3,12 +3,7 @@ import { detectAnswerLanguage, type AnswerLanguage } from "./answer-language.js"
 import { buildAnswerPlan } from "./answer-plan.js";
 import { buildAgentPromptFromPlan } from "./answer-render.js";
 import type { ClarificationDecision } from "./clarification-policy.js";
-import {
-  detectDocShape,
-  planDocQuestion,
-  type DocQuestionPlan,
-  type DocSearchDocShape,
-} from "./doc-search.js";
+import { detectDocShape, type DocSearchDocShape } from "./doc-shape.js";
 import { buildEvidencePack, type EvidencePack } from "./evidence-pack.js";
 import { answerWithOpenAICompatible } from "./openai-compatible.js";
 import type {
@@ -23,6 +18,7 @@ import type {
   DocsTerminalResult,
   OpenAICompatibleConfig,
 } from "./protocol/index.js";
+import { planDocQuestion, type DocQuestionPlan } from "./question-planning.js";
 import {
   buildQuestionState,
   detectQuestionApiLayer,
@@ -1830,9 +1826,14 @@ function detectGuideAnswerKind(params: {
   sendHit?: AnalyzedHit;
 }): GuideAnswerKind {
   const normalizedQuestion = normalizeAnswerText(params.question);
+  if (isSendMessageQuestion(params.question)) {
+    return "send_message";
+  }
   if (
-    isSendMessageQuestion(params.question) ||
-    (params.sendHit && !isStartChatQuestion(params.question))
+    params.sendHit &&
+    !isStartChatQuestion(params.question) &&
+    !isChannelCreationQuestion(params.question) &&
+    !normalizedQuestion.includes("direct channel")
   ) {
     return "send_message";
   }
@@ -2496,6 +2497,11 @@ export async function buildDocAnswer(params: {
   openAICompatible?: OpenAICompatibleConfig;
   onDelta?: (data: { text: string; delta: string }) => void;
 }): Promise<DocAnswerResult> {
+  let emittedDelta = false;
+  const emitDelta = (data: { text: string; delta: string }) => {
+    emittedDelta = true;
+    params.onDelta?.(data);
+  };
   const evidenceHits: DocSearchHit[] =
     params.evidence?.groups.flatMap((group) =>
       group.citations.map((citation) => ({
@@ -2591,7 +2597,7 @@ export async function buildDocAnswer(params: {
   const prompt = buildAgentPrompt(params.question, grounded.answer, evidenceHits, renderedEvidence);
   const eagerDelta = grounded.answer.slice(0, Math.min(80, grounded.answer.length));
   if (eagerDelta) {
-    params.onDelta?.({
+    emitDelta({
       text: eagerDelta,
       delta: eagerDelta,
     });
@@ -2618,7 +2624,7 @@ export async function buildDocAnswer(params: {
       }
       const delta = visible.slice(lastVisible.length);
       lastVisible = visible;
-      params.onDelta?.({
+      emitDelta({
         text: visible,
         delta,
       });
@@ -2628,6 +2634,12 @@ export async function buildDocAnswer(params: {
   const acceptedAnswer = extractAcceptedAgentAnswer(terminal.reply);
   const surfaceNote = acceptedAnswer ? undefined : "rejected_prompt_scaffolding_output";
   const terminalAnswer = acceptedAnswer || lastVisible || grounded.answer;
+  if (terminalAnswer && !emittedDelta) {
+    emitDelta({
+      text: terminalAnswer,
+      delta: terminalAnswer,
+    });
+  }
   return {
     ...grounded,
     mode: "agent",

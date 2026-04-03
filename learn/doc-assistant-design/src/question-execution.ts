@@ -21,6 +21,7 @@ import {
   detectClarificationFollowUpQuestion,
   extractQuestionStatePatchFromFollowUp,
   getStoredClarificationContext,
+  isStoredClarificationFollowUpAllowed,
   mergeStoredStateWithFollowUp,
   selectPlatformHits,
   shouldReuseClarificationHits,
@@ -376,16 +377,64 @@ export async function executeDocQuestion(params: {
         clarificationFollowUp?.questionState ?? {},
       )
     : undefined;
+  const acceptedClarificationFollowUp = Boolean(
+    clarificationFollowUp &&
+    followUpMatch &&
+    isStoredClarificationFollowUpAllowed(clarificationFollowUp, followUpMatch),
+  );
   const effectiveState =
-    flags.questionState && clarificationFollowUp && followUpPatch && followUpBaseState
+    flags.questionState && acceptedClarificationFollowUp && followUpPatch && followUpBaseState
       ? mergeStoredStateWithFollowUp(followUpBaseState, followUpPatch)
       : initialState;
   const effectiveQuestion =
-    flags.questionState && clarificationFollowUp && followUpPatch && followUpBaseState
+    flags.questionState && acceptedClarificationFollowUp && followUpPatch && followUpBaseState
       ? rewriteQuestionFromState(effectiveState)
       : params.question;
   const continuedFromRunId = clarificationFollowUp?.runId;
-  const selectedPlatform = followUpPatch?.platform;
+  const selectedPlatform = acceptedClarificationFollowUp ? followUpPatch?.platform : undefined;
+
+  if (
+    clarificationFollowUp &&
+    followUpMatch &&
+    !acceptedClarificationFollowUp &&
+    followUpBaseQuestion &&
+    followUpBaseState
+  ) {
+    const clarification = maybeReturnClarification({
+      question: followUpBaseQuestion,
+      state: followUpBaseState,
+      mode: params.mode,
+      hits: clarificationFollowUp.hits,
+    });
+    if (clarification) {
+      const evidence = buildEvidencePack({
+        state: followUpBaseState,
+        hits: clarificationFollowUp.hits,
+      });
+      return {
+        route: "search",
+        hits: clarificationFollowUp.hits,
+        answer: {
+          ...clarification,
+          pendingClarificationQuestion: followUpBaseQuestion,
+          trace: {
+            ...baseTrace,
+            route: "search",
+            state: followUpBaseState,
+            clarification: {
+              kind: clarification.pendingClarificationKind,
+            },
+            evidence: {
+              groupCount: evidence.groups.length,
+              warnings: evidence.warnings,
+              trimEvents: evidence.trimEvents,
+            },
+            transitions: ["invalid_clarification_followup", "clarification_required"],
+          },
+        },
+      };
+    }
+  }
 
   if (
     clarificationFollowUp &&
@@ -421,7 +470,7 @@ export async function executeDocQuestion(params: {
             },
             transitions: ["clarification_reuse", "insufficient_evidence"],
           },
-          followUpSource: "clarification_reuse",
+          followUpSource: acceptedClarificationFollowUp ? "clarification_reuse" : undefined,
           continuedFromRunId,
           rewrittenQuestion: effectiveQuestion,
         },
@@ -455,7 +504,7 @@ export async function executeDocQuestion(params: {
             },
             transitions: ["clarification_reuse", "clarification_required"],
           },
-          followUpSource: "clarification_reuse",
+          followUpSource: acceptedClarificationFollowUp ? "clarification_reuse" : undefined,
           continuedFromRunId,
           rewrittenQuestion: effectiveQuestion,
         },
@@ -500,7 +549,7 @@ export async function executeDocQuestion(params: {
             ...((validated.trace?.transitions as string[] | undefined) ?? []).filter(Boolean),
           ],
         },
-        followUpSource: "clarification_reuse",
+        followUpSource: acceptedClarificationFollowUp ? "clarification_reuse" : undefined,
         continuedFromRunId,
         rewrittenQuestion: effectiveQuestion,
       },
@@ -670,7 +719,7 @@ export async function executeDocQuestion(params: {
             : undefined,
           transitions: ["insufficient_evidence"],
         },
-        followUpSource: clarificationFollowUp ? "clarification_rewrite" : undefined,
+        followUpSource: acceptedClarificationFollowUp ? "clarification_rewrite" : undefined,
         continuedFromRunId,
         rewrittenQuestion: clarificationFollowUp ? effectiveQuestion : undefined,
       },
@@ -713,7 +762,7 @@ export async function executeDocQuestion(params: {
             : undefined,
           transitions: ["clarification_required"],
         },
-        followUpSource: clarificationFollowUp ? "clarification_rewrite" : undefined,
+        followUpSource: acceptedClarificationFollowUp ? "clarification_rewrite" : undefined,
         continuedFromRunId,
         rewrittenQuestion: clarificationFollowUp ? effectiveQuestion : undefined,
       },
@@ -768,7 +817,7 @@ export async function executeDocQuestion(params: {
           ...((validated.trace?.transitions as string[] | undefined) ?? []).filter(Boolean),
         ],
       },
-      followUpSource: clarificationFollowUp ? "clarification_rewrite" : undefined,
+      followUpSource: acceptedClarificationFollowUp ? "clarification_rewrite" : undefined,
       continuedFromRunId,
       rewrittenQuestion: clarificationFollowUp ? effectiveQuestion : undefined,
     },

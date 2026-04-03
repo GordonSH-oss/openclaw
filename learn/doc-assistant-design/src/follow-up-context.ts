@@ -1,16 +1,15 @@
 import path from "node:path";
 import { isNonCacheableSummary } from "./answer-cache-policy.js";
 import type { ClarificationKind } from "./clarification-policy.js";
+import { detectDocShape, type DocSearchDocShape } from "./doc-shape.js";
+import { readJsonSafe, writeJsonAtomic } from "./persistence.js";
+import type { DocSearchHit } from "./protocol/index.js";
 import {
-  detectDocShape,
   detectPreferredDocShape,
   detectProceduralTaskKind,
   type DocPreferredDocShape,
   type DocProceduralTaskKind,
-  type DocSearchDocShape,
-} from "./doc-search.js";
-import { readJsonSafe, writeJsonAtomic } from "./persistence.js";
-import type { DocSearchHit } from "./protocol/index.js";
+} from "./question-planning.js";
 import {
   buildQuestionState,
   mergeQuestionState,
@@ -274,6 +273,22 @@ export function detectClarificationFollowUpQuestion(question: string): {
   return null;
 }
 
+export function isStoredClarificationFollowUpAllowed(
+  context: Pick<StoredClarificationContext, "clarificationKind" | "candidatePlatforms">,
+  followUp: NonNullable<ReturnType<typeof detectClarificationFollowUpQuestion>>,
+): boolean {
+  if (context.clarificationKind === "platform") {
+    return Boolean(followUp.platform && context.candidatePlatforms.includes(followUp.platform));
+  }
+  if (context.clarificationKind === "channel_kind") {
+    return Boolean(followUp.channelKind);
+  }
+  if (context.clarificationKind === "api_layer") {
+    return Boolean(followUp.apiLayer);
+  }
+  return false;
+}
+
 export function detectPlatformFromHit(hit: DocSearchHit): DocFollowUpPlatform | undefined {
   return (
     detectFollowUpPlatform(hit.path) ??
@@ -470,10 +485,12 @@ export async function updateClarificationStateAfterAnswer(params: {
     const pendingQuestion = params.pendingQuestion ?? params.question;
     const clarificationHits = params.clarificationHits ?? params.hits;
     const questionState = buildQuestionState(pendingQuestion);
+    const storedOriginalQuestion =
+      looksLikeFollowUp && pendingQuestion ? pendingQuestion : params.question;
     const entry: StoredClarificationContext = {
       sessionId: params.sessionId,
       runId: params.runId,
-      originalQuestion: params.question,
+      originalQuestion: storedOriginalQuestion,
       pendingQuestion,
       normalizedQuestion: normalizeClarificationQuestion(pendingQuestion),
       clarificationKind,
@@ -502,7 +519,7 @@ export async function updateClarificationStateAfterAnswer(params: {
     await persistClarificationContext({
       sessionId: params.sessionId,
       runId: params.runId,
-      originalQuestion: params.question,
+      originalQuestion: storedOriginalQuestion,
       pendingQuestion,
       clarificationKind,
       pendingState: params.pendingState,

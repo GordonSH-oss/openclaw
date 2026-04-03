@@ -136,6 +136,8 @@ const PROCEDURAL_FOCUS_STOP_TOKENS = new Set([
   "reload",
   "remove",
   "retrieve",
+  "setting",
+  "settings",
   "sdk",
   "send",
   "server",
@@ -162,6 +164,18 @@ function isConceptDefinitionQuestion(question: string): boolean {
     normalized.startsWith("什么是") ||
     normalized.startsWith("什么叫") ||
     normalized.startsWith("解释")
+  );
+}
+
+function isProceduralReferenceQuestion(question: string): boolean {
+  const normalized = normalizeAnswerabilityText(question);
+  return (
+    normalized.startsWith("where ") ||
+    normalized.startsWith("where does ") ||
+    normalized.startsWith("where do ") ||
+    normalized.startsWith("which ") ||
+    normalized.startsWith("which file ") ||
+    normalized.startsWith("which doc ")
   );
 }
 
@@ -331,6 +345,14 @@ export function decideAnswerability(params: {
   }
 
   if (state.intent !== "concept") {
+    // Location / reference lookups can be answered from a single descriptive sentence and do not
+    // need the same executable-procedure coverage that true how-to questions require.
+    if (isProceduralReferenceQuestion(params.question)) {
+      return {
+        verdict: "answerable",
+      };
+    }
+
     const proceduralActionTokens = extractProceduralActionTokens(params.question);
     const proceduralFocusTokens = extractProceduralFocusTokens(params.question);
     if (
