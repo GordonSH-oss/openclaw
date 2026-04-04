@@ -1,6 +1,9 @@
 import { detectProceduralTaskKind, planDocQuestion } from "./question-planning.js";
 import { normalizeSearchText } from "./search-text.js";
 
+// `QuestionState` is the normalized snapshot that follow-up rewriting, answerability checks,
+// retrieval planning, and answer generation all share. `question-execution.ts` is the primary
+// caller for `buildQuestionState()`, while follow-up helpers merge patches into the same shape.
 export type QuestionLanguage = "zh" | "en";
 export type QuestionIntent = "concept" | "procedural" | "mixed";
 export type QuestionPlatform = "android" | "ios" | "web" | "flutter";

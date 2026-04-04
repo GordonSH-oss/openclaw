@@ -27,6 +27,9 @@ import {
 } from "./question-state.js";
 import { resolveDocAssistantAgentScratchDataDir } from "./session-store.js";
 
+// This module turns retrieved `DocSearchHit[]` into a grounded answer. `question-execution.ts`
+// calls it after retrieval, clarification, and answerability checks, and the same grounded
+// result is reused when building the final agent prompt.
 export type DocAnswerResult = {
   mode: DocAssistantMode;
   answer: string;
@@ -293,6 +296,70 @@ function isChannelCreationQuestion(question: string): boolean {
       normalized.includes("community") ||
       normalized.includes("subchannel"))
   );
+}
+
+function isEndActionQuestion(question: string): boolean {
+  const normalized = normalizeAnswerText(question);
+  return (
+    normalized.includes("delete") ||
+    normalized.includes("remove") ||
+    normalized.includes("destroy") ||
+    normalized.includes("leave") ||
+    normalized.includes("exit")
+  );
+}
+
+function isOperationalEndActionHit(hit: AnalyzedHit): boolean {
+  const normalized = normalizeAnswerText([hit.heading ?? "", hit.text].join("\n"));
+  const hasOperationSignal =
+    normalized.includes("exitchannel") ||
+    normalized.includes("leave an open channel") ||
+    normalized.includes("leave the channel") ||
+    normalized.includes("channel delete") ||
+    normalized.includes("delete a single channel") ||
+    normalized.includes("delete multiple channels") ||
+    normalized.includes("remove a specific channel");
+  const hasReferenceNoise =
+    normalized.includes("event") ||
+    normalized.includes("handler") ||
+    normalized.includes("metadata") ||
+    normalized.includes("delegate") ||
+    normalized.includes("delegation");
+  return hasOperationSignal && !hasReferenceNoise;
+}
+
+function buildEndActionClarifyingNote(
+  question: string,
+  hits: AnalyzedHit[],
+  language: AnswerLanguage,
+): string | undefined {
+  // Retrieval can correctly land on "leave/exit" docs even when the user says "destroy". When
+  // that happens, keep the answer explicit that the client SDK is documenting an exit flow rather
+  // than silently pretending a destroy API exists.
+  const normalizedQuestion = normalizeAnswerText(question);
+  const asksForDestructiveAction =
+    normalizedQuestion.includes("destroy") ||
+    normalizedQuestion.includes("delete") ||
+    normalizedQuestion.includes("remove");
+  if (!asksForDestructiveAction) {
+    return undefined;
+  }
+
+  const leaveHit = hits.find((hit) => {
+    const normalized = normalizeAnswerText([hit.heading ?? "", hit.text].join("\n"));
+    return (
+      normalized.includes("leave an open channel") ||
+      normalized.includes("active leave") ||
+      normalized.includes("exitchannel")
+    );
+  });
+  if (!leaveHit) {
+    return undefined;
+  }
+
+  return language === "en"
+    ? `- The retrieved client-side docs describe leaving the open channel with \`exitChannel(...)\`; they do not document a client-side API that destroys the channel itself.${inlineCitation(leaveHit)}`
+    : `- 当前命中的客户端文档描述的是通过 \`exitChannel(...)\` 离开 open channel；它们没有给出客户端直接销毁该 channel 的 API。${inlineCitation(leaveHit)}`;
 }
 
 function wantsEndToEndSdkFlow(question: string): boolean {
@@ -1148,6 +1215,8 @@ function buildNoHitAnswer(question: string, language: AnswerLanguage): GroundedA
   };
 }
 
+// Called from `question-execution.ts` when `answerability.ts` or validation concludes that the
+// retrieved hits are too weak to support a grounded answer.
 export function buildInsufficientEvidenceAnswer(
   question: string,
   language: AnswerLanguage,
@@ -1381,6 +1450,12 @@ function buildStepLine(
   }
 
   if (hit.role === "send_first_message") {
+    if (options.answerKind === "channel_creation" && normalized.includes("directchannel")) {
+      return language === "en"
+        ? `Create \`${directChannel}("<target-user-id>")\` as the one-to-one conversation object for the target user.${inlineCitation(hit)}`
+        : `创建 \`${directChannel}("<target-user-id>")\` 作为与目标用户的一对一会话对象。${inlineCitation(hit)}`;
+    }
+
     if (normalized.includes("directeduserids")) {
       return language === "en"
         ? `Create \`${messageParams ?? sendParams}\`, set \`${targetedField}\` to the target members, then call \`${sendMethod}\` to send the targeted message.${inlineCitation(hit)}`
@@ -1783,6 +1858,7 @@ function buildGenericProcedureAnswer(params: {
   question: string;
   language: AnswerLanguage;
   effectiveHits: AnalyzedHit[];
+  noteLines?: string[];
 }): GroundedAnswerResult {
   const citations = dedupeCitations(params.effectiveHits.slice(0, 4));
   const citedHits = params.effectiveHits.filter((hit) =>
@@ -1806,6 +1882,9 @@ function buildGenericProcedureAnswer(params: {
           (hit, index) => `${index + 1}. ${buildGenericProcedureLine(hit, params.language)}`,
         ),
       ].join("\n"),
+      params.noteLines && params.noteLines.length > 0
+        ? [sectionLabel(params.language, "notes"), ...params.noteLines].join("\n")
+        : "",
       renderSourcesAppendix(citations),
     ]
       .filter(Boolean)
@@ -1830,6 +1909,13 @@ function detectGuideAnswerKind(params: {
     return "send_message";
   }
   if (
+    params.analysis.selectedChannelKind === "community" ||
+    params.analysis.selectedChannelKind === "group" ||
+    isChannelCreationQuestion(params.question)
+  ) {
+    return "channel_creation";
+  }
+  if (
     params.sendHit &&
     !isStartChatQuestion(params.question) &&
     !isChannelCreationQuestion(params.question) &&
@@ -1839,13 +1925,6 @@ function detectGuideAnswerKind(params: {
   }
   if (normalizedQuestion.includes("direct channel")) {
     return "start_chat";
-  }
-  if (
-    params.analysis.selectedChannelKind === "community" ||
-    params.analysis.selectedChannelKind === "group" ||
-    isChannelCreationQuestion(params.question)
-  ) {
-    return "channel_creation";
   }
   if (isStartChatQuestion(params.question) || params.channelHit) {
     return "start_chat";
@@ -1984,6 +2063,18 @@ function buildGuideAnswer(
       language,
       effectiveHits: workingHits.slice(0, 4),
     });
+  }
+  if (isEndActionQuestion(question)) {
+    const endActionHits = workingHits.filter((hit) => isOperationalEndActionHit(hit));
+    if (endActionHits.length > 0) {
+      const clarifyingNote = buildEndActionClarifyingNote(question, endActionHits, language);
+      return buildGenericProcedureAnswer({
+        question,
+        language,
+        effectiveHits: endActionHits.slice(0, 4),
+        noteLines: clarifyingNote ? [clarifyingNote] : undefined,
+      });
+    }
   }
 
   const normalizedQuestion = normalizeAnswerText(question);
@@ -2497,6 +2588,9 @@ export async function buildDocAnswer(params: {
   openAICompatible?: OpenAICompatibleConfig;
   onDelta?: (data: { text: string; delta: string }) => void;
 }): Promise<DocAnswerResult> {
+  // `question-execution.ts` passes raw retrieval hits here. We first synthesize a grounded local
+  // answer, then optionally rewrite it through the learning agent / OpenAI-compatible backend
+  // using the same evidence pack so the final surface stays traceable.
   let emittedDelta = false;
   const emitDelta = (data: { text: string; delta: string }) => {
     emittedDelta = true;

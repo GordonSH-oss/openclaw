@@ -38,6 +38,9 @@ import { findRetrievalMemoryMatch } from "./retrieval-memory.js";
 import { buildRetrievalPlan } from "./retrieval-plan.js";
 import { createDocAssistantTrace } from "./trace.js";
 
+// This is the top-level runtime entry for one doc-assistant turn. `methods/docs.ts` calls
+// `executeDocQuestion()`, and this file coordinates follow-up handling, retrieval, answerability,
+// grounded answer generation, optional agent rewrite, and trace persistence.
 function filterHitsForResolvedState(hits: DocSearchHit[], state: QuestionState): DocSearchHit[] {
   if (!state.platform) {
     return hits;

@@ -36,6 +36,9 @@ import {
   normalizeSnippet,
 } from "./search-text.js";
 
+// Retrieval lives here. `question-execution.ts` calls `searchDocs()` / `searchDocsForPurpose()`
+// after it decides the current turn should hit the local doc index, and tests in
+// `doc-search.test.ts` pin the ranking behavior when heuristics change.
 type MustCoverAnchorRule = {
   required: string[];
   anyOf: string[];
@@ -378,7 +381,17 @@ function detectQueryIntents(normalizedQuery: string, normalizedTokens: string[])
   if (hasToken("receive") || hasToken("incoming")) {
     intents.add("receive");
   }
-  if (hasToken("end") || hasToken("hang up") || hasToken("hangup") || hasToken("reject")) {
+  if (
+    hasToken("end") ||
+    hasToken("hang up") ||
+    hasToken("hangup") ||
+    hasToken("reject") ||
+    hasToken("delete") ||
+    hasToken("remove") ||
+    hasToken("destroy") ||
+    hasToken("leave") ||
+    hasToken("exit")
+  ) {
     intents.add("end");
   }
   if (hasToken("upgrade") || hasToken("invite") || hasToken("invitation")) {
@@ -512,7 +525,7 @@ function scoreHeadingIntent(
   boost("install", ["install"], 16, 5);
   boost("initialize", ["initialize", "initialization"], 16, 5);
   boost("receive", ["receive", "incoming"], 12, 4);
-  boost("end", ["end", "reject", "hang up"], 12, 4);
+  boost("end", ["end", "reject", "hang up", "delete", "remove", "destroy", "leave", "exit"], 12, 4);
   boost("upgrade", ["upgrade", "invite", "group call", "invitation"], 18, 6);
   boost("release", ["release", "added"], 18, 6);
 
@@ -531,6 +544,9 @@ function scoreHeadingIntent(
   }
   if (signals.intents.includes("upgrade") && normalizedHeading.includes("one to one call")) {
     score -= 10;
+  }
+  if (signals.intents.includes("end") && normalizedHeading.includes("join")) {
+    score -= 14;
   }
   if (signals.intents.includes("release") && normalizedHeading.includes("step")) {
     score -= 8;
@@ -691,6 +707,14 @@ function scorePathSemantics(
   }
   if (signals.intents.includes("release") && normalizedPath.includes("release notes")) {
     score += 24;
+  }
+  if (signals.intents.includes("end")) {
+    if (normalizedPath.includes("leaving-channel") || normalizedPath.includes("leave")) {
+      score += 34;
+    }
+    if (normalizedPath.includes("joining-channel") || normalizedPath.includes("join")) {
+      score -= 30;
+    }
   }
   if (
     (signals.intents.includes("install") || signals.intents.includes("initialize")) &&
@@ -1295,12 +1319,24 @@ function scoreChannelCreationSemantics(
   const wantsDirect = generic || explicitKinds.has("direct");
   const wantsGroup = explicitKinds.has("group");
   const wantsCommunity = explicitKinds.has("community");
+  const wantsExplicitDirect = explicitKinds.has("direct");
 
   let score = 0;
 
   if (wantsDirect) {
     if (normalizedPath.includes("direct system channels")) {
       score += generic ? 34 : 48;
+    }
+    if (
+      normalizedPath.includes("direct-system-channels/overview") ||
+      normalizedHeading.includes("create or get a channel instance") ||
+      normalizedHeading.includes("create a channel instance") ||
+      normalizedBody.includes("create or get a channel instance") ||
+      normalizedBody.includes("create a channel instance") ||
+      normalizedBody.includes("construct a channel instance") ||
+      normalizedBody.includes("sdk creates and maintains the channel relationship")
+    ) {
+      score += wantsExplicitDirect ? 52 : 30;
     }
     if (
       normalizedHeading.includes("retrieving channels") ||
@@ -1310,6 +1346,22 @@ function scoreChannelCreationSemantics(
       normalizedBody.includes("direct channel")
     ) {
       score += generic ? 18 : 28;
+    }
+    if (
+      normalizedPath.includes("deleting-channel") ||
+      normalizedPath.includes("pinning-channel") ||
+      normalizedPath.includes("tagging-channels") ||
+      normalizedHeading.includes("delete") ||
+      normalizedHeading.includes("pin") ||
+      normalizedHeading.includes("unpin") ||
+      normalizedHeading.includes("tag") ||
+      normalizedHeading.includes("retrieving channels") ||
+      normalizedHeading.includes("get channel list") ||
+      normalizedBody.includes("channel delete") ||
+      normalizedBody.includes("deletechannels") ||
+      normalizedBody.includes("reload")
+    ) {
+      score -= wantsExplicitDirect ? 42 : 18;
     }
   }
 
@@ -1404,6 +1456,96 @@ function scoreChannelCreationSemantics(
     normalizedHeading.includes("retrieving channels")
   ) {
     score += 12;
+  }
+
+  return score;
+}
+
+function scoreEndActionSemantics(
+  pathText: string,
+  headingText: string,
+  bodyText: string,
+  signals: ReturnType<typeof detectQuerySignals>,
+): number {
+  if (!(signals.intents.includes("end") && signals.channelKinds.includes("open"))) {
+    return 0;
+  }
+
+  const normalizedPath = normalizeSearchText(pathText);
+  const normalizedHeading = normalizeSearchText(headingText);
+  const normalizedBody = normalizeSearchText(bodyText.slice(0, 900));
+  const asksForDestructiveEndAction =
+    signals.normalizedQuery.includes("destroy") ||
+    signals.normalizedQuery.includes("delete") ||
+    signals.normalizedQuery.includes("remove");
+  let score = 0;
+
+  // Open-channel end questions should prefer the executable leave flow, not the surrounding
+  // event, console, or metadata reference pages that incidentally mention destroy/exit terms.
+  if (normalizedPath.includes("open channels")) {
+    score += 8;
+  }
+  if (normalizedPath.includes("leaving channel")) {
+    score += 60;
+  }
+  if (
+    normalizedHeading.includes("leave an open channel") ||
+    normalizedHeading.includes("active leave")
+  ) {
+    score += 56;
+  }
+  if (normalizedBody.includes("exitchannel") || normalizedBody.includes("exit channel")) {
+    score += 64;
+  }
+  if (normalizedBody.includes("left the channel")) {
+    score += 18;
+  }
+
+  if (normalizedHeading.includes("passive removal") || normalizedBody.includes("auto removal")) {
+    score -= 34;
+  }
+  if (
+    normalizedPath.includes("joining channel") ||
+    normalizedHeading.includes("join an open channel") ||
+    normalizedBody.includes("enterchannel")
+  ) {
+    score -= 40;
+  }
+  if (
+    normalizedPath.includes("event delegation") ||
+    normalizedHeading.includes("event") ||
+    normalizedBody.includes("handler") ||
+    normalizedBody.includes("callback")
+  ) {
+    score -= 44;
+  }
+  if (
+    normalizedPath.includes("platform config") ||
+    normalizedHeading.includes("feature configuration") ||
+    normalizedBody.includes("console")
+  ) {
+    score -= 38;
+  }
+  if (
+    normalizedPath.includes("managing metadata") ||
+    normalizedHeading.includes("metadata") ||
+    normalizedBody.includes("delete metadata") ||
+    normalizedBody.includes("deletemetadata")
+  ) {
+    score -= 52;
+  }
+
+  if (asksForDestructiveEndAction) {
+    if (normalizedHeading.includes("active leave") || normalizedBody.includes("exitchannel")) {
+      score += 24;
+    }
+    if (
+      normalizedHeading.includes("open channel events") ||
+      normalizedBody.includes("destroyed") ||
+      normalizedBody.includes("openchanneldestroyedevent")
+    ) {
+      score -= 20;
+    }
   }
 
   return score;
@@ -1602,6 +1744,7 @@ function scoreProceduralChunk(
   score += scoreClientConnectionSemantics(pathText, headingText, bodyText, signals);
   score += scoreWebhookSemantics(pathText, headingText, bodyText, signals);
   score += scoreChannelCreationSemantics(pathText, headingText, bodyText, signals);
+  score += scoreEndActionSemantics(pathText, headingText, bodyText, signals);
   score += scoreDocShapeSemantics({
     chunk,
     signals,
@@ -1938,6 +2081,8 @@ export function searchDocsForPurpose(params: {
   });
 }
 
+// Main retrieval entry used by `question-execution.ts`. It expands mixed questions into per-step
+// searches, then merges the best concept/procedural hits back into a single ranked result list.
 export async function searchDocs(params: {
   query: string;
   docsRoot?: string;

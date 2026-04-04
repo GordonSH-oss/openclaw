@@ -218,6 +218,128 @@ async function createWebDirectChannelSendOnlyDocs(): Promise<string> {
   return docsRoot;
 }
 
+async function createIOSDirectChannelCreationDocs(): Promise<string> {
+  const docsRoot = await makeTempDir("doc-assistant-ios-direct-channel-creation");
+  await fs.mkdir(path.join(docsRoot, "docs", "chatsdk-ios", "direct-system-channels"), {
+    recursive: true,
+  });
+  await fs.writeFile(
+    path.join(docsRoot, "docs", "chatsdk-ios", "direct-system-channels", "overview.md"),
+    [
+      "# Channel overview",
+      "",
+      "## Create or get a channel instance",
+      "",
+      'Create `DirectChannel(channelId: "userId")` as the iOS direct channel instance.',
+      "",
+    ].join("\n"),
+    "utf-8",
+  );
+  await fs.writeFile(
+    path.join(docsRoot, "docs", "chatsdk-ios", "direct-system-channels", "deleting-channel.md"),
+    [
+      "# Delete a single channel",
+      "",
+      'Call `channel.delete()` after creating `DirectChannel(channelId: "userId")`.',
+      "",
+    ].join("\n"),
+    "utf-8",
+  );
+  await fs.writeFile(
+    path.join(docsRoot, "docs", "chatsdk-ios", "direct-system-channels", "pinning-channel.md"),
+    [
+      "# Pin a channel",
+      "",
+      'Call `channel.pin()` on `DirectChannel(channelId: "userId")`.',
+      "",
+    ].join("\n"),
+    "utf-8",
+  );
+  return docsRoot;
+}
+
+async function createIOSOpenChannelDestroyDocs(): Promise<string> {
+  const docsRoot = await makeTempDir("doc-assistant-ios-open-channel-destroy");
+  await fs.mkdir(path.join(docsRoot, "docs", "chatsdk-ios", "open-channels"), {
+    recursive: true,
+  });
+  await fs.mkdir(path.join(docsRoot, "docs", "chatsdk-ios", "event-delegation"), {
+    recursive: true,
+  });
+  await fs.writeFile(
+    path.join(docsRoot, "docs", "chatsdk-ios", "open-channels", "joining-channel.md"),
+    [
+      "# Join an open channel",
+      "",
+      'Create `OpenChannel(channelId: "channelId")`, then call `enterChannel(...)`.',
+      "",
+    ].join("\n"),
+    "utf-8",
+  );
+  await fs.writeFile(
+    path.join(docsRoot, "docs", "chatsdk-ios", "open-channels", "leaving-channel.md"),
+    [
+      "# Leave an open channel",
+      "",
+      "Participants can leave an open channel in two ways:",
+      "",
+      "- Passive removal: the server removes offline participants automatically.",
+      "- Active leave: the participant explicitly exits via the SDK.",
+      "",
+      "## Passive removal",
+      "",
+      "Open channels use an auto-removal mechanism for offline participants.",
+      "",
+      "## Active leave",
+      "",
+      'Create `OpenChannel(channelId: "channelId")`, then call `exitChannel(...)` to leave it.',
+      "",
+    ].join("\n"),
+    "utf-8",
+  );
+  await fs.writeFile(
+    path.join(docsRoot, "docs", "chatsdk-ios", "open-channels", "platform-config.md"),
+    [
+      "# Open channel service configuration",
+      "",
+      "## Feature configuration",
+      "",
+      "Subscribe to webhook events when channels are created, destroyed, or when participants join or leave.",
+      "",
+    ].join("\n"),
+    "utf-8",
+  );
+  await fs.writeFile(
+    path.join(docsRoot, "docs", "chatsdk-ios", "open-channels", "managing-metadata.md"),
+    [
+      "# Manage open channel metadata",
+      "",
+      "## Delete metadata",
+      "",
+      "Use `OpenChannelDeleteMetadataParams` to remove one or more metadata keys from the open channel.",
+      "",
+    ].join("\n"),
+    "utf-8",
+  );
+  await fs.writeFile(
+    path.join(docsRoot, "docs", "chatsdk-ios", "event-delegation", "open-channel-delegation.md"),
+    [
+      "# Open channel events",
+      "",
+      "Use `OpenChannelHandler` to receive lifecycle and metadata events from open channels.",
+      "",
+      "## Enter and exit events",
+      "",
+      "Adopt `NCOpenChannelHandler` to observe open channel enter and exit events.",
+      "",
+      "When the channel is destroyed, `onChannelDestroyed(...)` fires.",
+      "",
+    ].join("\n"),
+    "utf-8",
+  );
+  return docsRoot;
+}
+
 void test("executeDocQuestion asks for api layer clarification before answering generic connect questions", async () => {
   const docsRoot = await createConnectClarificationDocs();
   const result = await executeDocQuestion({
@@ -435,5 +557,40 @@ void test("direct-channel creation on Web does not collapse into a send-message 
   assert.equal(result.answer.summary.includes("send"), false);
   assert.equal(result.answer.answer.includes("start a direct chat on Web"), true);
   assert.equal(result.answer.answer.includes("send a message on Web"), false);
+  assert.equal(result.answer.answer.includes("send the first message"), false);
   assert.equal(result.answer.answer.includes("DirectChannel"), true);
+});
+
+void test("direct-channel creation on iOS prefers channel creation docs over delete or pin docs", async () => {
+  const docsRoot = await createIOSDirectChannelCreationDocs();
+  const result = await executeDocQuestion({
+    runId: "ios-direct-channel-creation-1",
+    question: "How to create a direct channel on iOS?",
+    mode: "extractive",
+    docsRoot,
+    maxResults: 5,
+  });
+
+  assert.equal(result.answer.summary.includes("insufficient"), false);
+  assert.equal(result.answer.answer.includes("Create `DirectChannel"), true);
+  assert.equal(result.answer.answer.includes("delete"), false);
+  assert.equal(result.answer.answer.includes("pin"), false);
+});
+
+void test("destroy-open-channel questions do not drift into join steps when only leave docs match", async () => {
+  const docsRoot = await createIOSOpenChannelDestroyDocs();
+  const result = await executeDocQuestion({
+    runId: "ios-open-channel-destroy-1",
+    question: "How to destroy an open channel on iOS?",
+    mode: "extractive",
+    docsRoot,
+    maxResults: 5,
+  });
+
+  assert.equal(result.answer.summary.includes("insufficient"), false);
+  assert.equal(result.answer.answer.toLowerCase().includes("join an open channel"), false);
+  assert.equal(result.answer.answer.includes("exitChannel"), true);
+  assert.equal(result.answer.answer.includes("destroys the channel itself"), true);
+  assert.equal(result.answer.answer.includes("OpenChannelDeleteMetadataParams"), false);
+  assert.equal(result.answer.answer.includes("NCOpenChannelHandler"), false);
 });

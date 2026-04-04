@@ -1,6 +1,9 @@
 import type { DocSearchHit } from "./protocol/index.js";
 import { buildQuestionState, type QuestionState } from "./question-state.js";
 
+// `question-execution.ts` calls this gate after retrieval and before answer generation. The job
+// here is not ranking; it decides whether the retrieved evidence is specific enough to answer
+// safely, or whether the run should downgrade to an insufficient-evidence response.
 type AnswerabilityVerdict = "answerable" | "insufficient_evidence";
 
 export type AnswerabilityDecision = {
@@ -152,6 +155,8 @@ const PROCEDURAL_FOCUS_STOP_TOKENS = new Set([
   "webhook",
 ]);
 
+const HIGH_RISK_PROCEDURAL_ACTION_TOKENS = new Set(["create", "delete", "destroy", "remove"]);
+
 function isConceptDefinitionQuestion(question: string): boolean {
   const normalized = normalizeAnswerabilityText(question);
   return (
@@ -227,6 +232,70 @@ function hitCoversProceduralFocus(params: {
       ),
     )
   );
+}
+
+function hitCoversHighRiskProceduralAction(params: {
+  hit: DocSearchHit;
+  actionTokens: string[];
+  state?: QuestionState;
+}): boolean {
+  const normalizedHit = normalizeAnswerabilityText(
+    [params.hit.path, params.hit.heading ?? "", params.hit.snippet, params.hit.text].join("\n"),
+  );
+  const openChannelEndActionRequested =
+    params.state?.channelKind === "open" &&
+    params.actionTokens.some(
+      (token) => token === "destroy" || token === "delete" || token === "remove",
+    );
+  // "Destroy/delete/remove an open channel" is a high-risk phrasing because adjacent docs often
+  // mention metadata deletion or destroy events. Only treat the evidence as sufficient when it
+  // actually shows the executable leave flow on the open-channel object.
+  const hasOpenChannelLeaveCoverage =
+    (normalizedHit.includes("leave an open channel") ||
+      normalizedHit.includes("active leave") ||
+      normalizedHit.includes("exitchannel") ||
+      normalizedHit.includes("exit channel")) &&
+    !normalizedHit.includes("metadata") &&
+    !normalizedHit.includes("event") &&
+    !normalizedHit.includes("handler") &&
+    !normalizedHit.includes("delegation") &&
+    !normalizedHit.includes("feature configuration") &&
+    !normalizedHit.includes("console");
+
+  return params.actionTokens.some((token) => {
+    if (
+      openChannelEndActionRequested &&
+      (token === "destroy" || token === "delete" || token === "remove")
+    ) {
+      return hasOpenChannelLeaveCoverage;
+    }
+
+    if (hasNormalizedAnchor(normalizedHit, token)) {
+      return true;
+    }
+
+    if (token === "create") {
+      return (
+        normalizedHit.includes("create or get a channel instance") ||
+        normalizedHit.includes("create a channel instance") ||
+        normalizedHit.includes("construct a channel instance") ||
+        normalizedHit.includes("sdk creates and maintains the channel relationship") ||
+        (normalizedHit.includes("directchannel") &&
+          normalizedHit.includes("sendtextmessageparams")) ||
+        (normalizedHit.includes("directchannel") && normalizedHit.includes("sendmessage")) ||
+        (normalizedHit.includes("openchannel") && normalizedHit.includes("enterchannel")) ||
+        (normalizedHit.includes("groupchannel") && normalizedHit.includes("creategroup"))
+      );
+    }
+
+    if (token === "destroy") {
+      return (
+        hasNormalizedAnchor(normalizedHit, "delete") || hasNormalizedAnchor(normalizedHit, "remove")
+      );
+    }
+
+    return false;
+  });
 }
 
 function normalizeAnswerabilityText(text: string): string {
@@ -355,6 +424,29 @@ export function decideAnswerability(params: {
 
     const proceduralActionTokens = extractProceduralActionTokens(params.question);
     const proceduralFocusTokens = extractProceduralFocusTokens(params.question);
+    const resolvedPlatformActionTokens = proceduralActionTokens.filter((token) =>
+      HIGH_RISK_PROCEDURAL_ACTION_TOKENS.has(token),
+    );
+
+    if (
+      !state.ambiguity.missingPlatform &&
+      resolvedPlatformActionTokens.length > 0 &&
+      !authoritativeHits.some((hit) =>
+        hitCoversHighRiskProceduralAction({
+          hit,
+          actionTokens: resolvedPlatformActionTokens,
+          state,
+        }),
+      )
+    ) {
+      return {
+        verdict: "insufficient_evidence",
+        reason: "retrieved evidence does not cover the requested action directly",
+        requiredAnchors: resolvedPlatformActionTokens,
+        matchedAnchors: [],
+      };
+    }
+
     if (
       proceduralActionTokens.length > 0 &&
       proceduralFocusTokens.length > 0 &&
