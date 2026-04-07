@@ -55,3 +55,37 @@ void test("decideClarification asks for api layer on generic connect questions",
   assert.equal(decision.shouldClarify, true);
   assert.equal(decision.kind, "api_layer");
 });
+
+void test("decideClarification asks for product on generic integration questions", () => {
+  const decision = decideClarification({
+    state: buildQuestionState("How to integrate?"),
+    hits: [
+      makeHit("docs/chatsdk-web/getting-started.md", "Integrate Chat SDK", "web chat sdk"),
+      makeHit("docs/callsdk-web/quickstart.md", "Integrate Call SDK", "web call sdk"),
+    ],
+  });
+
+  assert.equal(decision.shouldClarify, true);
+  assert.equal(decision.kind, "product");
+});
+
+void test("decideClarification asks for task focus on broad server integration questions", () => {
+  const decision = decideClarification({
+    state: buildQuestionState("How to integrate using Server API?"),
+    hits: [
+      makeHit(
+        "docs/platform-chat-api/chat-server-api-list.md",
+        "Default behaviors",
+        "The Platform Chat API lets your app server send messages and manage user state.",
+      ),
+      makeHit(
+        "docs/platform-chat-api/chat-server-api-list.md",
+        "User blocklist",
+        "Add to blocklist and remove from blocklist with Server API endpoints.",
+      ),
+    ],
+  });
+
+  assert.equal(decision.shouldClarify, true);
+  assert.equal(decision.kind, "task_focus");
+});

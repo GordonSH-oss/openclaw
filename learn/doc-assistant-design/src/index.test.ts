@@ -618,6 +618,64 @@ async function createWebhookFixtureDocs(): Promise<string> {
   return docsRoot;
 }
 
+async function createWebRecallFixtureDocs(): Promise<string> {
+  const docsRoot = await makeTempDir("doc-assistant-web-recall-docs");
+  const docsDir = path.join(docsRoot, "docs");
+  await fs.mkdir(path.join(docsDir, "chatsdk-web", "community-channel"), { recursive: true });
+  await fs.mkdir(path.join(docsDir, "chatsdk-web", "message"), { recursive: true });
+
+  await fs.writeFile(
+    path.join(docsDir, "chatsdk-web", "community-channel", "recall-message.md"),
+    [
+      "# Recall a community message",
+      "",
+      "## Delete a message",
+      "",
+      "Use `channel.deleteMessageForAll(message)`, passing the `Message` object.",
+      "",
+      "Call `BaseChannel.createMessagesQuery(...)`, load the target message, and then recall it with `deleteMessageForAll`.",
+      "",
+      "## Handle deletion notifications",
+      "",
+      "Register `NCEngine.addMessageHandler(...)` with a `MessageHandler` and handle `onMessageDeleted` to update the UI after recall.",
+      "",
+      "Only the sender can delete their own messages unless the server grants additional permissions.",
+      "",
+    ].join("\n"),
+    "utf-8",
+  );
+  await fs.writeFile(
+    path.join(docsDir, "chatsdk-web", "message", "recall.md"),
+    [
+      "# Recall a direct message",
+      "",
+      "## Delete a message",
+      "",
+      'Create a `DirectChannel("<target-user-id>")`, retrieve the target `Message`, and call `channel.deleteMessageForAll(message)`.',
+      "",
+      "## Handle deletion notifications",
+      "",
+      "Use `NCEngine.addMessageHandler(...)` and `onMessageDeleted` to refresh the message list after recall.",
+      "",
+    ].join("\n"),
+    "utf-8",
+  );
+  await fs.writeFile(
+    path.join(docsDir, "chatsdk-web", "message", "manage-offline-message-duration.mdx"),
+    [
+      "# Offline messages",
+      "",
+      "## App-level offline message settings",
+      "",
+      "Go to the Nexconn Console to update the offline message retention period.",
+      "",
+    ].join("\n"),
+    "utf-8",
+  );
+
+  return docsRoot;
+}
+
 function makeMemoryEntry(params: {
   question: string;
   answer: string;
@@ -1624,6 +1682,93 @@ void test("buildDocAnswer renders explicit-platform send-message questions as se
   assert.equal(result.answer.includes("Steps"), true);
 });
 
+void test("buildDocAnswer renders Web recall questions as recall guides", async () => {
+  const docsRoot = await createWebRecallFixtureDocs();
+  const hits = await searchDocs({
+    query: "How to recall a message in web?",
+    docsRoot,
+    maxResults: 6,
+  });
+
+  const result = await buildDocAnswer({
+    runId: "recall-web-1",
+    question: "How to recall a message in web?",
+    mode: "extractive",
+    hits,
+  });
+
+  assert.equal(result.summary.startsWith("guided answer from "), true);
+  assert.equal(result.answer.includes("Steps"), true);
+  assert.equal(result.answer.includes('Create `DirectChannel("<target-user-id>")`'), true);
+  assert.equal(result.answer.includes("deleteMessageForAll"), true);
+  assert.equal(result.answer.includes("onMessageDeleted"), true);
+  assert.equal(result.answer.includes("community subchannel"), false);
+  assert.equal(
+    result.citations.some((citation) =>
+      citation.path.endsWith("docs/chatsdk-web/message/recall.md"),
+    ),
+    true,
+  );
+  assert.equal(
+    result.citations.some((citation) =>
+      citation.path.endsWith("docs/chatsdk-web/community-channel/recall-message.md"),
+    ),
+    false,
+  );
+  assert.equal(result.answer.includes("Offline"), false);
+  assert.equal(result.answer.includes("offline message retention"), false);
+});
+
+void test("agent mode keeps grounded Web recall steps when the mock backend echoes the prompt", async () => {
+  const docsRoot = await createWebRecallFixtureDocs();
+  const hits = await searchDocs({
+    query: "How to recall a message in web?",
+    docsRoot,
+    maxResults: 6,
+  });
+
+  const result = await buildDocAnswer({
+    runId: "recall-web-agent-1",
+    question: "How to recall a message in web?",
+    mode: "agent",
+    hits,
+    provider: "mock",
+    model: "learning-primary",
+  });
+
+  assert.equal(result.answer.includes("Steps"), true);
+  assert.equal(result.answer.includes('Create `DirectChannel("<target-user-id>")`'), true);
+  assert.equal(result.answer.includes("deleteMessageForAll"), true);
+  assert.equal(result.answer.includes("onMessageDeleted"), true);
+  assert.equal(result.answer.includes("community subchannel"), false);
+  assert.equal(result.answer.includes("FINAL_ANSWER_START"), false);
+  assert.equal(result.answer.includes("你刚才说的是"), false);
+  assert.equal(result.answerSurface?.trust, "non_authoritative");
+});
+
+void test("buildDocAnswer keeps community recall docs when the question explicitly asks for community channel recall", async () => {
+  const docsRoot = await createWebRecallFixtureDocs();
+  const hits = await searchDocs({
+    query: "How to recall a message in web community channel?",
+    docsRoot,
+    maxResults: 6,
+  });
+
+  const result = await buildDocAnswer({
+    runId: "recall-web-community-1",
+    question: "How to recall a message in web community channel?",
+    mode: "extractive",
+    hits,
+  });
+
+  assert.equal(
+    result.citations.some((citation) =>
+      citation.path.endsWith("docs/chatsdk-web/community-channel/recall-message.md"),
+    ),
+    true,
+  );
+});
+
 void test("buildDocAnswer keeps image-message answers subtype-specific", async () => {
   const docsRoot = await createSendMessageFixtureDocs();
   const hits = await searchDocs({
@@ -2145,6 +2290,12 @@ void test("clarification follow-up detection only intercepts short platform-only
   assert.deepEqual(detectClarificationFollowUpQuestion("那 Android 呢"), { platform: "android" });
   assert.deepEqual(detectClarificationFollowUpQuestion("iOS 的"), { platform: "ios" });
   assert.deepEqual(detectClarificationFollowUpQuestion("web 版本"), { platform: "web" });
+  assert.deepEqual(detectClarificationFollowUpQuestion("Chat"), { product: "chat" });
+  assert.deepEqual(detectClarificationFollowUpQuestion("Call SDK"), { product: "call" });
+  assert.deepEqual(detectClarificationFollowUpQuestion("Server"), {
+    apiLayer: "server",
+    product: "server",
+  });
   assert.equal(detectClarificationFollowUpQuestion("Android 怎么初始化 Chat SDK？"), null);
   assert.equal(detectClarificationFollowUpQuestion("你好，Android 怎么初始化 Chat SDK？"), null);
   assert.equal(rewriteClarificationQuestion("How to chat?", "android"), "How to chat on Android?");
@@ -2161,7 +2312,6 @@ void test("clarification reuse heuristic only reuses when the prior retrieval ha
     shouldReuseClarificationHits(
       {
         hits: reuseHits,
-        taskKind: "start_chat",
         preferredDocShape: "quickstart_step",
         originalTopHitShapes: reuseHits
           .slice(0, 3)
@@ -2182,7 +2332,6 @@ void test("clarification reuse heuristic only reuses when the prior retrieval ha
     shouldReuseClarificationHits(
       {
         hits: rewriteHits,
-        taskKind: "start_chat",
         preferredDocShape: "specialized_task",
         originalTopHitShapes: rewriteHits
           .slice(0, 3)
@@ -2358,12 +2507,20 @@ void test("docs.ask in extractive mode accepts immediately, completes, and persi
       question: string;
       answered: boolean;
       answerOutcome: string;
+      taskFrame?: {
+        responseMode?: string;
+        anchors?: {
+          focus?: string[];
+        };
+      };
     }>;
   }>(await client.request("docs.history.list"));
   assert.equal(history.total, 1);
   assert.equal(history.entries[0]?.userId, user.userId);
   assert.equal(history.entries[0]?.answered, true);
   assert.equal(history.entries[0]?.answerOutcome, "answered");
+  assert.equal(history.entries[0]?.taskFrame?.responseMode, "procedure");
+  assert.equal(history.entries[0]?.taskFrame?.anchors?.focus?.includes("node"), true);
 });
 
 void test("docs.ask continues a clarification with an Android follow-up by reusing prior retrieval", async (t) => {
@@ -2879,6 +3036,21 @@ void test("docs.ask in agent mode emits delta and returns selected model metadat
   assert.equal(terminal.answer.includes("FINAL_ANSWER_START"), false);
   assert.equal(terminal.answer.includes("Retrieved documentation:"), false);
   assert.equal(terminal.citations.length > 0, true);
+
+  const history = responseResult<{
+    total: number;
+    entries: Array<{
+      answered: boolean;
+      answerOutcome: string;
+      selectedProvider?: string;
+      selectedModel?: string;
+    }>;
+  }>(await client.request("docs.history.list", { userId: user.userId }));
+  assert.equal(history.total, 1);
+  assert.equal(history.entries[0]?.answered, false);
+  assert.equal(history.entries[0]?.answerOutcome, "non_authoritative");
+  assert.equal(history.entries[0]?.selectedProvider, "mock");
+  assert.equal(history.entries[0]?.selectedModel, "learning-primary");
 });
 
 void test("docs.ask downgrades procedural object mismatches to insufficient evidence", async (t) => {

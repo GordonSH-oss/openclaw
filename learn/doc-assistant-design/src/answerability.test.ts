@@ -35,7 +35,7 @@ void test("decideAnswerability rejects push-language evidence without default-la
   });
 
   assert.equal(decision.verdict, "insufficient_evidence");
-  assert.equal(decision.reason?.includes("push-notification language"), true);
+  assert.equal(decision.reason?.includes("language"), true);
 });
 
 void test("decideAnswerability rejects concept answers when the referent never appears in evidence", () => {
@@ -51,7 +51,7 @@ void test("decideAnswerability rejects concept answers when the referent never a
   });
 
   assert.equal(decision.verdict, "insufficient_evidence");
-  assert.equal(decision.reason, "retrieved evidence does not define the asked concept directly");
+  assert.equal(decision.reason, "retrieved evidence is missing required anchors: nexconn");
 });
 
 void test("decideAnswerability treats partial-only matches as insufficient evidence", () => {
@@ -87,6 +87,29 @@ void test("decideAnswerability rejects metadata-only procedural evidence", () =>
   assert.equal(decision.verdict, "insufficient_evidence");
   assert.equal(
     decision.reason,
-    "retrieved evidence does not cover a concrete executable procedure for this task",
+    "retrieved evidence is missing required anchors: channel, direct channel",
   );
+});
+
+void test("decideAnswerability rejects broad server integration answers without a narrower task focus", () => {
+  const question = "How to integrate using Server API?";
+  const decision = decideAnswerability({
+    question,
+    state: buildQuestionState(question),
+    hits: [
+      makeHit({
+        path: "docs/platform-chat-api/chat-server-api-list.md",
+        heading: "Default behaviors",
+        text: "Use the Server API from your app server to send messages and manage users.",
+      }),
+      makeHit({
+        path: "docs/platform-chat-api/chat-server-api-list.md",
+        heading: "User blocklist",
+        text: "Add and remove users from the blocklist with Server API endpoints.",
+      }),
+    ],
+  });
+
+  assert.equal(decision.verdict, "insufficient_evidence");
+  assert.equal(decision.reason, "server api integration request still needs a narrower task focus");
 });

@@ -24,8 +24,15 @@ import {
   detectQuestionApiLayer,
   detectQuestionChannelKind,
   detectQuestionPlatform,
+  detectQuestionProduct,
 } from "./question-state.js";
 import { resolveDocAssistantAgentScratchDataDir } from "./session-store.js";
+import {
+  buildTaskFrame,
+  labelEvidenceHit,
+  type EvidenceLabel,
+  type TaskFrame,
+} from "./task-frame.js";
 
 // This module turns retrieved `DocSearchHit[]` into a grounded answer. `question-execution.ts`
 // calls it after retrieval, clarification, and answerability checks, and the same grounded
@@ -44,7 +51,7 @@ export type DocAnswerResult = {
   continuedFromRunId?: string;
   rewrittenQuestion?: string;
   pendingClarificationQuestion?: string;
-  pendingClarificationKind?: "platform" | "channel_kind" | "api_layer" | "product";
+  pendingClarificationKind?: "platform" | "channel_kind" | "api_layer" | "product" | "task_focus";
   clarificationHits?: DocSearchHit[];
   attempts?: Array<{
     provider: string;
@@ -63,6 +70,7 @@ type AnswerRole =
   | "setup"
   | "connect"
   | "navigation"
+  | "message_recall"
   | "platform"
   | "start_chat"
   | "send_first_message"
@@ -75,11 +83,14 @@ type AnalyzedHit = DocSearchHit & {
   channelKind?: DocChannelKind;
   role: AnswerRole;
   docShape: DocSearchDocShape;
+  labels: EvidenceLabel[];
+  anchors: ReturnType<typeof labelEvidenceHit>["anchors"];
 };
 
 type GroundedAnswerKind =
   | "clarification"
   | "concept"
+  | "message_recall"
   | "send_message"
   | "start_chat"
   | "channel_creation"
@@ -93,6 +104,13 @@ type GuideAnswerKind = Exclude<
 >;
 type AgentRewritePolicy = "rewrite_allowed" | "bypass_agent";
 type MessageSubtype = "text" | "image" | "file" | "voice" | "targeted" | "generic";
+type GuideSemantics = {
+  isRecallGuide: boolean;
+  isSendGuide: boolean;
+  isDirectChatGuide: boolean;
+  isChannelCreationGuide: boolean;
+  includeEndToEndSections: boolean;
+};
 
 type GroundedAnswerResult = DocAnswerResult & {
   answerKind: GroundedAnswerKind;
@@ -203,6 +221,9 @@ function normalizeAnswerText(text: string): string {
     .toLowerCase()
     .replace(/\bjavascript\b/g, "web")
     .replace(/\bjs\b/g, "web")
+    .replace(/\bdirectchannel\b/g, "direct channel")
+    .replace(/\bgroupchannel\b/g, "group channel")
+    .replace(/\bopenchannel\b/g, "open channel")
     .replace(/\bdms?\b/g, "direct channel")
     .replace(/\bdirect messages?\b/g, "direct channel")
     .replace(/\bprivate messages?\b/g, "direct channel")
@@ -269,9 +290,21 @@ function isSendMessageQuestion(question: string): boolean {
   );
 }
 
+function isMessageRecallQuestion(question: string): boolean {
+  const normalized = normalizeAnswerText(question);
+  return (
+    normalized.includes("recall") ||
+    ((normalized.includes("delete") || normalized.includes("remove")) &&
+      normalized.includes("message"))
+  );
+}
+
 function isStartChatQuestion(question: string): boolean {
   const normalized = normalizeAnswerText(question);
   if (isSendMessageQuestion(question)) {
+    return false;
+  }
+  if (isMessageRecallQuestion(question)) {
     return false;
   }
   return (
@@ -299,6 +332,9 @@ function isChannelCreationQuestion(question: string): boolean {
 }
 
 function isEndActionQuestion(question: string): boolean {
+  if (isMessageRecallQuestion(question)) {
+    return false;
+  }
   const normalized = normalizeAnswerText(question);
   return (
     normalized.includes("delete") ||
@@ -483,12 +519,18 @@ function extractCodeTerms(text: string): string[] {
   const plainPatterns = [
     /\bNCEngine\.initialize\b/g,
     /\bNCEngine\.connect\b/g,
+    /\bNCEngine\.addMessageHandler\b/g,
     /\bDirectChannel\b/g,
+    /\bCommunitySubChannel\b/g,
+    /\bBaseChannel\.createMessagesQuery\b/g,
     /\bSendTextMessageParams\b/g,
     /\bSendImageMessageParams\b/g,
     /\bSendFileMessageParams\b/g,
     /\bSendVoiceMessageParams\b/g,
     /\bSendMediaMessageParams\b/g,
+    /\bdeleteMessageForAll\b/g,
+    /\bonMessageDeleted\b/g,
+    /\bMessageHandler\b/g,
     /\bdirectedUserIds\b/g,
     /\bintent-filter\b/g,
     /\bPushMessageReceiver\b/g,
@@ -594,6 +636,19 @@ function classifyHitRole(hit: DocSearchHit): AnswerRole {
     normalizedBody.includes("androidmanifest")
   ) {
     return "navigation";
+  }
+
+  if (
+    normalized.includes("deletemessageforall") ||
+    normalized.includes("onmessagedeleted") ||
+    normalizedHeadingPath.includes("recall a direct message") ||
+    normalizedHeadingPath.includes("recall a community message") ||
+    (normalizedHeadingPath.includes("delete a message") &&
+      normalized.includes("message") &&
+      !normalizedHeadingPath.includes("delete a single channel") &&
+      !normalizedHeadingPath.includes("delete multiple channels"))
+  ) {
+    return "message_recall";
   }
 
   if (
@@ -748,17 +803,22 @@ function analyzeHits(
 } {
   const explicitPlatform = detectPlatform(question);
   const explicitChannelKind = detectExplicitQuestionChannelKind(question);
-  const analyzedHits = hits.map((hit) => ({
-    ...hit,
-    platform:
-      detectPlatform(hit.path) ?? detectPlatform(hit.heading ?? "") ?? detectPlatform(hit.text),
-    channelKind:
-      detectChannelKind(hit.path) ??
-      detectChannelKind(hit.heading ?? "") ??
-      detectChannelKind(hit.text),
-    role: classifyHitRole(hit),
-    docShape: hit.docShape ?? detectDocShape(hit),
-  }));
+  const analyzedHits = hits.map((hit) => {
+    const evidence = labelEvidenceHit(hit);
+    return {
+      ...hit,
+      platform:
+        detectPlatform(hit.path) ?? detectPlatform(hit.heading ?? "") ?? detectPlatform(hit.text),
+      channelKind:
+        detectChannelKind(hit.path) ??
+        detectChannelKind(hit.heading ?? "") ??
+        detectChannelKind(hit.text),
+      role: classifyHitRole(hit),
+      docShape: hit.docShape ?? detectDocShape(hit),
+      labels: evidence.labels,
+      anchors: evidence.anchors,
+    };
+  });
   const relevantHits = analyzedHits.filter((hit) => hit.role !== "server_irrelevant");
   const channelScopedPool = analyzedHits;
   const channelHits = channelScopedPool.filter((hit) => hit.channelKind !== undefined);
@@ -859,9 +919,146 @@ function pickBestHit(hits: AnalyzedHit[], roles: AnswerRole[]): AnalyzedHit | un
     .toSorted((left, right) => right.score - left.score)[0];
 }
 
+function hasFrameAnchor(frame: TaskFrame, anchor: string): boolean {
+  return (
+    frame.anchors.focus.includes(anchor) ||
+    frame.anchors.verbs.includes(anchor) ||
+    frame.anchors.constraints.includes(anchor) ||
+    frame.anchors.apiSymbols.includes(anchor)
+  );
+}
+
+function isRecallTaskFrame(frame: TaskFrame): boolean {
+  return hasFrameAnchor(frame, "recall") && hasFrameAnchor(frame, "message");
+}
+
+function isSendMessageTaskFrame(frame: TaskFrame): boolean {
+  return hasFrameAnchor(frame, "send") && hasFrameAnchor(frame, "message");
+}
+
+function isConversationStartTaskFrame(frame: TaskFrame): boolean {
+  return (
+    hasFrameAnchor(frame, "start") &&
+    (hasFrameAnchor(frame, "conversation") || hasFrameAnchor(frame, "channel"))
+  );
+}
+
+function isChannelCreationTaskFrame(frame: TaskFrame): boolean {
+  return (
+    hasFrameAnchor(frame, "create") &&
+    (hasFrameAnchor(frame, "channel") || hasFrameAnchor(frame, "conversation")) &&
+    frame.channelKind !== "direct"
+  );
+}
+
+function isDirectChatTaskFrame(frame: TaskFrame): boolean {
+  return (
+    isConversationStartTaskFrame(frame) ||
+    (frame.channelKind === "direct" &&
+      (hasFrameAnchor(frame, "create") ||
+        hasFrameAnchor(frame, "start") ||
+        frame.anchors.verbs.length === 0))
+  );
+}
+
+function buildGuideSemantics(params: {
+  taskFrame: TaskFrame;
+  answerKind: GuideAnswerKind;
+  question: string;
+  selectedChannelKind?: DocChannelKind;
+}): GuideSemantics {
+  const includeEndToEndSections =
+    params.answerKind === "generic_guide" || wantsEndToEndSdkFlow(params.question);
+  const isRecallGuide = isRecallTaskFrame(params.taskFrame);
+  const isSendGuide = isSendMessageTaskFrame(params.taskFrame);
+  const isChannelCreationGuide =
+    isChannelCreationTaskFrame(params.taskFrame) ||
+    params.answerKind === "channel_creation" ||
+    params.selectedChannelKind === "group" ||
+    params.selectedChannelKind === "community";
+  const isDirectChatGuide =
+    !isRecallGuide &&
+    !isSendGuide &&
+    !isChannelCreationGuide &&
+    (isDirectChatTaskFrame(params.taskFrame) || params.answerKind === "start_chat");
+  return {
+    isRecallGuide,
+    isSendGuide,
+    isDirectChatGuide,
+    isChannelCreationGuide,
+    includeEndToEndSections,
+  };
+}
+
+function isSetupEvidenceHit(hit: AnalyzedHit): boolean {
+  return hit.labels.includes("setup") || hit.role === "setup";
+}
+
+function isConnectEvidenceHit(hit: AnalyzedHit): boolean {
+  return hit.labels.includes("connect") || hit.role === "connect";
+}
+
+function isNavigationEvidenceHit(hit: AnalyzedHit): boolean {
+  return hit.labels.includes("navigate") || hit.role === "navigation";
+}
+
+function isRecallEvidenceHit(hit: AnalyzedHit): boolean {
+  return (
+    (hit.anchors.verbPhrases.includes("recall") && hit.anchors.nounPhrases.includes("message")) ||
+    hit.role === "message_recall"
+  );
+}
+
+function isRecallEventEvidenceHit(hit: AnalyzedHit): boolean {
+  return isRecallEvidenceHit(hit) && hit.labels.includes("event");
+}
+
+function isSendMessageEvidenceHit(hit: AnalyzedHit): boolean {
+  return (
+    (hit.anchors.verbPhrases.includes("send") && hit.anchors.nounPhrases.includes("message")) ||
+    hit.role === "send_first_message"
+  );
+}
+
+function isConversationStartEvidenceHit(hit: AnalyzedHit): boolean {
+  return (
+    (hit.anchors.verbPhrases.includes("start") &&
+      (hit.anchors.nounPhrases.includes("conversation") ||
+        hit.anchors.nounPhrases.includes("channel"))) ||
+    hit.role === "start_chat"
+  );
+}
+
+function isChannelCreationEvidenceHit(hit: AnalyzedHit): boolean {
+  return (
+    (hit.anchors.verbPhrases.includes("create") &&
+      (hit.anchors.nounPhrases.includes("channel") ||
+        hit.anchors.nounPhrases.includes("conversation"))) ||
+    (hit.channelKind !== "direct" &&
+      (hit.role === "start_chat" || hit.role === "platform") &&
+      normalizeAnswerText([hit.path, hit.heading ?? "", hit.text].join("\n")).includes("create"))
+  );
+}
+
+function isOverviewEvidenceHit(hit: AnalyzedHit): boolean {
+  return hit.labels.includes("overview") || hit.role === "platform";
+}
+
+function isConversationDescriptorEvidenceHit(hit: AnalyzedHit): boolean {
+  const normalized = normalizeAnswerText([hit.path, hit.heading ?? "", hit.text].join("\n"));
+  return (
+    isConversationStartEvidenceHit(hit) ||
+    ((isOverviewEvidenceHit(hit) || hit.docShape === "quickstart_step") &&
+      (normalized.includes("direct channel") ||
+        normalized.includes("one to one") ||
+        normalized.includes("conversation object") ||
+        normalized.includes("one to one conversation")))
+  );
+}
+
 function pickBestSendHit(question: string, hits: AnalyzedHit[]): AnalyzedHit | undefined {
   const requestedSubtype = detectMessageSubtype(question);
-  const sendHits = hits.filter((hit) => hit.role === "send_first_message");
+  const sendHits = hits.filter((hit) => isSendMessageEvidenceHit(hit));
   if (requestedSubtype === "generic") {
     const defaultTextHit = sendHits
       .filter((hit) => {
@@ -1174,6 +1371,100 @@ function buildApiLayerClarificationAnswer(
   };
 }
 
+function buildProductClarificationAnswer(
+  question: string,
+  hits: DocSearchHit[],
+  language: AnswerLanguage,
+): GroundedAnswerResult {
+  const categorized = new Map<"chat" | "call" | "server", DocSearchHit>();
+  for (const hit of hits) {
+    const product = detectQuestionProduct([hit.path, hit.heading ?? "", hit.text].join("\n"));
+    if (product && !categorized.has(product)) {
+      categorized.set(product, hit);
+    }
+  }
+  const citations = dedupeCitations(Array.from(categorized.values()));
+  const examples = Array.from(categorized.entries()).map(
+    ([kind, hit]) =>
+      `- ${kind === "chat" ? "Chat SDK" : kind === "call" ? "Call SDK" : "Server API"}: ${hit.heading ?? hit.path} ${inlineCitation(hit)}`,
+  );
+
+  return {
+    mode: "extractive",
+    answer: [
+      language === "en"
+        ? "This question is ambiguous across product surfaces. Tell me whether you need Chat SDK, Call SDK, or Server API documentation, and I will narrow the implementation path."
+        : "这个问题还缺少产品范围。请告诉我你要看 Chat SDK、Call SDK，还是 Server API，我再收敛到对应文档路径。",
+      examples.length > 0
+        ? [language === "en" ? "Relevant doc entry points:" : "相关文档入口：", ...examples].join(
+            "\n",
+          )
+        : "",
+      renderSourcesAppendix(citations),
+    ]
+      .filter(Boolean)
+      .join("\n\n"),
+    summary: "product clarification required",
+    citations,
+    answerKind: "clarification",
+    agentPolicy: "bypass_agent",
+    answerSource: "generated",
+    reviewStatus: "not_applicable",
+    pendingClarificationQuestion: question,
+    pendingClarificationKind: "product",
+    clarificationHits: hits,
+  };
+}
+
+function buildTaskFocusClarificationAnswer(
+  question: string,
+  hits: DocSearchHit[],
+  language: AnswerLanguage,
+  decision: ClarificationDecision,
+): GroundedAnswerResult {
+  const citations = dedupeCitations(
+    hits
+      .filter((hit) => {
+        const normalized = normalizeAnswerText([hit.path, hit.heading ?? ""].join("\n"));
+        return (
+          !normalized.includes("blocklist") &&
+          !normalized.includes("user management") &&
+          !normalized.includes("default behaviors")
+        );
+      })
+      .slice(0, 2),
+  );
+  const optionLines = (decision.candidateOptions ?? []).slice(0, 5).map((option) => `- ${option}`);
+
+  return {
+    mode: "extractive",
+    answer: [
+      decision.question ??
+        (language === "en"
+          ? "This task is still too broad and needs one more clarification."
+          : "这个任务范围还太宽，需要再补充一个更具体的目标。"),
+      optionLines.length > 0
+        ? [
+            language === "en" ? "Examples of useful scopes:" : "可以这样收窄：",
+            ...optionLines,
+          ].join("\n")
+        : "",
+      renderSourcesAppendix(citations),
+    ]
+      .filter(Boolean)
+      .join("\n\n"),
+    summary: "task clarification required",
+    citations,
+    answerKind: "clarification",
+    agentPolicy: "bypass_agent",
+    answerSource: "generated",
+    reviewStatus: "not_applicable",
+    pendingClarificationQuestion: question,
+    pendingClarificationKind: "task_focus",
+    clarificationHits: hits,
+  };
+}
+
 export function renderClarificationAnswer(params: {
   decision: ClarificationDecision;
   question: string;
@@ -1184,6 +1475,17 @@ export function renderClarificationAnswer(params: {
   const language = params.language ?? detectAnswerLanguage(params.question, params.hits);
   if (params.decision.kind === "api_layer") {
     return buildApiLayerClarificationAnswer(params.question, params.hits, language);
+  }
+  if (params.decision.kind === "product") {
+    return buildProductClarificationAnswer(params.question, params.hits, language);
+  }
+  if (params.decision.kind === "task_focus") {
+    return buildTaskFocusClarificationAnswer(
+      params.question,
+      params.hits,
+      language,
+      params.decision,
+    );
   }
 
   const analysis = analyzeHits(params.question, params.hits);
@@ -1248,7 +1550,7 @@ export function buildInsufficientEvidenceAnswer(
 
 function buildGuideIntro(params: {
   language: AnswerLanguage;
-  answerKind: GuideAnswerKind;
+  taskFrame: TaskFrame;
   platform?: DocPlatform;
   channelKind?: DocChannelKind;
   messageSubtype?: MessageSubtype;
@@ -1261,6 +1563,19 @@ function buildGuideIntro(params: {
 }): string {
   const citation = params.overviewHit ? ` ${inlineCitation(params.overviewHit)}` : "";
   const platformText = params.platform ? formatPlatform(params.platform) : undefined;
+  const isRecallGuide = isRecallTaskFrame(params.taskFrame);
+  const isSendGuide = isSendMessageTaskFrame(params.taskFrame);
+  const isChannelCreationGuide =
+    isChannelCreationTaskFrame(params.taskFrame) ||
+    params.taskFrame.channelKind === "group" ||
+    params.taskFrame.channelKind === "community";
+  const isDirectChatGuide =
+    !isRecallGuide &&
+    !isSendGuide &&
+    !isChannelCreationGuide &&
+    (isDirectChatTaskFrame(params.taskFrame) ||
+      Boolean(params.channelHit) ||
+      Boolean(params.sendHit));
   const genericFriendlyMessageSubtype =
     params.messageSubtype === "text"
       ? params.language === "en"
@@ -1279,22 +1594,25 @@ function buildGuideIntro(params: {
       return `Use the documented flow below to configure webhooks.${citation}`;
     }
     const onPlatform = platformText ? ` on ${platformText}` : "";
+    if (isRecallGuide) {
+      return `Use the documented flow below to recall a message${onPlatform}.${citation}`;
+    }
     if (params.primaryHit?.docShape === "quickstart_step") {
-      if (params.answerKind === "send_message") {
+      if (isSendGuide) {
         return `The best available evidence here is a quickstart step for sending ${genericFriendlyMessageSubtype}${onPlatform}, so treat it as an entry point inside the larger SDK tutorial.${citation}`;
       }
       return `The best available evidence here comes from a quickstart step${onPlatform}, so the guidance below is an entry point within the larger SDK tutorial.${citation}`;
     }
-    if (params.answerKind === "send_message") {
+    if (isSendGuide) {
       return `Use the documented flow below to send ${genericFriendlyMessageSubtype}${onPlatform}.${citation}`;
     }
-    if (params.channelKind === "group") {
+    if (params.channelKind === "group" && isChannelCreationGuide) {
       return `Use the documented flow below to create a group channel${onPlatform}.${citation}`;
     }
-    if (params.channelKind === "community") {
+    if (params.channelKind === "community" && isChannelCreationGuide) {
       return `Use the documented flow below to create a community channel or subchannel${onPlatform}.${citation}`;
     }
-    if (params.channelHit || params.sendHit) {
+    if (isDirectChatGuide) {
       return `Use the documented flow below to start a direct chat${onPlatform}.${citation}`;
     }
     if (params.setupHit || params.connectHit) {
@@ -1305,14 +1623,29 @@ function buildGuideIntro(params: {
   if (webhookGuide) {
     return `下面是配置 Webhook 的文档步骤。${citation}`;
   }
+  if (isRecallGuide) {
+    return `下面是撤回消息${params.platform ? `的 ${formatPlatform(params.platform)} 文档步骤` : "的文档步骤"}。${citation}`;
+  }
   if (params.primaryHit?.docShape === "quickstart_step") {
+    if (isSendGuide) {
+      return `当前最匹配的证据来自发送${genericFriendlyMessageSubtype}${params.platform ? `的 ${formatPlatform(params.platform)} quickstart 子步骤` : "的 quickstart 子步骤"}，所以下面的内容更适合作为完整教程里的入口。${citation}`;
+    }
     return `当前最匹配的证据来自 quickstart 子步骤${params.platform ? `（${formatPlatform(params.platform)}）` : ""}，所以下面的内容是教程入口，不是完整的独立任务页。${citation}`;
   }
-  if (params.answerKind === "send_message") {
+  if (isSendGuide) {
     return `下面是发送${genericFriendlyMessageSubtype}${params.platform ? `的 ${formatPlatform(params.platform)} 文档步骤` : "的文档步骤"}。${citation}`;
   }
-  if (params.platform && (params.channelHit || params.sendHit)) {
+  if (params.channelKind === "group" && isChannelCreationGuide) {
+    return `下面是创建群组频道${params.platform ? `的 ${formatPlatform(params.platform)} 文档步骤` : "的文档步骤"}。${citation}`;
+  }
+  if (params.channelKind === "community" && isChannelCreationGuide) {
+    return `下面是创建 community channel 或 subchannel${params.platform ? `的 ${formatPlatform(params.platform)} 文档步骤` : "的文档步骤"}。${citation}`;
+  }
+  if (params.platform && isDirectChatGuide) {
     return `下面是 ${formatPlatform(params.platform)} 的对应文档步骤，用来开始当前聊天流程。${citation}`;
+  }
+  if (params.setupHit || params.connectHit) {
+    return `请先完成 SDK 初始化和连接，再继续当前聊天流程。${citation}`;
   }
   return `下面是当前问题对应的文档步骤。${citation}`;
 }
@@ -1324,7 +1657,7 @@ function buildNeedLine(hit: AnalyzedHit, language: AnswerLanguage): string {
       ? `- Prepare a reachable webhook callback URL before you configure the Nexconn Console settings.${inlineCitation(hit)}`
       : `- 先准备一个可访问的 webhook 回调 URL，再去配置 Nexconn Console。${inlineCitation(hit)}`;
   }
-  if (hit.role === "navigation") {
+  if (isNavigationEvidenceHit(hit)) {
     return language === "en"
       ? `- Add an \`intent-filter\` in \`AndroidManifest.xml\` so notification taps can open the target conversation page.${inlineCitation(hit)}`
       : `- 在 \`AndroidManifest.xml\` 里配置接收通知点击的 \`intent-filter\`，让应用可以打开对应 conversation 页面。${inlineCitation(hit)}`;
@@ -1347,7 +1680,7 @@ function buildNeedLine(hit: AnalyzedHit, language: AnswerLanguage): string {
       ? `- Prepare an access token for the current user and make sure the client is connected to the Nexconn server.${inlineCitation(hit)}`
       : `- 准备用户 access token，并确保客户端已经连上 Nexconn 服务器。${inlineCitation(hit)}`;
   }
-  if (normalized.includes("direct channel")) {
+  if (isConversationStartEvidenceHit(hit) || normalized.includes("direct channel")) {
     return language === "en"
       ? `- A direct channel uses the target user ID as its channel ID, so identify the target user first.${inlineCitation(hit)}`
       : `- Direct channel 的 channelId 就是对方用户 ID，需要先明确聊天目标用户。${inlineCitation(hit)}`;
@@ -1361,7 +1694,7 @@ function buildStepLine(
   hit: AnalyzedHit,
   language: AnswerLanguage,
   options: {
-    answerKind: GuideAnswerKind;
+    semantics: GuideSemantics;
     question: string;
   },
 ): string {
@@ -1381,11 +1714,24 @@ function buildStepLine(
     codeTerms.find((value) => value.includes("NCEngine.initialize")) ?? initialize;
   const connectCall =
     codeTerms.find((value) => value.includes("connect")) ?? "NCEngine.connect(...)";
+  const messageQuery =
+    codeTerms.find((value) => value.includes("createMessagesQuery")) ??
+    "BaseChannel.createMessagesQuery(...)";
+  const deleteMessageForAll =
+    codeTerms.find((value) => value.includes("deleteMessageForAll")) ??
+    "channel.deleteMessageForAll(message)";
+  const addMessageHandler =
+    codeTerms.find((value) => value.includes("addMessageHandler")) ??
+    "NCEngine.addMessageHandler(...)";
+  const messageDeletedCallback =
+    codeTerms.find((value) => value.includes("onMessageDeleted")) ?? "onMessageDeleted";
   const targetedField =
     codeTerms.find((value) => value.includes("directedUserIds")) ?? "directedUserIds";
   const messageSubtype = detectMessageSubtype(options.question, hit);
   const messageParams = pickMessageParamsTerm(codeTerms, messageSubtype);
   const mentionsDirectChannel = normalizeAnswerText(options.question).includes("direct channel");
+  const mentionsDirectChannelInHit =
+    normalized.includes("direct channel") || normalized.includes("directchannel");
 
   if (isWebhookHit(hit)) {
     if (
@@ -1415,7 +1761,7 @@ function buildStepLine(
       : `按文档说明配置 webhook 端点和投递行为。${inlineCitation(hit)}`;
   }
 
-  if (hit.role === "setup") {
+  if (isSetupEvidenceHit(hit)) {
     if (normalized.includes("import")) {
       return language === "en"
         ? `Add the Chat SDK dependency to the project first.${inlineCitation(hit)}`
@@ -1431,26 +1777,51 @@ function buildStepLine(
       : `先完成 quickstart 里的基础接入步骤。${inlineCitation(hit)}`;
   }
 
-  if (hit.role === "connect") {
+  if (isConnectEvidenceHit(hit)) {
     return language === "en"
       ? `Get an access token for the current user, then call \`${connectCall}\` to connect to the Nexconn server before entering the chat flow.${inlineCitation(hit)}`
       : `为当前用户获取 access token，然后调用 \`${connectCall}\` 连接到 Nexconn 服务器；连接成功后再进入聊天流程。${inlineCitation(hit)}`;
   }
 
-  if (hit.role === "navigation") {
+  if (isNavigationEvidenceHit(hit)) {
     return language === "en"
       ? `Configure an \`intent-filter\` for the conversation page in \`AndroidManifest.xml\` so notification taps can open the target chat.${inlineCitation(hit)}`
       : `在 \`AndroidManifest.xml\` 里为单聊页面配置 \`intent-filter\`，让通知点击后可以打开对应 conversation 页面。${inlineCitation(hit)}`;
   }
 
-  if (hit.role === "start_chat" || hit.role === "platform") {
+  if (isRecallEvidenceHit(hit)) {
+    if (
+      isRecallEventEvidenceHit(hit) ||
+      normalized.includes("onmessagedeleted") ||
+      normalized.includes("messagehandler")
+    ) {
+      return language === "en"
+        ? `Register \`${addMessageHandler}\` and handle \`${messageDeletedCallback}\` so the UI updates after the message is recalled.${inlineCitation(hit)}`
+        : `注册 \`${addMessageHandler}\`，并处理 \`${messageDeletedCallback}\`，在消息被撤回后同步更新 UI。${inlineCitation(hit)}`;
+    }
+    if (normalized.includes("communitysubchannel")) {
+      return language === "en"
+        ? `Use the community subchannel instance, load the target message with \`${messageQuery}\`, and call \`${deleteMessageForAll}\` to recall it.${inlineCitation(hit)}`
+        : `基于 community subchannel 实例，用 \`${messageQuery}\` 取到目标消息，再调用 \`${deleteMessageForAll}\` 执行撤回。${inlineCitation(hit)}`;
+    }
+    if (mentionsDirectChannelInHit) {
+      return language === "en"
+        ? `Create \`${directChannel}("<target-user-id>")\`, retrieve the target message with \`${messageQuery}\`, and call \`${deleteMessageForAll}\` to recall it.${inlineCitation(hit)}`
+        : `创建 \`${directChannel}("<target-user-id>")\`，用 \`${messageQuery}\` 取到目标消息，再调用 \`${deleteMessageForAll}\` 执行撤回。${inlineCitation(hit)}`;
+    }
+    return language === "en"
+      ? `Retrieve the target message with \`${messageQuery}\`, then call \`${deleteMessageForAll}\` to recall it for all participants.${inlineCitation(hit)}`
+      : `用 \`${messageQuery}\` 取到目标消息，然后调用 \`${deleteMessageForAll}\` 为所有参与者撤回该消息。${inlineCitation(hit)}`;
+  }
+
+  if (isConversationStartEvidenceHit(hit) || isOverviewEvidenceHit(hit)) {
     return language === "en"
       ? `Create \`${directChannel}("<target-user-id>")\` as the one-to-one conversation object for the target user.${inlineCitation(hit)}`
       : `创建 \`${directChannel}("<target-user-id>")\` 作为与目标用户的一对一会话对象。${inlineCitation(hit)}`;
   }
 
-  if (hit.role === "send_first_message") {
-    if (options.answerKind === "channel_creation" && normalized.includes("directchannel")) {
+  if (isSendMessageEvidenceHit(hit)) {
+    if (options.semantics.isChannelCreationGuide && mentionsDirectChannelInHit) {
       return language === "en"
         ? `Create \`${directChannel}("<target-user-id>")\` as the one-to-one conversation object for the target user.${inlineCitation(hit)}`
         : `创建 \`${directChannel}("<target-user-id>")\` 作为与目标用户的一对一会话对象。${inlineCitation(hit)}`;
@@ -1463,7 +1834,7 @@ function buildStepLine(
     }
 
     if (messageSubtype === "text") {
-      if (options.answerKind === "start_chat" && normalized.includes("directchannel")) {
+      if (options.semantics.isDirectChatGuide && mentionsDirectChannelInHit) {
         return language === "en"
           ? `Create \`${directChannel}("<target-user-id>")\`, then build \`${messageParams ?? sendParams}\` and call \`${sendMethod}\` to send the first message.${inlineCitation(hit)}`
           : `创建 \`${directChannel}("<target-user-id>")\`，再构造 \`${messageParams ?? sendParams}\` 并调用 \`${sendMethod}\` 发送第一条消息。${inlineCitation(hit)}`;
@@ -1492,8 +1863,8 @@ function buildStepLine(
     }
 
     if (
-      options.answerKind === "start_chat" &&
-      normalized.includes("directchannel") &&
+      options.semantics.isDirectChatGuide &&
+      mentionsDirectChannelInHit &&
       mentionsDirectChannel
     ) {
       return language === "en"
@@ -1824,6 +2195,32 @@ function filterQuestionScopedGuideHits(question: string, hits: AnalyzedHit[]): A
     }
   }
 
+  if (isMessageRecallQuestion(question)) {
+    const recallHits = scopedHits.filter((hit) => {
+      const normalized = normalizeAnswerText([hit.path, hit.heading ?? "", hit.text].join("\n"));
+      return (
+        hit.role === "message_recall" ||
+        normalized.includes("recall") ||
+        normalized.includes("deletemessageforall") ||
+        normalized.includes("onmessagedeleted")
+      );
+    });
+    if (recallHits.length > 0) {
+      const explicitChannelKind = detectExplicitQuestionChannelKind(question);
+      if (!explicitChannelKind) {
+        const preferredRecallHits = recallHits.filter(
+          (hit) =>
+            hit.channelKind !== "community" &&
+            hit.channelKind !== "group" &&
+            hit.channelKind !== "open",
+        );
+        scopedHits = preferredRecallHits.length > 0 ? preferredRecallHits : recallHits;
+      } else {
+        scopedHits = recallHits;
+      }
+    }
+  }
+
   if (
     normalizedQuestion.includes("targeted message") ||
     normalizedQuestion.includes("specific members")
@@ -1899,21 +2296,29 @@ function buildGenericProcedureAnswer(params: {
 }
 
 function detectGuideAnswerKind(params: {
+  frame: TaskFrame;
   question: string;
   analysis: ReturnType<typeof analyzeHits>;
   channelHit?: AnalyzedHit;
   sendHit?: AnalyzedHit;
 }): GuideAnswerKind {
   const normalizedQuestion = normalizeAnswerText(params.question);
-  if (isSendMessageQuestion(params.question)) {
+  if (isRecallTaskFrame(params.frame)) {
+    return "message_recall";
+  }
+  if (isSendMessageTaskFrame(params.frame)) {
     return "send_message";
   }
   if (
+    isChannelCreationTaskFrame(params.frame) ||
     params.analysis.selectedChannelKind === "community" ||
     params.analysis.selectedChannelKind === "group" ||
     isChannelCreationQuestion(params.question)
   ) {
     return "channel_creation";
+  }
+  if (isConversationStartTaskFrame(params.frame)) {
+    return "start_chat";
   }
   if (
     params.sendHit &&
@@ -1964,12 +2369,15 @@ function canonicalizeApiTerm(term: string): string {
 
 function collectApiTerms(params: {
   citedHits: AnalyzedHit[];
-  answerKind: GuideAnswerKind;
+  taskFrame: TaskFrame;
   question: string;
 }): string[] {
   const includeDirectChannel =
-    params.answerKind === "start_chat" ||
+    isConversationStartTaskFrame(params.taskFrame) ||
+    params.taskFrame.channelKind === "direct" ||
     normalizeAnswerText(params.question).includes("direct channel");
+  const includeRecallApis = isRecallTaskFrame(params.taskFrame);
+  const isSendOnlyGuide = isSendMessageTaskFrame(params.taskFrame);
 
   const seen = new Set<string>();
   const collected: string[] = [];
@@ -1978,10 +2386,16 @@ function collectApiTerms(params: {
     .map(canonicalizeApiTerm)) {
     const allowed =
       term.includes("sendMessage") ||
+      (includeRecallApis &&
+        (term.includes("deleteMessageForAll") ||
+          term.includes("createMessagesQuery") ||
+          term.includes("addMessageHandler") ||
+          term.includes("MessageHandler") ||
+          term.includes("onMessageDeleted"))) ||
       term.includes("directedUserIds") ||
       term.includes("MessageParams") ||
-      (term.includes("NCEngine") && params.answerKind !== "send_message") ||
-      (term.includes("intent-filter") && params.answerKind !== "send_message") ||
+      (term.includes("NCEngine") && !isSendOnlyGuide) ||
+      (term.includes("intent-filter") && !isSendOnlyGuide) ||
       (term.includes("Channel") && includeDirectChannel);
     if (!allowed || seen.has(term)) {
       continue;
@@ -1994,21 +2408,21 @@ function collectApiTerms(params: {
 
 function findSpecializedCompanionHit(params: {
   hits: AnalyzedHit[];
-  answerKind: GuideAnswerKind;
+  taskFrame: TaskFrame;
   selectedPlatform?: DocPlatform;
 }): AnalyzedHit | undefined {
   return params.hits
     .filter((hit) => hit.docShape === "specialized_task")
     .filter((hit) => !params.selectedPlatform || hit.platform === params.selectedPlatform)
     .filter((hit) => {
-      if (params.answerKind === "send_message") {
-        return hit.role === "send_first_message";
+      if (isSendMessageTaskFrame(params.taskFrame)) {
+        return isSendMessageEvidenceHit(hit);
       }
-      if (params.answerKind === "channel_creation") {
-        return hit.role !== "definition" && hit.role !== "server_irrelevant";
+      if (isChannelCreationTaskFrame(params.taskFrame)) {
+        return isChannelCreationEvidenceHit(hit) || isConversationStartEvidenceHit(hit);
       }
-      if (params.answerKind === "start_chat") {
-        return hit.role === "start_chat" || hit.role === "send_first_message";
+      if (isDirectChatTaskFrame(params.taskFrame)) {
+        return isConversationDescriptorEvidenceHit(hit) || isSendMessageEvidenceHit(hit);
       }
       return true;
     })
@@ -2049,6 +2463,12 @@ function buildGuideAnswer(
   }
   const scopedHits = filterQuestionScopedGuideHits(question, effectiveHits);
   const workingHits = scopedHits.length > 0 ? scopedHits : effectiveHits;
+  const questionState = buildQuestionState(question);
+  const taskFrame = buildTaskFrame({
+    question,
+    state: questionState,
+    hits: workingHits,
+  });
 
   if (isGenericProceduralReferenceQuestion(question)) {
     return buildGenericProcedureAnswer({
@@ -2103,11 +2523,15 @@ function buildGuideAnswer(
       normalizedHeadingPath.includes("initialize") ||
       normalizedBody.includes("ncengine initialize"),
   );
-  const setupHit = importHit ?? initializeHit ?? pickBestHit(workingHits, ["setup"]);
+  const setupHit =
+    importHit ??
+    initializeHit ??
+    pickBestHitByPredicate(workingHits, (hit) => isSetupEvidenceHit(hit));
   const connectHit =
     pickBestHitByPredicate(
       workingHits,
-      (_hit, normalizedHeadingPath, normalizedBody) =>
+      (hit, normalizedHeadingPath, normalizedBody) =>
+        isConnectEvidenceHit(hit) &&
         !normalizedHeadingPath.includes("status code") &&
         !normalizedHeadingPath.includes("error code") &&
         !normalizedHeadingPath.includes("monitor status") &&
@@ -2118,10 +2542,12 @@ function buildGuideAnswer(
           normalizedHeadingPath.includes("connection") ||
           normalizedBody.includes("ncengine connect") ||
           normalizedBody.includes("connect the user")),
-    ) ?? pickBestHit(workingHits, ["connect"]);
+    ) ?? pickBestHitByPredicate(workingHits, (hit) => isConnectEvidenceHit(hit));
   const effectiveConnectHit = isConnectionMetadataHit(connectHit) ? undefined : connectHit;
-  const navigationHit = pickBestHit(workingHits, ["navigation"]);
-  const channelHit = pickBestHit(workingHits, ["start_chat", "platform"]);
+  const navigationHit = pickBestHitByPredicate(workingHits, (hit) => isNavigationEvidenceHit(hit));
+  const channelHit = pickBestHitByPredicate(workingHits, (hit) =>
+    isConversationDescriptorEvidenceHit(hit),
+  );
   const preferredGenericSendHit =
     detectMessageSubtype(question) === "generic" &&
     (normalizedQuestion.includes("first message") || isSendMessageQuestion(question))
@@ -2142,15 +2568,41 @@ function buildGuideAnswer(
     (isSendMessageQuestion(question) && !wantsEndToEndSdkFlow(question))
       ? (specializedSendHit ?? pickBestSendHit(question, workingHits))
       : pickBestSendHit(question, workingHits));
+  const recallActionHit = pickBestHitByPredicate(
+    workingHits,
+    (hit, normalizedHeadingPath, normalizedBody) =>
+      (hit.anchors.verbPhrases.includes("recall") ||
+        (hit.role === "message_recall" && hit.anchors.nounPhrases.includes("message")) ||
+        (hit.labels.includes("procedure") && hit.anchors.nounPhrases.includes("message"))) &&
+      !normalizedHeadingPath.includes("handle deletion notifications") &&
+      !normalizedBody.includes("onmessagedeleted"),
+  );
+  const recallNotificationHit = pickBestHitByPredicate(
+    workingHits,
+    (hit, normalizedHeadingPath, normalizedBody) =>
+      ((hit.anchors.verbPhrases.includes("recall") && hit.labels.includes("event")) ||
+        hit.role === "message_recall") &&
+      (hit.anchors.nounPhrases.includes("message") || hit.anchors.nounPhrases.length === 0) &&
+      (normalizedHeadingPath.includes("handle deletion notifications") ||
+        normalizedBody.includes("onmessagedeleted") ||
+        normalizedBody.includes("messagehandler")),
+  );
   const answerKind = detectGuideAnswerKind({
+    frame: taskFrame,
     question,
     analysis,
     channelHit,
     sendHit,
   });
-  const messageSubtype =
-    answerKind === "send_message" ? detectMessageSubtype(question, sendHit) : "generic";
-  const includeEndToEndSections = answerKind === "generic_guide" || wantsEndToEndSdkFlow(question);
+  const semantics = buildGuideSemantics({
+    taskFrame,
+    answerKind,
+    question,
+    selectedChannelKind: analysis.selectedChannelKind,
+  });
+  const messageSubtype = semantics.isSendGuide
+    ? detectMessageSubtype(question, sendHit)
+    : "generic";
   const overviewHit = pickBestHit(workingHits, ["platform", "start_chat", "setup"]);
   const webhookGuide =
     normalizeAnswerText(question).includes("webhook") ||
@@ -2174,41 +2626,47 @@ function buildGuideAnswer(
 
   const needHits = webhookGuide
     ? []
-    : answerKind === "send_message"
-      ? includeEndToEndSections
+    : semantics.isSendGuide
+      ? semantics.includeEndToEndSections
         ? [importHit, initializeHit, effectiveConnectHit].filter((hit): hit is AnalyzedHit =>
             Boolean(hit),
           )
         : []
-      : answerKind === "start_chat" || answerKind === "channel_creation"
-        ? includeEndToEndSections
-          ? [importHit, initializeHit, effectiveConnectHit].filter((hit): hit is AnalyzedHit =>
-              Boolean(hit),
-            )
-          : []
-        : [importHit, initializeHit, effectiveConnectHit, navigationHit, channelHit].filter(
-            (hit): hit is AnalyzedHit => Boolean(hit),
-          );
+      : semantics.isRecallGuide
+        ? []
+        : semantics.isDirectChatGuide || semantics.isChannelCreationGuide
+          ? semantics.includeEndToEndSections
+            ? [importHit, initializeHit, effectiveConnectHit].filter((hit): hit is AnalyzedHit =>
+                Boolean(hit),
+              )
+            : []
+          : [importHit, initializeHit, effectiveConnectHit, navigationHit, channelHit].filter(
+              (hit): hit is AnalyzedHit => Boolean(hit),
+            );
   const stepHits = webhookGuide
     ? webhookStepHits.length > 0
       ? webhookStepHits
       : workingHits.filter((hit) => isWebhookHit(hit)).slice(0, 3)
-    : answerKind === "send_message"
-      ? [sendHit].filter((hit): hit is AnalyzedHit => Boolean(hit))
-      : answerKind === "start_chat" || answerKind === "channel_creation"
-        ? [navigationHit, channelHit, sendHit].filter(
-            (hit, index, all): hit is AnalyzedHit => Boolean(hit) && all.indexOf(hit) === index,
-          )
-        : [
-            importHit,
-            initializeHit,
-            effectiveConnectHit,
-            navigationHit,
-            channelHit,
-            sendHit,
-          ].filter(
-            (hit, index, all): hit is AnalyzedHit => Boolean(hit) && all.indexOf(hit) === index,
-          );
+    : semantics.isRecallGuide
+      ? [recallActionHit, recallNotificationHit].filter(
+          (hit, index, all): hit is AnalyzedHit => Boolean(hit) && all.indexOf(hit) === index,
+        )
+      : semantics.isSendGuide
+        ? [sendHit].filter((hit): hit is AnalyzedHit => Boolean(hit))
+        : semantics.isDirectChatGuide || semantics.isChannelCreationGuide
+          ? [navigationHit, channelHit, sendHit].filter(
+              (hit, index, all): hit is AnalyzedHit => Boolean(hit) && all.indexOf(hit) === index,
+            )
+          : [
+              importHit,
+              initializeHit,
+              effectiveConnectHit,
+              navigationHit,
+              channelHit,
+              sendHit,
+            ].filter(
+              (hit, index, all): hit is AnalyzedHit => Boolean(hit) && all.indexOf(hit) === index,
+            );
   const autoSharedRule = buildCommunityCreationServerRule(question, workingHits, language);
   const prependStepLines = Array.from(
     new Set([
@@ -2229,7 +2687,7 @@ function buildGuideAnswer(
     primaryHit?.docShape === "quickstart_step"
       ? findSpecializedCompanionHit({
           hits: workingHits,
-          answerKind,
+          taskFrame,
           selectedPlatform: analysis.selectedPlatform,
         })
       : undefined;
@@ -2240,7 +2698,7 @@ function buildGuideAnswer(
   const citations = dedupeCitations(citedHitsWithCompanion);
   const apiTerms = collectApiTerms({
     citedHits: citedHitsWithCompanion,
-    answerKind,
+    taskFrame,
     question,
   });
 
@@ -2255,28 +2713,34 @@ function buildGuideAnswer(
       Boolean(channelHit) ||
       Boolean(sendHit) ||
       Boolean(connectHit));
-  if (channelHit && sdkChatFlow && answerKind === "start_chat") {
+  if (channelHit && sdkChatFlow && semantics.isDirectChatGuide) {
     noteLines.push(
       language === "en"
         ? `- A direct channel is a one-to-one conversation whose channel ID is typically the target user ID.${inlineCitation(channelHit)}`
         : `- Direct channel 表示两个用户之间的一对一私聊，会话标识通常就是对方用户 ID。${inlineCitation(channelHit)}`,
     );
   }
-  if (sdkChatFlow && includeEndToEndSections && !setupHit && !importHit && !initializeHit) {
+  if (
+    sdkChatFlow &&
+    semantics.includeEndToEndSections &&
+    !setupHit &&
+    !importHit &&
+    !initializeHit
+  ) {
     noteLines.push(
       language === "en"
         ? "- The retrieved docs do not cover SDK import or initialization."
         : "- 当前命中的文档没有覆盖完整的 SDK 导入或初始化步骤。",
     );
   }
-  if (sdkChatFlow && includeEndToEndSections && !connectHit) {
+  if (sdkChatFlow && semantics.includeEndToEndSections && !connectHit) {
     noteLines.push(
       language === "en"
         ? "- The retrieved docs do not cover token acquisition or connection establishment."
         : "- 当前命中的文档没有展开 token 获取或连接建立步骤。",
     );
   }
-  if (sdkChatFlow && answerKind !== "send_message" && !sendHit) {
+  if (sdkChatFlow && !semantics.isSendGuide && !semantics.isRecallGuide && !sendHit) {
     noteLines.push(
       language === "en"
         ? "- The retrieved docs do not include a concrete send-message example."
@@ -2308,7 +2772,7 @@ function buildGuideAnswer(
     ...prependStepLines,
     ...stepHits.map((hit) =>
       buildStepLine(hit, language, {
-        answerKind,
+        semantics,
         question,
       }),
     ),
@@ -2323,7 +2787,7 @@ function buildGuideAnswer(
     answer: [
       buildGuideIntro({
         language,
-        answerKind,
+        taskFrame,
         platform: selectedPlatform,
         channelKind: analysis.selectedChannelKind,
         messageSubtype,
@@ -2368,6 +2832,9 @@ function buildGuideAnswer(
         : "rewrite_allowed",
     answerSource: "generated",
     reviewStatus: "not_applicable",
+    trace: {
+      taskFrame,
+    },
     pendingClarificationQuestion:
       analysis.shouldClarifyPlatform && options?.allowClarificationOnly === false
         ? question
@@ -2619,6 +3086,11 @@ export async function buildDocAnswer(params: {
     evidence: renderedEvidence,
   });
   const grounded = buildGroundedAnswer(params.question, evidenceHits, params.language);
+  const taskFrame = buildTaskFrame({
+    question: params.question,
+    state,
+    hits: evidenceHits,
+  });
   if (params.mode === "extractive") {
     return {
       ...grounded,
@@ -2626,6 +3098,7 @@ export async function buildDocAnswer(params: {
       trace: renderedEvidence
         ? {
             answerPlan,
+            taskFrame,
             evidence: {
               groupCount: renderedEvidence.groups.length,
               warnings: renderedEvidence.warnings,
@@ -2640,6 +3113,10 @@ export async function buildDocAnswer(params: {
       ...grounded,
       mode: "agent",
       answerSurface: buildExtractiveAnswerSurface("agent_bypassed_for_grounded_answer"),
+      trace: {
+        ...grounded.trace,
+        taskFrame,
+      },
     };
   }
   if (
@@ -2670,6 +3147,11 @@ export async function buildDocAnswer(params: {
           trust: "authoritative",
           outputContract: "plain_text",
         },
+        trace: {
+          ...grounded.trace,
+          answerPlan,
+          taskFrame,
+        },
       };
     } catch (error) {
       if (!(error instanceof Error) || !error.message.includes("prompt scaffolding")) {
@@ -2683,6 +3165,11 @@ export async function buildDocAnswer(params: {
           trust: "authoritative",
           outputContract: "plain_text",
           note: "rejected_prompt_scaffolding_output",
+        },
+        trace: {
+          ...grounded.trace,
+          answerPlan,
+          taskFrame,
         },
       };
     }
@@ -2753,6 +3240,7 @@ export async function buildDocAnswer(params: {
     trace: renderedEvidence
       ? {
           answerPlan,
+          taskFrame,
           evidence: {
             groupCount: renderedEvidence.groups.length,
             warnings: renderedEvidence.warnings,

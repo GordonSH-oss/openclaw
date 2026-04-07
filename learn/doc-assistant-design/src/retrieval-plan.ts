@@ -1,3 +1,5 @@
+import { extractQuestionAnchors, summarizeAnchorFocus } from "./question-anchors.js";
+import { planDocQuestion } from "./question-planning.js";
 import type { QuestionState } from "./question-state.js";
 
 export type RetrievalPurpose =
@@ -20,6 +22,18 @@ export type RetrievalPlan = {
   expansionQueries: RetrievalQuery[];
 };
 
+function dedupeQueries(queries: RetrievalQuery[]): RetrievalQuery[] {
+  const seen = new Set<string>();
+  return queries.filter((query) => {
+    const key = `${query.purpose}:${query.bucket ?? ""}:${query.query.toLowerCase()}`;
+    if (seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
+}
+
 function buildPlatformHint(state: QuestionState): string {
   if (!state.platform) {
     return "";
@@ -36,8 +50,91 @@ function buildPlatformHint(state: QuestionState): string {
   return "Android";
 }
 
-function buildReferentHint(state: QuestionState): string {
-  return state.referent ?? state.channelKind ?? state.product ?? "";
+function buildStableSlotHints(state: QuestionState): string[] {
+  const hints: string[] = [];
+  const platform = buildPlatformHint(state);
+  if (platform) {
+    hints.push(platform);
+  }
+  if (state.product === "server") {
+    hints.push("Server API");
+  } else if (state.product === "call") {
+    hints.push("Call SDK");
+  } else if (state.product === "chat") {
+    hints.push("Chat SDK");
+  }
+  if (state.apiLayer === "server") {
+    hints.push("server api");
+  } else if (state.apiLayer === "client") {
+    hints.push("client sdk");
+  }
+  if (state.channelKind === "direct") {
+    hints.push("direct channel");
+  } else if (state.channelKind === "group") {
+    hints.push("group channel");
+  } else if (state.channelKind === "community") {
+    hints.push("community channel");
+  } else if (state.channelKind === "open") {
+    hints.push("open channel");
+  }
+  if (state.referent) {
+    hints.push(state.referent);
+  }
+  return hints;
+}
+
+function buildExpansionSeeds(
+  question: string,
+  state: QuestionState,
+): Array<{
+  purpose: RetrievalPurpose;
+  query: string;
+  bucket: "concept" | "procedural";
+}> {
+  const stableSlotHints = buildStableSlotHints(state);
+  const focus = summarizeAnchorFocus(state.anchors).slice(0, 3);
+  const verbs = state.anchors.verbPhrases.slice(0, 2);
+  const constraints = state.anchors.constraints.slice(0, 2);
+  const apiSymbols = state.anchors.apiSymbols.slice(0, 2);
+  const seeds: Array<{
+    purpose: RetrievalPurpose;
+    query: string;
+    bucket: "concept" | "procedural";
+  }> = [];
+
+  if (focus.length > 0 || stableSlotHints.length > 0) {
+    seeds.push({
+      purpose: "overview",
+      query: [...stableSlotHints, ...focus].filter(Boolean).join(" "),
+      bucket: "concept",
+    });
+  }
+
+  if (stableSlotHints.length > 0 || focus.length > 0 || verbs.length > 0) {
+    seeds.push({
+      purpose: "prerequisite",
+      query: [...stableSlotHints, ...focus, ...verbs, "quickstart setup"].filter(Boolean).join(" "),
+      bucket: "procedural",
+    });
+  }
+
+  if (constraints.length > 0) {
+    seeds.push({
+      purpose: "adjacent",
+      query: [...stableSlotHints, ...focus, ...constraints].filter(Boolean).join(" "),
+      bucket: "procedural",
+    });
+  }
+
+  if (apiSymbols.length > 0 || question.toLowerCase().includes("api")) {
+    seeds.push({
+      purpose: "api",
+      query: [...stableSlotHints, ...apiSymbols, ...focus, "api"].filter(Boolean).join(" "),
+      bucket: "procedural",
+    });
+  }
+
+  return seeds.filter((seed) => seed.query.trim().length > 0);
 }
 
 export function buildRetrievalPlan(params: {
@@ -45,122 +142,51 @@ export function buildRetrievalPlan(params: {
   maxResults?: number;
 }): RetrievalPlan {
   const maxResults = Math.max(3, params.maxResults ?? 5);
-  const platformHint = buildPlatformHint(params.state);
-  const referentHint = buildReferentHint(params.state);
-  const normalizedQuestion = params.state.normalizedQuestion;
+  const plan = planDocQuestion(params.state.rawQuestion);
   const primaryQueries: RetrievalQuery[] = [];
   const expansionQueries: RetrievalQuery[] = [];
-  const hasSpecificProceduralAnchor = Boolean(
-    platformHint ||
-    referentHint ||
-    params.state.product ||
-    params.state.channelKind ||
-    params.state.apiLayer ||
-    params.state.taskKind !== "generic",
-  );
 
-  if (params.state.intent === "concept") {
+  if (plan.kind === "mixed") {
+    for (const step of plan.steps) {
+      const anchors = extractQuestionAnchors(step.question);
+      primaryQueries.push({
+        purpose: step.intent === "concept" ? "primary_concept" : "primary_procedural",
+        query: step.question,
+        bucket: step.intent === "concept" ? "concept" : "procedural",
+        limit: Math.min(maxResults, step.intent === "concept" ? 3 : 4),
+      });
+      for (const seed of buildExpansionSeeds(step.question, {
+        ...params.state,
+        intent: step.intent,
+        anchors,
+      })) {
+        expansionQueries.push({
+          purpose: seed.purpose,
+          query: seed.query,
+          bucket: seed.bucket,
+          limit: seed.purpose === "overview" ? 2 : 2,
+        });
+      }
+    }
+  } else {
     primaryQueries.push({
-      purpose: "primary_concept",
+      purpose: params.state.intent === "concept" ? "primary_concept" : "primary_procedural",
       query: params.state.rawQuestion,
-      bucket: "concept",
-      limit: Math.min(maxResults, 4),
+      bucket: params.state.intent === "concept" ? "concept" : "procedural",
+      limit: Math.min(maxResults, params.state.intent === "concept" ? 4 : 4),
     });
-    if (referentHint) {
+    for (const seed of buildExpansionSeeds(params.state.rawQuestion, params.state)) {
       expansionQueries.push({
-        purpose: "overview",
-        query: `what is ${referentHint}`.trim(),
-        bucket: "concept",
-        limit: 2,
+        purpose: seed.purpose,
+        query: seed.query,
+        bucket: seed.bucket,
+        limit: seed.purpose === "overview" ? 2 : 2,
       });
     }
-    return { primaryQueries, expansionQueries };
-  }
-
-  if (params.state.intent === "mixed") {
-    primaryQueries.push({
-      purpose: "primary_concept",
-      query: params.state.rawQuestion,
-      bucket: "concept",
-      limit: 3,
-    });
-    primaryQueries.push({
-      purpose: "primary_procedural",
-      query: params.state.rawQuestion,
-      bucket: "procedural",
-      limit: Math.min(maxResults, 4),
-    });
-    if (referentHint) {
-      expansionQueries.push({
-        purpose: "overview",
-        query: `what is ${referentHint}`.trim(),
-        bucket: "concept",
-        limit: 2,
-      });
-    }
-    return { primaryQueries, expansionQueries };
-  }
-
-  const primaryProceduralQuery =
-    normalizedQuestion.includes("push notification") &&
-    (normalizedQuestion.includes("click") ||
-      normalizedQuestion.includes("conversation") ||
-      normalizedQuestion.includes("open"))
-      ? [platformHint, "push notification click channel page conversation intent-filter"]
-          .filter(Boolean)
-          .join(" ")
-      : params.state.rawQuestion;
-
-  primaryQueries.push({
-    purpose: "primary_procedural",
-    query: primaryProceduralQuery,
-    bucket: "procedural",
-    limit: Math.min(maxResults, 4),
-  });
-
-  if (
-    hasSpecificProceduralAnchor &&
-    (params.state.taskKind === "first_message" ||
-      params.state.taskKind === "send_message" ||
-      params.state.taskKind === "start_chat" ||
-      params.state.taskKind === "generic" ||
-      params.state.taskKind === "channel_creation")
-  ) {
-    expansionQueries.push({
-      purpose: "prerequisite",
-      query: [platformHint, referentHint, "quickstart initialize connect setup"]
-        .filter(Boolean)
-        .join(" "),
-      bucket: "procedural",
-      limit: 2,
-    });
-  }
-
-  if (referentHint) {
-    expansionQueries.push({
-      purpose: "overview",
-      query: `what is ${referentHint}`.trim(),
-      bucket: "concept",
-      limit: 2,
-    });
-  }
-
-  if (
-    params.state.rawQuestion.toLowerCase().includes("api") ||
-    params.state.rawQuestion.toLowerCase().includes("connect") ||
-    params.state.taskKind === "send_message" ||
-    params.state.taskKind === "channel_creation"
-  ) {
-    expansionQueries.push({
-      purpose: "api",
-      query: [platformHint, params.state.rawQuestion, "api"].filter(Boolean).join(" "),
-      bucket: "procedural",
-      limit: 2,
-    });
   }
 
   return {
-    primaryQueries: primaryQueries.slice(0, 2),
-    expansionQueries: expansionQueries.slice(0, 3),
+    primaryQueries: dedupeQueries(primaryQueries).slice(0, 3),
+    expansionQueries: dedupeQueries(expansionQueries).slice(0, 4),
   };
 }

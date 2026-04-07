@@ -1,8 +1,10 @@
 import path from "node:path";
 import { appendJsonlAtomic, readJsonlSafe } from "./persistence.js";
 import type {
+  DocAnswerSurface,
   DocQuestionAnswerOutcome,
   DocQuestionHistoryEntry,
+  DocQuestionHistoryTaskFrame,
   DocsHistoryListParams,
   DocsTerminalResult,
 } from "./protocol/index.js";
@@ -20,6 +22,84 @@ function toAnswerPreview(answer: string, maxLength = 220): string {
   return `${compact.slice(0, maxLength - 1)}…`;
 }
 
+function isAllowedTaskFrameValue<T extends string>(
+  value: unknown,
+  allowed: readonly T[],
+): value is T {
+  return typeof value === "string" && (allowed as readonly string[]).includes(value);
+}
+
+function sanitizeStringArray(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const normalized = value.filter(
+    (entry): entry is string => typeof entry === "string" && entry.length > 0,
+  );
+  return normalized.length > 0 ? normalized : undefined;
+}
+
+export function sanitizeHistoryTaskFrame(value: unknown): DocQuestionHistoryTaskFrame | undefined {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+  const raw = value as Record<string, unknown>;
+  const normalized: DocQuestionHistoryTaskFrame = {};
+  if (isAllowedTaskFrameValue(raw.intent, ["concept", "procedural", "mixed"])) {
+    normalized.intent = raw.intent;
+  }
+  if (isAllowedTaskFrameValue(raw.product, ["chat", "call", "server"])) {
+    normalized.product = raw.product;
+  }
+  if (isAllowedTaskFrameValue(raw.platform, ["android", "ios", "web", "flutter"])) {
+    normalized.platform = raw.platform;
+  }
+  if (isAllowedTaskFrameValue(raw.apiLayer, ["client", "server"])) {
+    normalized.apiLayer = raw.apiLayer;
+  }
+  if (isAllowedTaskFrameValue(raw.channelKind, ["direct", "group", "community", "open"])) {
+    normalized.channelKind = raw.channelKind;
+  }
+  const focus = sanitizeStringArray((raw.anchors as Record<string, unknown> | undefined)?.focus);
+  const constraints = sanitizeStringArray(
+    (raw.anchors as Record<string, unknown> | undefined)?.constraints,
+  );
+  const apiSymbols = sanitizeStringArray(
+    (raw.anchors as Record<string, unknown> | undefined)?.apiSymbols,
+  );
+  if (focus || constraints || apiSymbols) {
+    normalized.anchors = {
+      focus: focus ?? [],
+      constraints: constraints ?? [],
+      apiSymbols: apiSymbols ?? [],
+    };
+  }
+  const matched = sanitizeStringArray(
+    (raw.coverage as Record<string, unknown> | undefined)?.matched,
+  );
+  const missing = sanitizeStringArray(
+    (raw.coverage as Record<string, unknown> | undefined)?.missing,
+  );
+  if (matched || missing) {
+    normalized.coverage = {
+      matched: matched ?? [],
+      missing: missing ?? [],
+    };
+  }
+  if (
+    isAllowedTaskFrameValue(raw.responseMode, [
+      "definition",
+      "procedure",
+      "mixed",
+      "clarification",
+      "insufficient",
+    ])
+  ) {
+    normalized.responseMode = raw.responseMode;
+  }
+  return Object.keys(normalized).length > 0 ? normalized : undefined;
+}
+
 export function summarizeQuestionOutcome(terminal: DocsTerminalResult): {
   answered: boolean;
   answerOutcome: DocQuestionAnswerOutcome;
@@ -33,7 +113,9 @@ export function summarizeQuestionOutcome(terminal: DocsTerminalResult): {
   if (
     terminal.summary === "platform clarification required" ||
     terminal.summary === "channel clarification required" ||
-    terminal.summary === "api layer clarification required"
+    terminal.summary === "api layer clarification required" ||
+    terminal.summary === "product clarification required" ||
+    terminal.summary === "task clarification required"
   ) {
     return { answered: false, answerOutcome: "clarification_required" };
   }
@@ -45,6 +127,9 @@ export function summarizeQuestionOutcome(terminal: DocsTerminalResult): {
   }
   if (terminal.answerSource === "memory_draft") {
     return { answered: true, answerOutcome: "memory_draft" };
+  }
+  if (terminal.answerSurface?.trust === "non_authoritative") {
+    return { answered: false, answerOutcome: "non_authoritative" };
   }
   if (terminal.summary === "no relevant documentation found") {
     return { answered: false, answerOutcome: "no_relevant_docs" };
@@ -59,6 +144,8 @@ export async function appendQuestionHistoryEntry(params: {
   dataDir?: string;
   entry: Omit<DocQuestionHistoryEntry, "answered" | "answerOutcome" | "answerPreview"> & {
     answer: string;
+    answerSurface?: DocAnswerSurface;
+    taskFrame?: DocQuestionHistoryTaskFrame;
   };
 }): Promise<DocQuestionHistoryEntry> {
   const summary = summarizeQuestionOutcome({
@@ -71,6 +158,7 @@ export async function appendQuestionHistoryEntry(params: {
     selectedProvider: params.entry.selectedProvider,
     selectedModel: params.entry.selectedModel,
     answerSource: params.entry.answerSource,
+    answerSurface: params.entry.answerSurface,
     memoryEntryId: params.entry.memoryEntryId,
     reviewStatus: params.entry.reviewStatus,
     followUpSource: params.entry.followUpSource,
@@ -100,6 +188,7 @@ export async function appendQuestionHistoryEntry(params: {
     followUpSource: params.entry.followUpSource,
     continuedFromRunId: params.entry.continuedFromRunId,
     rewrittenQuestion: params.entry.rewrittenQuestion,
+    taskFrame: sanitizeHistoryTaskFrame(params.entry.taskFrame),
   };
 
   const historyPath = getQuestionHistoryPath(params.dataDir);

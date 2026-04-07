@@ -7,6 +7,7 @@ import type {
   DocCitation,
 } from "./protocol/index.js";
 import type { QuestionState } from "./question-state.js";
+import { buildTaskFrame } from "./task-frame.js";
 
 function normalize(text: string): string {
   return text
@@ -140,6 +141,68 @@ function isReleaseNotesQuestion(question: string): boolean {
   );
 }
 
+function hasActionableProcedureAnswer(params: {
+  answer: string;
+  frame: ReturnType<typeof buildTaskFrame>;
+}): boolean {
+  const normalizedAnswer = normalize(params.answer);
+  const commonSignals = [
+    "run",
+    "call",
+    "use",
+    "create",
+    "connect",
+    "configure",
+    "set",
+    "open",
+    "retrieve",
+    "load",
+    "register",
+    "handle",
+    "send",
+    "delete",
+    "recall",
+    "query",
+    "调用",
+    "创建",
+    "连接",
+    "配置",
+    "打开",
+    "运行",
+    "获取",
+    "加载",
+    "注册",
+    "处理",
+    "发送",
+    "撤回",
+    "查询",
+  ];
+  if (params.frame.anchors.verbs.includes("recall")) {
+    return (
+      normalizedAnswer.includes("recall") ||
+      normalizedAnswer.includes("delete") ||
+      normalizedAnswer.includes("deletemessageforall") ||
+      normalizedAnswer.includes("onmessagedeleted") ||
+      normalizedAnswer.includes("撤回")
+    );
+  }
+  if (params.frame.anchors.verbs.includes("send")) {
+    return (
+      normalizedAnswer.includes("send") ||
+      normalizedAnswer.includes("sendmessage") ||
+      normalizedAnswer.includes("发送")
+    );
+  }
+  if (params.frame.anchors.verbs.includes("connect")) {
+    return (
+      normalizedAnswer.includes("connect") ||
+      normalizedAnswer.includes("token") ||
+      normalizedAnswer.includes("连接")
+    );
+  }
+  return commonSignals.some((signal) => normalizedAnswer.includes(signal));
+}
+
 export function validateAnswer(params: {
   question: string;
   state: QuestionState;
@@ -151,6 +214,18 @@ export function validateAnswer(params: {
   const issues: DocAnswerValidationIssue[] = [];
   const normalizedSummary = normalize(params.summary);
   const releaseNotesQuestion = isReleaseNotesQuestion(params.question);
+  const evidenceHits = params.evidence.groups.flatMap((group) =>
+    group.citations.map((citation) => ({
+      ...citation,
+      score: group.score,
+      text: citation.snippet,
+    })),
+  );
+  const taskFrame = buildTaskFrame({
+    question: params.question,
+    state: params.state,
+    hits: evidenceHits,
+  });
 
   if (
     params.citations.length === 0 &&
@@ -163,13 +238,7 @@ export function validateAnswer(params: {
 
   const clarification = decideClarification({
     state: params.state,
-    hits: params.evidence.groups.flatMap((group) =>
-      group.citations.map((citation) => ({
-        ...citation,
-        score: group.score,
-        text: citation.snippet,
-      })),
-    ),
+    hits: evidenceHits,
   });
   if (clarification.shouldClarify && !normalizedSummary.includes("clarification required")) {
     issues.push(
@@ -192,13 +261,7 @@ export function validateAnswer(params: {
   const answerability = decideAnswerability({
     question: params.question,
     state: params.state,
-    hits: params.evidence.groups.flatMap((group) =>
-      group.citations.map((citation) => ({
-        ...citation,
-        score: group.score,
-        text: citation.snippet,
-      })),
-    ),
+    hits: evidenceHits,
   });
   if (
     answerability.verdict === "insufficient_evidence" &&
@@ -209,6 +272,25 @@ export function validateAnswer(params: {
         "off_intent_answer",
         "error",
         answerability.reason ?? "evidence does not cover the question intent",
+      ),
+    );
+  }
+
+  if (
+    taskFrame.responseMode === "procedure" &&
+    !normalizedSummary.includes("clarification required") &&
+    !normalizedSummary.includes("insufficient") &&
+    !normalizedSummary.includes("no relevant") &&
+    !hasActionableProcedureAnswer({
+      answer: params.answer,
+      frame: taskFrame,
+    })
+  ) {
+    issues.push(
+      buildIssue(
+        "off_intent_answer",
+        "error",
+        "procedural answer does not include an actionable documented step",
       ),
     );
   }

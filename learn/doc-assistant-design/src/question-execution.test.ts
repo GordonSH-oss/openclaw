@@ -41,6 +41,101 @@ async function createConnectClarificationDocs(): Promise<string> {
   return docsRoot;
 }
 
+async function createProductClarificationDocs(): Promise<string> {
+  const docsRoot = await makeTempDir("doc-assistant-product-clarify");
+  await fs.mkdir(path.join(docsRoot, "docs", "chatsdk-web"), {
+    recursive: true,
+  });
+  await fs.mkdir(path.join(docsRoot, "docs", "callsdk-web"), {
+    recursive: true,
+  });
+  await fs.writeFile(
+    path.join(docsRoot, "docs", "chatsdk-web", "getting-started.md"),
+    [
+      "# Integrate Chat SDK",
+      "",
+      "Import the Web Chat SDK package and initialize the chat client before you connect the user.",
+      "",
+    ].join("\n"),
+    "utf-8",
+  );
+  await fs.writeFile(
+    path.join(docsRoot, "docs", "callsdk-web", "callplus-integration-to-chat.md"),
+    [
+      "# Integrate Call SDK with Chat",
+      "",
+      "Integrate Call into an app that already uses the Chat SDK so users can move between messaging and calling.",
+      "",
+    ].join("\n"),
+    "utf-8",
+  );
+  return docsRoot;
+}
+
+async function createServerTaskClarificationDocs(): Promise<string> {
+  const docsRoot = await makeTempDir("doc-assistant-server-task-clarify");
+  await fs.mkdir(path.join(docsRoot, "docs", "chatsdk-web"), {
+    recursive: true,
+  });
+  await fs.mkdir(path.join(docsRoot, "docs", "callsdk-web"), {
+    recursive: true,
+  });
+  await fs.mkdir(path.join(docsRoot, "docs", "platform-chat-api", "webhook"), {
+    recursive: true,
+  });
+  await fs.writeFile(
+    path.join(docsRoot, "docs", "chatsdk-web", "getting-started.md"),
+    [
+      "# Integrate Chat SDK",
+      "",
+      "Import the Web Chat SDK package and initialize the chat client before you connect the user.",
+      "",
+    ].join("\n"),
+    "utf-8",
+  );
+  await fs.writeFile(
+    path.join(docsRoot, "docs", "callsdk-web", "callplus-integration-to-chat.md"),
+    [
+      "# Integrate Call SDK with Chat",
+      "",
+      "Integrate Call into an app that already uses the Chat SDK so users can move between messaging and calling.",
+      "",
+    ].join("\n"),
+    "utf-8",
+  );
+  await fs.writeFile(
+    path.join(docsRoot, "docs", "platform-chat-api", "chat-server-api-list.md"),
+    [
+      "# Platform Chat API list",
+      "",
+      "## Default behaviors",
+      "",
+      "Use the Server API from your app server to send messages and manage users.",
+      "",
+      "## User management",
+      "",
+      "Issue access tokens and expire access tokens.",
+      "",
+      "## User blocklist",
+      "",
+      "Add to blocklist and remove from blocklist with Server API endpoints.",
+      "",
+    ].join("\n"),
+    "utf-8",
+  );
+  await fs.writeFile(
+    path.join(docsRoot, "docs", "platform-chat-api", "webhook", "signature-verification.md"),
+    [
+      "# Verify the webhook signature",
+      "",
+      "To verify the webhook signature, read the signature header, compute the expected HMAC value, and reject the callback when the signature does not match.",
+      "",
+    ].join("\n"),
+    "utf-8",
+  );
+  return docsRoot;
+}
+
 async function createPushLanguagePartialOnlyDocs(): Promise<string> {
   const docsRoot = await makeTempDir("doc-assistant-push-language-partial");
   await fs.mkdir(path.join(docsRoot, "docs", "chatsdk-android", "push"), {
@@ -399,13 +494,140 @@ void test("api layer clarification follow-up rewrites the question and continues
   assert.notEqual(second.answer.summary, "api layer clarification required");
 });
 
+void test("product clarification follow-up rewrites the question and continues", async () => {
+  const docsRoot = await createProductClarificationDocs();
+  const dataDir = await makeTempDir("doc-assistant-product-followup");
+  const sessionId = "product-followup-session";
+
+  const first = await executeDocQuestion({
+    runId: "product-clarify-1",
+    question: "How to integrate?",
+    sessionId,
+    mode: "extractive",
+    docsRoot,
+    dataDir,
+    maxResults: 5,
+  });
+
+  assert.equal(first.answer.summary, "product clarification required");
+  assert.equal(first.answer.pendingClarificationKind, "product");
+
+  await updateClarificationStateAfterAnswer({
+    sessionId,
+    runId: "product-clarify-1",
+    question: "How to integrate?",
+    hits: first.hits,
+    summary: first.answer.summary,
+    pendingQuestion: first.answer.pendingClarificationQuestion,
+    clarificationKind: first.answer.pendingClarificationKind,
+    clarificationHits: first.answer.clarificationHits,
+    route: first.route,
+    dataDir,
+  });
+
+  const second = await executeDocQuestion({
+    runId: "product-clarify-2",
+    question: "Chat",
+    sessionId,
+    mode: "extractive",
+    docsRoot,
+    dataDir,
+    maxResults: 5,
+  });
+
+  assert.equal(second.answer.followUpSource, "clarification_rewrite");
+  assert.equal(second.answer.rewrittenQuestion, "How to integrate for Chat SDK?");
+  assert.equal(second.answer.answer.includes("Call SDK"), false);
+  assert.equal(second.answer.answer.includes("Integrate Call"), false);
+});
+
+void test("server integration follow-up asks for narrower task focus before answering from catalog pages", async () => {
+  const docsRoot = await createServerTaskClarificationDocs();
+  const dataDir = await makeTempDir("doc-assistant-server-task-followup");
+  const sessionId = "server-task-followup-session";
+
+  const first = await executeDocQuestion({
+    runId: "server-task-clarify-1",
+    question: "How to integrate?",
+    sessionId,
+    mode: "extractive",
+    docsRoot,
+    dataDir,
+    maxResults: 5,
+  });
+
+  assert.equal(first.answer.summary, "product clarification required");
+
+  await updateClarificationStateAfterAnswer({
+    sessionId,
+    runId: "server-task-clarify-1",
+    question: "How to integrate?",
+    hits: first.hits,
+    summary: first.answer.summary,
+    pendingQuestion: first.answer.pendingClarificationQuestion,
+    clarificationKind: first.answer.pendingClarificationKind,
+    clarificationHits: first.answer.clarificationHits,
+    route: first.route,
+    dataDir,
+  });
+
+  const second = await executeDocQuestion({
+    runId: "server-task-clarify-2",
+    question: "Server API",
+    sessionId,
+    mode: "extractive",
+    docsRoot,
+    dataDir,
+    maxResults: 5,
+  });
+
+  assert.equal(second.answer.followUpSource, "clarification_rewrite");
+  assert.equal(second.answer.rewrittenQuestion, "How to integrate for Server API?");
+  assert.equal(second.answer.summary, "task clarification required");
+  assert.equal(second.answer.answer.includes("User blocklist"), false);
+
+  await updateClarificationStateAfterAnswer({
+    sessionId,
+    runId: "server-task-clarify-2",
+    question: "Server API",
+    hits: second.hits,
+    summary: second.answer.summary,
+    pendingQuestion: second.answer.pendingClarificationQuestion,
+    clarificationKind: second.answer.pendingClarificationKind,
+    clarificationHits: second.answer.clarificationHits,
+    route: second.route,
+    dataDir,
+  });
+
+  const third = await executeDocQuestion({
+    runId: "server-task-clarify-3",
+    question: "webhook signature verification",
+    sessionId,
+    mode: "extractive",
+    docsRoot,
+    dataDir,
+    maxResults: 5,
+  });
+
+  assert.equal(third.answer.followUpSource, "clarification_rewrite");
+  assert.equal(
+    third.answer.rewrittenQuestion,
+    "How to integrate for Server API for webhook signature verification?",
+  );
+  assert.notEqual(third.answer.summary, "task clarification required");
+  assert.equal(third.answer.answer.toLowerCase().includes("signature"), true);
+  assert.equal(third.answer.answer.includes("User blocklist"), false);
+});
+
 void test("executeDocQuestion treats partial-only push language matches as insufficient evidence", async () => {
   const docsRoot = await createPushLanguagePartialOnlyDocs();
+  const dataDir = await makeTempDir("doc-assistant-push-language-partial-data");
   const result = await executeDocQuestion({
     runId: "push-language-partial-1",
     question: "How to change the default language for push notification?",
     mode: "extractive",
     docsRoot,
+    dataDir,
     maxResults: 5,
   });
 

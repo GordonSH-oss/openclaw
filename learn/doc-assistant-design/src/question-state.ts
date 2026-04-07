@@ -1,3 +1,4 @@
+import { extractQuestionAnchors, type QuestionAnchors } from "./question-anchors.js";
 import { detectProceduralTaskKind, planDocQuestion } from "./question-planning.js";
 import { normalizeSearchText } from "./search-text.js";
 
@@ -9,6 +10,23 @@ export type QuestionIntent = "concept" | "procedural" | "mixed";
 export type QuestionPlatform = "android" | "ios" | "web" | "flutter";
 export type QuestionChannelKind = "direct" | "group" | "community" | "open";
 export type QuestionApiLayer = "client" | "server";
+export type QuestionProduct = "chat" | "call" | "server";
+export type QuestionAction =
+  | "connect"
+  | "start"
+  | "create"
+  | "send"
+  | "recall"
+  | "delete"
+  | "update"
+  | "query";
+export type QuestionObject =
+  | "message"
+  | "channel"
+  | "conversation"
+  | "notification"
+  | "user"
+  | "webhook";
 export type QuestionTaskKind =
   | "first_message"
   | "send_message"
@@ -21,13 +39,18 @@ export type QuestionState = {
   normalizedQuestion: string;
   language: QuestionLanguage;
   intent: QuestionIntent;
-  taskKind?: QuestionTaskKind;
   platform?: QuestionPlatform;
-  product?: "chat" | "call" | "server";
+  product?: QuestionProduct;
   apiLayer?: QuestionApiLayer;
   channelKind?: QuestionChannelKind;
-  messageSubtype?: "text" | "image" | "file" | "voice" | "targeted" | "generic";
   referent?: string;
+  anchors: QuestionAnchors;
+  heuristicHints?: {
+    taskKind?: QuestionTaskKind;
+    action?: QuestionAction;
+    object?: QuestionObject;
+    messageSubtype?: "text" | "image" | "file" | "voice" | "targeted" | "generic";
+  };
   ambiguity: {
     missingPlatform: boolean;
     missingChannelKind: boolean;
@@ -35,6 +58,11 @@ export type QuestionState = {
     missingProduct: boolean;
   };
 };
+
+const STRICT_SERVER_PRODUCT_SIGNALS = ["platform chat api"];
+const LOOSE_SERVER_PRODUCT_SIGNALS = ["server api", "rest api", "http api", "服务端"];
+const CHAT_PRODUCT_SIGNALS = ["chat sdk", "chatsdk"];
+const CALL_PRODUCT_SIGNALS = ["call sdk", "callsdk"];
 
 export function normalizeQuestionText(text: string): string {
   return normalizeSearchText(text).replace(/\s+/g, " ").trim();
@@ -134,6 +162,130 @@ export function detectQuestionApiLayer(value: string): QuestionApiLayer | undefi
   return undefined;
 }
 
+export function detectQuestionAction(value: string): QuestionAction | undefined {
+  const normalized = normalizeQuestionText(value);
+  const messageScopedRecall =
+    (normalized.includes("recall") ||
+      normalized.includes("revoke") ||
+      normalized.includes("unsend") ||
+      normalized.includes("withdraw")) &&
+    normalized.includes("message");
+  if (messageScopedRecall) {
+    return "recall";
+  }
+  if (
+    (normalized.includes("delete") ||
+      normalized.includes("remove") ||
+      normalized.includes("destroy")) &&
+    normalized.includes("message")
+  ) {
+    return "recall";
+  }
+  if (normalized.includes("send")) {
+    return "send";
+  }
+  if (normalized.includes("connect") || normalized.includes("connection")) {
+    return "connect";
+  }
+  if (normalized.includes("create")) {
+    return "create";
+  }
+  if (
+    normalized.includes("start") ||
+    normalized.includes("begin") ||
+    normalized.includes("open chat")
+  ) {
+    return "start";
+  }
+  if (
+    normalized.includes("delete") ||
+    normalized.includes("remove") ||
+    normalized.includes("destroy")
+  ) {
+    return "delete";
+  }
+  if (
+    normalized.includes("configure") ||
+    normalized.includes("config") ||
+    normalized.includes("change") ||
+    normalized.includes("update") ||
+    normalized.includes("set ")
+  ) {
+    return "update";
+  }
+  if (
+    normalized.includes("query") ||
+    normalized.includes("retrieve") ||
+    normalized.includes("load") ||
+    normalized.includes("list") ||
+    normalized.includes("check")
+  ) {
+    return "query";
+  }
+  return undefined;
+}
+
+export function detectQuestionObject(value: string): QuestionObject | undefined {
+  const normalized = normalizeQuestionText(value);
+  if (
+    normalized.includes("message") ||
+    normalized.includes("text message") ||
+    normalized.includes("image message") ||
+    normalized.includes("file message") ||
+    normalized.includes("voice message") ||
+    normalized.includes("media message") ||
+    normalized.includes("targeted message")
+  ) {
+    return "message";
+  }
+  if (normalized.includes("webhook")) {
+    return "webhook";
+  }
+  if (normalized.includes("push notification") || normalized.includes("notification")) {
+    return "notification";
+  }
+  if (normalized.includes("user")) {
+    return "user";
+  }
+  if (normalized.includes("conversation") || normalized.includes("chat")) {
+    return "conversation";
+  }
+  if (
+    normalized.includes("channel") ||
+    normalized.includes("subchannel") ||
+    normalized.includes("community") ||
+    normalized.includes("group")
+  ) {
+    return "channel";
+  }
+  return undefined;
+}
+
+export function detectQuestionMessageSubtype(
+  value: string,
+): "text" | "image" | "file" | "voice" | "targeted" | "generic" | undefined {
+  const normalized = normalizeQuestionText(value);
+  if (normalized.includes("targeted message") || normalized.includes("specific members")) {
+    return "targeted";
+  }
+  if (normalized.includes("image message") || normalized.includes("photo message")) {
+    return "image";
+  }
+  if (normalized.includes("file message")) {
+    return "file";
+  }
+  if (normalized.includes("voice message") || normalized.includes("audio message")) {
+    return "voice";
+  }
+  if (normalized.includes("text message") || normalized.includes("regular message")) {
+    return "text";
+  }
+  if (normalized.includes("message")) {
+    return "generic";
+  }
+  return undefined;
+}
+
 export function detectQuestionReferent(question: string): string | undefined {
   const normalized = normalizeQuestionText(question);
   const prioritized = [
@@ -184,18 +336,35 @@ function detectQuestionIntent(question: string): QuestionIntent {
   return plan.kind;
 }
 
-function detectQuestionProduct(value: string): QuestionState["product"] | undefined {
+export function detectQuestionProduct(value: string): QuestionState["product"] | undefined {
   const normalized = normalizeQuestionText(value);
-  if (normalized.includes("server api") || normalized.includes("platform chat api")) {
+  if (STRICT_SERVER_PRODUCT_SIGNALS.some((signal) => normalized.includes(signal))) {
     return "server";
   }
-  if (normalized.includes("call")) {
+  if (CALL_PRODUCT_SIGNALS.some((signal) => normalized.includes(signal))) {
     return "call";
+  }
+  if (CHAT_PRODUCT_SIGNALS.some((signal) => normalized.includes(signal))) {
+    return "chat";
+  }
+  const mentionsCallTask =
+    /\b(?:audio|video|group|incoming|outgoing|one to one|one-to-one|1 to 1|1-to-1)\s+call\b/.test(
+      normalized,
+    ) ||
+    /\b(?:start|make|place|accept|answer|upgrade|receive|join)\b[\w\s-]{0,40}\bcall\b/.test(
+      normalized,
+    );
+  if (mentionsCallTask) {
+    return "call";
+  }
+  if (LOOSE_SERVER_PRODUCT_SIGNALS.some((signal) => normalized.includes(signal))) {
+    return "server";
   }
   if (
     normalized.includes("chat") ||
     normalized.includes("message") ||
-    normalized.includes("channel")
+    normalized.includes("channel") ||
+    normalized.includes("conversation")
   ) {
     return "chat";
   }
@@ -228,6 +397,17 @@ function computeQuestionAmbiguity(
     mentionsConnectionTopic &&
     !normalized.includes("chat server") &&
     !normalized.includes("call server");
+  const mentionsProductDependentTopic =
+    normalized.includes("sdk") ||
+    normalized.includes("api") ||
+    normalized.includes("connect") ||
+    normalized.includes("integrate") ||
+    normalized.includes("integration") ||
+    normalized.includes("install") ||
+    normalized.includes("set up") ||
+    normalized.includes("setup") ||
+    normalized.includes("initialize") ||
+    normalized.includes("init");
 
   return {
     missingPlatform:
@@ -237,29 +417,31 @@ function computeQuestionAmbiguity(
       mentionsPlatformDependentTopic,
     missingChannelKind: proceduralish && !draft.channelKind && mentionsChannelCreationTopic,
     missingApiLayer: proceduralish && !draft.apiLayer && explicitlyClientServerConnection,
-    missingProduct:
-      !draft.product &&
-      (normalized.includes("sdk") || normalized.includes("api") || normalized.includes("connect")),
+    missingProduct: proceduralish && !draft.product && mentionsProductDependentTopic,
   };
 }
 
 export function buildQuestionState(question: string): QuestionState {
   const rawQuestion = question.trim();
   const normalizedQuestion = normalizeQuestionText(rawQuestion);
+  const intent = detectQuestionIntent(rawQuestion);
   const draft: Omit<QuestionState, "ambiguity"> = {
     rawQuestion,
     normalizedQuestion,
     language: detectQuestionLanguage(rawQuestion),
-    intent: detectQuestionIntent(rawQuestion),
-    taskKind:
-      detectQuestionIntent(rawQuestion) === "concept"
-        ? undefined
-        : detectProceduralTaskKind(rawQuestion),
+    intent,
     platform: detectQuestionPlatform(rawQuestion),
     product: detectQuestionProduct(rawQuestion),
     apiLayer: detectQuestionApiLayer(rawQuestion),
     channelKind: detectQuestionChannelKind(rawQuestion),
     referent: detectQuestionReferent(rawQuestion),
+    anchors: extractQuestionAnchors(rawQuestion),
+    heuristicHints: {
+      taskKind: intent === "concept" ? undefined : detectProceduralTaskKind(rawQuestion),
+      action: detectQuestionAction(rawQuestion),
+      object: detectQuestionObject(rawQuestion),
+      messageSubtype: detectQuestionMessageSubtype(rawQuestion),
+    },
   };
 
   return {
@@ -277,6 +459,16 @@ export function mergeQuestionState(
     ...patch,
     rawQuestion: base.rawQuestion,
     normalizedQuestion: normalizeQuestionText(base.rawQuestion),
+    anchors: patch.anchors ?? extractQuestionAnchors(base.rawQuestion),
+    heuristicHints: patch.heuristicHints ?? {
+      taskKind:
+        detectQuestionIntent(base.rawQuestion) === "concept"
+          ? undefined
+          : detectProceduralTaskKind(base.rawQuestion),
+      action: detectQuestionAction(base.rawQuestion),
+      object: detectQuestionObject(base.rawQuestion),
+      messageSubtype: detectQuestionMessageSubtype(base.rawQuestion),
+    },
   };
   return {
     ...draft,
@@ -310,12 +502,26 @@ function formatChannelKind(kind: QuestionChannelKind): string {
   return "community channel";
 }
 
+function formatProduct(product: QuestionProduct, language: QuestionState["language"]): string {
+  if (product === "server") {
+    return "Server API";
+  }
+  if (product === "call") {
+    return language === "zh" ? "Call SDK" : "Call SDK";
+  }
+  return language === "zh" ? "Chat SDK" : "Chat SDK";
+}
+
 function hasExplicitPlatform(question: string): boolean {
   return detectQuestionPlatform(question) !== undefined;
 }
 
 function hasExplicitApiLayer(question: string): boolean {
   return detectQuestionApiLayer(question) !== undefined;
+}
+
+function hasExplicitProduct(question: string): boolean {
+  return detectQuestionProduct(question) !== undefined;
 }
 
 function hasExplicitChannelKind(question: string, kind: QuestionChannelKind): boolean {
@@ -343,6 +549,15 @@ export function rewriteQuestionFromState(state: QuestionState): string {
       state.apiLayer === "server"
         ? `${rewritten} using Server API`
         : `${rewritten} using Client SDK`;
+  }
+
+  if (state.product && !hasExplicitProduct(rewritten)) {
+    const productLabel = formatProduct(state.product, state.language);
+    if (state.language === "en") {
+      rewritten = `${rewritten} for ${productLabel}`;
+    } else {
+      rewritten = `${rewritten}（${productLabel}）`;
+    }
   }
 
   if (state.platform && !hasExplicitPlatform(rewritten)) {

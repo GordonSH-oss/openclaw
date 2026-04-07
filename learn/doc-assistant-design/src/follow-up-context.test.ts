@@ -4,6 +4,7 @@ import {
   detectClarificationFollowUpQuestion,
   extractQuestionStatePatchFromFollowUp,
   isStoredClarificationFollowUpAllowed,
+  rewriteTaskFocusClarificationQuestion,
 } from "./follow-up-context.js";
 
 void test("detectClarificationFollowUpQuestion still accepts short platform-only replies", () => {
@@ -25,9 +26,16 @@ void test("detectClarificationFollowUpQuestion accepts short channel-kind replie
 void test("detectClarificationFollowUpQuestion accepts short api-layer replies", () => {
   assert.deepEqual(detectClarificationFollowUpQuestion("Server API"), {
     apiLayer: "server",
+    product: "server",
   });
   assert.deepEqual(detectClarificationFollowUpQuestion("client SDK"), {
     apiLayer: "client",
+  });
+});
+
+void test("detectClarificationFollowUpQuestion accepts short task-focus replies", () => {
+  assert.deepEqual(detectClarificationFollowUpQuestion("webhook signature verification"), {
+    taskFocus: "webhook signature verification",
   });
 });
 
@@ -37,6 +45,9 @@ void test("extractQuestionStatePatchFromFollowUp returns a mergeable state patch
   });
   assert.deepEqual(extractQuestionStatePatchFromFollowUp("Server API"), {
     apiLayer: "server",
+  });
+  assert.deepEqual(extractQuestionStatePatchFromFollowUp("Server API", "product"), {
+    product: "server",
   });
   assert.equal(extractQuestionStatePatchFromFollowUp("Android 怎么初始化 Chat SDK？"), null);
 });
@@ -81,5 +92,25 @@ void test("isStoredClarificationFollowUpAllowed enforces clarification kind and 
       { platform: "android" },
     ),
     false,
+  );
+  assert.equal(
+    isStoredClarificationFollowUpAllowed(
+      {
+        clarificationKind: "task_focus",
+        candidatePlatforms: [],
+      },
+      { taskFocus: "webhook signature verification" },
+    ),
+    true,
+  );
+});
+
+void test("rewriteTaskFocusClarificationQuestion appends the narrowed task focus", () => {
+  assert.equal(
+    rewriteTaskFocusClarificationQuestion(
+      "How to integrate using Server API?",
+      "webhook signature verification",
+    ),
+    "How to integrate using Server API for webhook signature verification?",
   );
 });

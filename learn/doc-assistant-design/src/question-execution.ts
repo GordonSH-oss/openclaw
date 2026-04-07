@@ -23,6 +23,7 @@ import {
   getStoredClarificationContext,
   isStoredClarificationFollowUpAllowed,
   mergeStoredStateWithFollowUp,
+  rewriteTaskFocusClarificationQuestion,
   selectPlatformHits,
   shouldReuseClarificationHits,
 } from "./follow-up-context.js";
@@ -30,6 +31,7 @@ import { buildGreetingAnswer, detectGreetingIntent } from "./greeting-intent.js"
 import type { DocAssistantMode, DocSearchHit, OpenAICompatibleConfig } from "./protocol/index.js";
 import {
   buildQuestionState,
+  detectQuestionProduct,
   mergeQuestionState,
   rewriteQuestionFromState,
   type QuestionState,
@@ -42,8 +44,19 @@ import { createDocAssistantTrace } from "./trace.js";
 // `executeDocQuestion()`, and this file coordinates follow-up handling, retrieval, answerability,
 // grounded answer generation, optional agent rewrite, and trace persistence.
 function filterHitsForResolvedState(hits: DocSearchHit[], state: QuestionState): DocSearchHit[] {
+  let filteredHits = hits;
+  if (state.product) {
+    const matchingProductHits = filteredHits.filter((hit) => {
+      return (
+        detectQuestionProduct([hit.path, hit.heading ?? "", hit.text].join("\n")) === state.product
+      );
+    });
+    if (matchingProductHits.length > 0) {
+      filteredHits = matchingProductHits;
+    }
+  }
   if (!state.platform) {
-    return hits;
+    return filteredHits;
   }
   const platformTerms =
     state.platform === "ios"
@@ -53,11 +66,11 @@ function filterHitsForResolvedState(hits: DocSearchHit[], state: QuestionState):
         : state.platform === "flutter"
           ? ["flutter", "dart"]
           : ["android"];
-  const matching = hits.filter((hit) => {
+  const matching = filteredHits.filter((hit) => {
     const normalized = [hit.path, hit.heading ?? "", hit.text].join("\n").toLowerCase();
     return platformTerms.some((term) => normalized.includes(term));
   });
-  return matching.length > 0 ? matching : hits;
+  return matching.length > 0 ? matching : filteredHits;
 }
 
 function maybeReturnInsufficientEvidence(params: {
@@ -67,6 +80,19 @@ function maybeReturnInsufficientEvidence(params: {
   hits: DocSearchHit[];
 }): DocAnswerResult | null {
   if (params.hits.length === 0) {
+    return null;
+  }
+  const clarification = decideClarification({
+    state: params.state,
+    hits: params.hits,
+  });
+  if (
+    clarification.shouldClarify &&
+    (clarification.kind === "task_focus" ||
+      clarification.kind === "platform" ||
+      clarification.kind === "channel_kind" ||
+      clarification.kind === "api_layer")
+  ) {
     return null;
   }
   const decision = decideAnswerability({
@@ -165,10 +191,10 @@ async function runStagedRetrieval(params: {
     params.state.product !== undefined ||
     params.state.channelKind !== undefined ||
     params.state.referent !== undefined ||
-    params.state.taskKind === "first_message" ||
-    params.state.taskKind === "send_message" ||
-    params.state.taskKind === "start_chat" ||
-    params.state.taskKind === "channel_creation";
+    params.state.anchors.nounPhrases.length > 0 ||
+    params.state.anchors.constraints.length > 0 ||
+    params.state.anchors.apiSymbols.length > 0 ||
+    params.state.anchors.verbPhrases.length > 0;
 
   if (!allowExpansionQueries) {
     return {
@@ -365,13 +391,16 @@ export async function executeDocQuestion(params: {
   });
   const initialState = buildQuestionState(params.question);
   const followUpMatch = detectClarificationFollowUpQuestion(params.question);
-  const followUpPatch = followUpMatch
-    ? extractQuestionStatePatchFromFollowUp(params.question)
-    : null;
   const clarificationFollowUp =
-    params.sessionId && followUpPatch
+    params.sessionId && followUpMatch
       ? await getStoredClarificationContext(params.sessionId, params.dataDir)
       : null;
+  const followUpPatch = followUpMatch
+    ? extractQuestionStatePatchFromFollowUp(
+        params.question,
+        clarificationFollowUp?.clarificationKind,
+      )
+    : null;
   const followUpBaseQuestion =
     clarificationFollowUp?.pendingQuestion ?? clarificationFollowUp?.originalQuestion;
   const followUpBaseState = followUpBaseQuestion
@@ -385,12 +414,36 @@ export async function executeDocQuestion(params: {
     followUpMatch &&
     isStoredClarificationFollowUpAllowed(clarificationFollowUp, followUpMatch),
   );
-  const effectiveState =
-    flags.questionState && acceptedClarificationFollowUp && followUpPatch && followUpBaseState
+  const taskFocusFollowUp =
+    acceptedClarificationFollowUp &&
+    clarificationFollowUp?.clarificationKind === "task_focus" &&
+    followUpMatch?.taskFocus &&
+    followUpBaseState &&
+    followUpBaseQuestion
+      ? followUpMatch.taskFocus
+      : undefined;
+  const effectiveTaskFocusQuestion =
+    taskFocusFollowUp && followUpBaseQuestion
+      ? rewriteTaskFocusClarificationQuestion(followUpBaseQuestion, taskFocusFollowUp)
+      : undefined;
+  const effectiveTaskFocusState =
+    effectiveTaskFocusQuestion && followUpBaseState
+      ? mergeStoredStateWithFollowUp(buildQuestionState(effectiveTaskFocusQuestion), {
+          platform: followUpBaseState.platform,
+          product: followUpBaseState.product,
+          apiLayer: followUpBaseState.apiLayer,
+          channelKind: followUpBaseState.channelKind,
+          referent: followUpBaseState.referent,
+        })
+      : undefined;
+  const effectiveState = effectiveTaskFocusState
+    ? effectiveTaskFocusState
+    : flags.questionState && acceptedClarificationFollowUp && followUpPatch && followUpBaseState
       ? mergeStoredStateWithFollowUp(followUpBaseState, followUpPatch)
       : initialState;
-  const effectiveQuestion =
-    flags.questionState && acceptedClarificationFollowUp && followUpPatch && followUpBaseState
+  const effectiveQuestion = effectiveTaskFocusQuestion
+    ? effectiveTaskFocusQuestion
+    : flags.questionState && acceptedClarificationFollowUp && followUpPatch && followUpBaseState
       ? rewriteQuestionFromState(effectiveState)
       : params.question;
   const continuedFromRunId = clarificationFollowUp?.runId;
@@ -659,8 +712,12 @@ export async function executeDocQuestion(params: {
     dataDir: params.dataDir,
     maxResults: params.maxResults,
     refinement: {
-      taskKind: clarificationFollowUp?.taskKind ?? effectiveState.taskKind,
       preferredDocShape: clarificationFollowUp?.preferredDocShape,
+      focusAnchors: [
+        ...effectiveState.anchors.nounPhrases,
+        ...effectiveState.anchors.constraints,
+        ...effectiveState.anchors.apiSymbols,
+      ],
     },
     overrides: retrievalOverrides,
   });

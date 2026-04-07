@@ -4,6 +4,8 @@ const NON_CACHEABLE_SUMMARIES = new Set([
   "platform clarification required",
   "channel clarification required",
   "api layer clarification required",
+  "product clarification required",
+  "task clarification required",
   "no relevant documentation found",
   "insufficient documentation evidence",
   "guided greeting",

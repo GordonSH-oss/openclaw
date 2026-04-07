@@ -154,6 +154,7 @@ export type DocsHistoryListParams = {
 
 export type DocQuestionAnswerOutcome =
   | "answered"
+  | "non_authoritative"
   | "guided_greeting"
   | "memory_standard"
   | "memory_draft"
@@ -161,6 +162,24 @@ export type DocQuestionAnswerOutcome =
   | "no_relevant_docs"
   | "error"
   | "cancelled";
+
+export type DocQuestionHistoryTaskFrame = {
+  intent?: "concept" | "procedural" | "mixed";
+  product?: "chat" | "call" | "server";
+  platform?: "android" | "ios" | "web" | "flutter";
+  apiLayer?: "client" | "server";
+  channelKind?: "direct" | "group" | "community" | "open";
+  anchors?: {
+    focus: string[];
+    constraints: string[];
+    apiSymbols: string[];
+  };
+  coverage?: {
+    matched: string[];
+    missing: string[];
+  };
+  responseMode?: "definition" | "procedure" | "mixed" | "clarification" | "insufficient";
+};
 
 export type DocQuestionHistoryEntry = {
   runId: string;
@@ -185,6 +204,7 @@ export type DocQuestionHistoryEntry = {
   followUpSource?: DocFollowUpSource;
   continuedFromRunId?: string;
   rewrittenQuestion?: string;
+  taskFrame?: DocQuestionHistoryTaskFrame;
 };
 
 export type AnswerMemoryEntry = {

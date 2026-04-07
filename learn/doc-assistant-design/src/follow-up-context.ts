@@ -4,17 +4,13 @@ import type { ClarificationKind } from "./clarification-policy.js";
 import { detectDocShape, type DocSearchDocShape } from "./doc-shape.js";
 import { readJsonSafe, writeJsonAtomic } from "./persistence.js";
 import type { DocSearchHit } from "./protocol/index.js";
-import {
-  detectPreferredDocShape,
-  detectProceduralTaskKind,
-  type DocPreferredDocShape,
-  type DocProceduralTaskKind,
-} from "./question-planning.js";
+import { detectPreferredDocShape, type DocPreferredDocShape } from "./question-planning.js";
 import {
   buildQuestionState,
   mergeQuestionState,
   type QuestionApiLayer,
   type QuestionChannelKind,
+  type QuestionProduct,
   type QuestionState,
 } from "./question-state.js";
 import { resolveDocAssistantDataDir } from "./user-store.js";
@@ -28,17 +24,33 @@ export type StoredClarificationContext = {
   pendingQuestion?: string;
   normalizedQuestion?: string;
   clarificationKind?: ClarificationKind;
-  questionState?: Pick<
-    QuestionState,
-    "intent" | "taskKind" | "platform" | "channelKind" | "apiLayer" | "referent" | "ambiguity"
+  questionState?: Partial<
+    Pick<
+      QuestionState,
+      | "intent"
+      | "platform"
+      | "product"
+      | "channelKind"
+      | "apiLayer"
+      | "referent"
+      | "anchors"
+      | "ambiguity"
+    >
   >;
   pendingState?: Partial<QuestionState>;
-  taskKind?: DocProceduralTaskKind;
   preferredDocShape?: DocPreferredDocShape;
   originalTopHitShapes?: DocSearchDocShape[];
   candidatePlatforms: DocFollowUpPlatform[];
   hits: DocSearchHit[];
   createdAt: number;
+};
+
+export type DetectedClarificationFollowUp = {
+  platform?: DocFollowUpPlatform;
+  channelKind?: QuestionChannelKind;
+  apiLayer?: QuestionApiLayer;
+  product?: QuestionProduct;
+  taskFocus?: string;
 };
 
 type FollowUpContextStore = Record<string, StoredClarificationContext>;
@@ -58,8 +70,14 @@ const CHANNEL_KIND_PATTERNS: Record<QuestionChannelKind, RegExp[]> = {
 };
 
 const API_LAYER_PATTERNS: Record<QuestionApiLayer, RegExp[]> = {
-  client: [/\bclient(?:\s+sdk)?\b/gi, /\bclient side\b/gi, /\bsdk\b/gi, /客户端/g],
+  client: [/\bclient(?:\s+sdk)?\b/gi, /\bclient side\b/gi, /客户端/g],
   server: [/\bserver(?:\s+api)?\b/gi, /\brest api\b/gi, /服务端/g, /服务端 api/g],
+};
+
+const PRODUCT_PATTERNS: Record<QuestionProduct, RegExp[]> = {
+  chat: [/\bchat(?:\s+sdk)?\b/gi, /聊天/g, /即时通讯/g],
+  call: [/\bcall(?:\s+sdk)?\b/gi, /通话/g, /音视频/g, /音频/g, /视频/g],
+  server: [/\bserver(?:\s+api)?\b/gi, /\bplatform chat api\b/gi, /服务端/g],
 };
 
 const FOLLOW_UP_FILLER_PATTERNS = [
@@ -82,6 +100,34 @@ const FOLLOW_UP_FILLER_PATTERNS = [
   /\bone\b/gi,
   /\bversion\b/gi,
   /\bplease\b/gi,
+];
+
+const NON_TECH_SHORT_REPLIES = new Set([
+  "hello",
+  "hi",
+  "ok",
+  "okay",
+  "sure",
+  "yes",
+  "no",
+  "thanks",
+  "thank you",
+  "好的",
+  "好",
+  "谢谢",
+  "嗯",
+]);
+
+const TASK_FOCUS_DISALLOWED_PATTERNS = [
+  /\b(?:sdk|api|chat|call)\b/i,
+  /\b(?:connect|configure|config|init|initialize|install|start|send|create|change|update)\b/i,
+  /如何/,
+  /怎么/,
+  /初始化/,
+  /连接/,
+  /配置/,
+  /发送/,
+  /创建/,
 ];
 
 const TECHNICAL_SIGNAL_PATTERNS = [
@@ -212,12 +258,35 @@ function detectFollowUpApiLayer(value: string): QuestionApiLayer | undefined {
   return matched.length === 1 ? matched[0] : undefined;
 }
 
+function detectFollowUpProduct(value: string): QuestionProduct | undefined {
+  const normalized = normalizeFollowUpText(value);
+  const matched = Object.entries(PRODUCT_PATTERNS)
+    .filter(([, patterns]) =>
+      patterns.some((pattern) => new RegExp(pattern.source, pattern.flags).test(normalized)),
+    )
+    .map(([kind]) => kind as QuestionProduct);
+  return matched.length === 1 ? matched[0] : undefined;
+}
+
 export function extractQuestionStatePatchFromFollowUp(
   question: string,
+  clarificationKind?: ClarificationKind,
 ): Partial<QuestionState> | null {
   const followUp = detectClarificationFollowUpQuestion(question);
   if (!followUp) {
     return null;
+  }
+  if (clarificationKind === "platform" && followUp.platform) {
+    return { platform: followUp.platform };
+  }
+  if (clarificationKind === "channel_kind" && followUp.channelKind) {
+    return { channelKind: followUp.channelKind };
+  }
+  if (clarificationKind === "api_layer" && followUp.apiLayer) {
+    return { apiLayer: followUp.apiLayer };
+  }
+  if (clarificationKind === "product" && followUp.product) {
+    return { product: followUp.product };
   }
   if (followUp.platform) {
     return { platform: followUp.platform };
@@ -227,6 +296,9 @@ export function extractQuestionStatePatchFromFollowUp(
   }
   if (followUp.apiLayer) {
     return { apiLayer: followUp.apiLayer };
+  }
+  if (followUp.product) {
+    return { product: followUp.product };
   }
   return null;
 }
@@ -238,11 +310,9 @@ export function mergeStoredStateWithFollowUp(
   return mergeQuestionState(base, patch);
 }
 
-export function detectClarificationFollowUpQuestion(question: string): {
-  platform?: DocFollowUpPlatform;
-  channelKind?: QuestionChannelKind;
-  apiLayer?: QuestionApiLayer;
-} | null {
+export function detectClarificationFollowUpQuestion(
+  question: string,
+): DetectedClarificationFollowUp | null {
   const normalized = normalizeFollowUpText(question);
   if (!normalized || normalized.length > 60) {
     return null;
@@ -262,8 +332,39 @@ export function detectClarificationFollowUpQuestion(question: string): {
   }
 
   const apiLayer = detectFollowUpApiLayer(normalized);
+  const product = detectFollowUpProduct(normalized);
+  if (
+    apiLayer === "server" &&
+    product === "server" &&
+    isEmptyFollowUpRemainder(normalized, [
+      ...Object.values(API_LAYER_PATTERNS).flat(),
+      ...Object.values(PRODUCT_PATTERNS).flat(),
+    ])
+  ) {
+    return { apiLayer, product };
+  }
+
   if (apiLayer && isEmptyFollowUpRemainder(normalized, Object.values(API_LAYER_PATTERNS).flat())) {
     return { apiLayer };
+  }
+
+  if (product && isEmptyFollowUpRemainder(normalized, Object.values(PRODUCT_PATTERNS).flat())) {
+    return { product };
+  }
+
+  const trimmed = question
+    .trim()
+    .replace(/[?!.。！？]+$/u, "")
+    .trim();
+  const looksLikeStandaloneTaskFocus =
+    trimmed.length > 0 &&
+    trimmed.length <= 80 &&
+    !NON_TECH_SHORT_REPLIES.has(normalized) &&
+    !/^(?:how|what|why|when|where|do|does|can|should|could|is|are)\b/i.test(normalized) &&
+    !/^(?:如何|怎么|为什么|什么是|请问|能否|可否)/u.test(trimmed) &&
+    !TASK_FOCUS_DISALLOWED_PATTERNS.some((pattern) => pattern.test(trimmed));
+  if (looksLikeStandaloneTaskFocus) {
+    return { taskFocus: trimmed };
   }
 
   if (TECHNICAL_SIGNAL_PATTERNS.some((pattern) => pattern.test(normalized))) {
@@ -286,7 +387,28 @@ export function isStoredClarificationFollowUpAllowed(
   if (context.clarificationKind === "api_layer") {
     return Boolean(followUp.apiLayer);
   }
+  if (context.clarificationKind === "product") {
+    return Boolean(followUp.product);
+  }
+  if (context.clarificationKind === "task_focus") {
+    return Boolean(followUp.taskFocus);
+  }
   return false;
+}
+
+export function rewriteTaskFocusClarificationQuestion(
+  originalQuestion: string,
+  taskFocus: string,
+): string {
+  const trimmedQuestion = originalQuestion.trim().replace(/[?!.。！？]+$/u, "");
+  const trimmedFocus = taskFocus.trim().replace(/[?!.。！？]+$/u, "");
+  const asciiCount = (trimmedQuestion.match(/[A-Za-z]/g) ?? []).length;
+  const cjkCount = (trimmedQuestion.match(/[\u4e00-\u9fff]/g) ?? []).length;
+
+  if (asciiCount >= cjkCount) {
+    return `${trimmedQuestion} for ${trimmedFocus}?`;
+  }
+  return `${trimmedQuestion}，聚焦 ${trimmedFocus}？`;
 }
 
 export function detectPlatformFromHit(hit: DocSearchHit): DocFollowUpPlatform | undefined {
@@ -339,10 +461,7 @@ export function extractClarificationPlatforms(hits: DocSearchHit[]): DocFollowUp
 
 export function shouldReuseClarificationHits(
   context:
-    | Pick<
-        StoredClarificationContext,
-        "hits" | "taskKind" | "preferredDocShape" | "originalTopHitShapes"
-      >
+    | Pick<StoredClarificationContext, "hits" | "preferredDocShape" | "originalTopHitShapes">
     | DocSearchHit[],
   platform: DocFollowUpPlatform,
 ): boolean {
@@ -352,7 +471,6 @@ export function shouldReuseClarificationHits(
     return false;
   }
 
-  const taskKind = Array.isArray(context) ? "generic" : (context.taskKind ?? "generic");
   const preferredDocShape = Array.isArray(context)
     ? "specialized_task"
     : (context.preferredDocShape ?? "specialized_task");
@@ -363,20 +481,14 @@ export function shouldReuseClarificationHits(
   const specializedCount = topSelectedShapes.filter((shape) => shape === "specialized_task").length;
   const topShape = topSelectedShapes[0];
 
-  if (
-    preferredDocShape === "specialized_task" &&
-    (taskKind === "send_message" ||
-      taskKind === "first_message" ||
-      taskKind === "channel_creation") &&
-    topShape === "quickstart_step"
-  ) {
+  if (preferredDocShape === "specialized_task" && topShape === "quickstart_step") {
     return false;
   }
 
   if (
-    (taskKind === "send_message" || taskKind === "first_message") &&
     quickstartCount > 0 &&
-    quickstartCount >= specializedCount
+    quickstartCount >= specializedCount &&
+    preferredDocShape === "specialized_task"
   ) {
     return false;
   }
@@ -435,15 +547,15 @@ export async function persistClarificationContext(params: {
     clarificationKind: params.clarificationKind,
     questionState: {
       intent: questionState.intent,
-      taskKind: questionState.taskKind,
       platform: questionState.platform,
+      product: questionState.product,
       channelKind: questionState.channelKind,
       apiLayer: questionState.apiLayer,
       referent: questionState.referent,
+      anchors: questionState.anchors,
       ambiguity: questionState.ambiguity,
     },
     pendingState: params.pendingState,
-    taskKind: detectProceduralTaskKind(params.pendingQuestion ?? params.originalQuestion),
     preferredDocShape: detectPreferredDocShape(params.pendingQuestion ?? params.originalQuestion),
     originalTopHitShapes: params.hits.slice(0, 3).map((hit) => hit.docShape ?? detectDocShape(hit)),
     candidatePlatforms: extractClarificationPlatforms(params.hits),
@@ -480,7 +592,11 @@ export async function updateClarificationStateAfterAnswer(params: {
         ? "channel_kind"
         : params.summary === "api layer clarification required"
           ? "api_layer"
-          : undefined);
+          : params.summary === "product clarification required"
+            ? "product"
+            : params.summary === "task clarification required"
+              ? "task_focus"
+              : undefined);
   if (clarificationKind) {
     const pendingQuestion = params.pendingQuestion ?? params.question;
     const clarificationHits = params.clarificationHits ?? params.hits;
@@ -496,15 +612,15 @@ export async function updateClarificationStateAfterAnswer(params: {
       clarificationKind,
       questionState: {
         intent: questionState.intent,
-        taskKind: questionState.taskKind,
         platform: questionState.platform,
+        product: questionState.product,
         channelKind: questionState.channelKind,
         apiLayer: questionState.apiLayer,
         referent: questionState.referent,
+        anchors: questionState.anchors,
         ambiguity: questionState.ambiguity,
       },
       pendingState: params.pendingState,
-      taskKind: detectProceduralTaskKind(pendingQuestion),
       preferredDocShape: detectPreferredDocShape(pendingQuestion),
       originalTopHitShapes: clarificationHits
         .slice(0, 3)

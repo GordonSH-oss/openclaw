@@ -253,5 +253,17 @@ export function detectPreferredDocShape(question: string): DocPreferredDocShape 
   ) {
     return "quickstart_step";
   }
+  if (
+    (/^how (?:to|do|can) .*chat\b/.test(normalized) ||
+      /^如何.*聊天/.test(normalized) ||
+      /^怎么.*聊天/.test(normalized) ||
+      normalized === "how to chat" ||
+      normalized === "how do i chat") &&
+    !normalized.includes("message") &&
+    !normalized.includes("thread") &&
+    !normalized.includes("mention")
+  ) {
+    return "quickstart_step";
+  }
   return "specialized_task";
 }

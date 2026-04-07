@@ -1,5 +1,7 @@
 import { detectAnswerLanguage } from "./answer-language.js";
 import type { DocCitation, DocSearchHit, OpenAICompatibleConfig } from "./protocol/index.js";
+import { detectQuestionPlatform } from "./question-state.js";
+import { buildTaskFrame, labelEvidenceHit, type TaskFrame } from "./task-frame.js";
 
 export const DEFAULT_DOC_ASSISTANT_AGENT_MODEL = "gpt-5.4";
 
@@ -51,70 +53,91 @@ function renderSourcesAppendix(citations: DocCitation[]): string {
   ].join("\n");
 }
 
-function normalizePromptText(text: string): string {
-  return text
-    .toLowerCase()
-    .replace(/\bdms?\b/g, "direct channel")
-    .replace(/\bdirect messages?\b/g, "direct channel")
-    .replace(/\bdirect chats?\b/g, "direct channel")
-    .replace(/\bprivate chats?\b/g, "direct channel")
-    .replace(/\bjavascript\b/g, "web")
-    .replace(/\bjs\b/g, "web");
-}
-
 function detectEvidencePlatform(hit: DocSearchHit): string {
-  const normalized = normalizePromptText([hit.path, hit.heading ?? "", hit.text].join("\n"));
-  if (normalized.includes("android")) {
-    return "android";
-  }
-  if (normalized.includes("ios")) {
-    return "ios";
-  }
-  if (normalized.includes("web")) {
-    return "web";
-  }
-  return "general";
+  return detectQuestionPlatform([hit.path, hit.heading ?? "", hit.text].join("\n")) ?? "general";
 }
 
-function detectEvidenceRole(hit: DocSearchHit): string {
-  const normalized = normalizePromptText([hit.path, hit.heading ?? "", hit.text].join("\n"));
-  if (normalized.includes("platform chat api") || normalized.includes("server api")) {
-    return "server_irrelevant";
+function summarizeTaskFrame(frame: TaskFrame): string {
+  return [
+    `responseMode=${frame.responseMode}`,
+    frame.platform ? `platform=${frame.platform}` : "",
+    frame.channelKind ? `channelKind=${frame.channelKind}` : "",
+    frame.apiLayer ? `apiLayer=${frame.apiLayer}` : "",
+    frame.anchors.focus.length > 0 ? `focus=${frame.anchors.focus.join("|")}` : "",
+    frame.anchors.constraints.length > 0
+      ? `constraints=${frame.anchors.constraints.join("|")}`
+      : "",
+    frame.anchors.apiSymbols.length > 0 ? `apiSymbols=${frame.anchors.apiSymbols.join("|")}` : "",
+  ]
+    .filter(Boolean)
+    .join(", ");
+}
+
+function pickPrimaryEvidenceLabel(params: {
+  frame: TaskFrame;
+  labels: ReturnType<typeof labelEvidenceHit>["labels"];
+}): string {
+  const { frame, labels } = params;
+  if (frame.responseMode === "definition" && labels.includes("definition")) {
+    return "definition";
   }
-  if (
-    normalized.includes("send your first message") ||
-    normalized.includes("send a message") ||
-    normalized.includes("text message") ||
-    normalized.includes("regular message") ||
-    normalized.includes("image message") ||
-    normalized.includes("media message") ||
-    normalized.includes("file message") ||
-    normalized.includes("voice message") ||
-    normalized.includes("targeted message")
-  ) {
-    return "send_message";
+  if (frame.responseMode === "procedure") {
+    if (labels.includes("event")) {
+      return "event";
+    }
+    if (labels.includes("procedure")) {
+      return "procedure";
+    }
   }
-  if (normalized.includes("connect") || normalized.includes("token")) {
-    return "connect";
-  }
-  if (
-    normalized.includes("import") ||
-    normalized.includes("initialize") ||
-    normalized.includes("quickstart") ||
-    normalized.includes("get started")
-  ) {
-    return "setup";
-  }
-  if (normalized.includes("direct channel") || normalized.includes("channel overview")) {
-    return "start_chat";
+  for (const label of [
+    "setup",
+    "connect",
+    "navigate",
+    "procedure",
+    "event",
+    "overview",
+    "definition",
+    "reference",
+  ] as const) {
+    if (labels.includes(label)) {
+      return label;
+    }
   }
   return "reference";
 }
 
+function detectEvidenceGroupKey(params: { frame: TaskFrame; hit: DocSearchHit }): string {
+  const descriptor = labelEvidenceHit(params.hit);
+  const parts = [detectEvidencePlatform(params.hit)];
+  if (descriptor.labels.includes("server_only")) {
+    parts.push("server_only");
+  } else if (descriptor.labels.includes("client_only")) {
+    parts.push("client_only");
+  }
+  parts.push(
+    pickPrimaryEvidenceLabel({
+      frame: params.frame,
+      labels: descriptor.labels,
+    }),
+  );
+  const anchorGroup = descriptor.anchors.nounPhrases[0] ?? descriptor.anchors.apiSymbols[0];
+  if (anchorGroup) {
+    parts.push(anchorGroup);
+  }
+  return parts.join("/");
+}
+
 function buildPrompt(question: string, hits: DocSearchHit[]): string {
   const language = detectAnswerLanguage(question, hits);
+  const frame = buildTaskFrame({
+    question,
+    hits,
+  });
   const grouped = hits.slice(0, 6).reduce<Map<string, DocSearchHit[]>>((acc, hit) => {
-    const key = `${detectEvidencePlatform(hit)}/${detectEvidenceRole(hit)}`;
+    const key = detectEvidenceGroupKey({
+      frame,
+      hit,
+    });
     const current = acc.get(key) ?? [];
     current.push(hit);
     acc.set(key, current);
@@ -140,6 +163,7 @@ function buildPrompt(question: string, hits: DocSearchHit[]): string {
 
   return [
     `Question: ${question}`,
+    `Question frame: ${summarizeTaskFrame(frame)}`,
     "",
     "Retrieved documentation:",
     evidence,

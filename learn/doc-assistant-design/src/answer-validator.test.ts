@@ -197,3 +197,35 @@ void test("validateAnswer downgrades answers that turn status metadata into step
     true,
   );
 });
+
+void test("validateAnswer downgrades procedural answers that have no actionable step", () => {
+  const state = buildQuestionState("How to recall a message in web?");
+  const evidence = buildEvidencePack({
+    state,
+    hits: [
+      makeHit(
+        "docs/chatsdk-web/message/recall.md",
+        "Delete a message",
+        "Call BaseChannel.createMessagesQuery(...) and channel.deleteMessageForAll(message).",
+        "procedural",
+      ),
+    ],
+  });
+  const result = validateAnswer({
+    question: state.rawQuestion,
+    state,
+    evidence,
+    answer: "Use the documented flow below.",
+    summary: "guided answer from 1 documentation chunks",
+    citations: evidence.groups[0]?.citations ?? [],
+  });
+
+  assert.equal(result.downgradeTo, "insufficient");
+  assert.equal(
+    result.issues.some(
+      (issue) =>
+        issue.code === "off_intent_answer" && issue.message.includes("actionable documented step"),
+    ),
+    true,
+  );
+});

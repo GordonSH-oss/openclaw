@@ -32,7 +32,11 @@ import {
   type DocsTerminalResult,
 } from "../protocol/index.js";
 import { executeDocQuestion } from "../question-execution.js";
-import { appendQuestionHistoryEntry, loadQuestionHistory } from "../question-history.js";
+import {
+  appendQuestionHistoryEntry,
+  loadQuestionHistory,
+  sanitizeHistoryTaskFrame,
+} from "../question-history.js";
 import {
   completeDocRun,
   registerDocRun,
@@ -277,11 +281,13 @@ async function launchDocAssistantRun(params: {
           selectedModel: terminal.selectedModel,
           answer: terminal.answer,
           answerSource: terminal.answerSource,
+          answerSurface: terminal.answerSurface,
           reviewStatus: terminal.reviewStatus,
           memoryEntryId: terminal.memoryEntryId,
           followUpSource: terminal.followUpSource,
           continuedFromRunId: terminal.continuedFromRunId,
           rewrittenQuestion: terminal.rewrittenQuestion,
+          taskFrame: sanitizeHistoryTaskFrame(terminal.trace?.taskFrame),
         },
       });
     } catch (error) {

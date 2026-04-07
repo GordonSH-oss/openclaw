@@ -1210,8 +1210,8 @@ function scoreClientConnectionSemantics(
 function scoreDocShapeSemantics(params: {
   chunk: DocIndexChunk;
   signals: ReturnType<typeof detectQuerySignals>;
-  taskKind: DocProceduralTaskKind;
   preferredDocShape: DocPreferredDocShape;
+  focusAnchors?: string[];
 }): number {
   const shape = detectDocShape({
     path: params.chunk.relativePath,
@@ -1241,60 +1241,31 @@ function scoreDocShapeSemantics(params: {
     }
   }
 
-  if (params.taskKind === "send_message") {
-    if (shape === "specialized_task") {
-      score += 30;
-    }
-    if (shape === "quickstart_step") {
-      score -= 22;
-    }
-    return score;
-  }
-
-  if (params.taskKind === "first_message") {
-    if (tutorialFlowRequested) {
-      if (shape === "quickstart_step") {
-        score += 24;
-      }
-      if (shape === "specialized_task") {
-        score += 8;
-      }
-      return score;
-    }
-    if (platformSpecified) {
-      if (shape === "specialized_task") {
-        score += 26;
-      }
-      if (shape === "quickstart_step") {
-        score -= 18;
-      }
-      return score;
-    }
+  if (tutorialFlowRequested) {
     if (shape === "quickstart_step") {
       score += 18;
     }
     if (shape === "specialized_task") {
-      score += 10;
+      score += 8;
     }
     return score;
   }
 
-  if (params.taskKind === "channel_creation") {
+  if (platformSpecified && params.preferredDocShape === "specialized_task") {
     if (shape === "specialized_task") {
-      score += 22;
+      score += 14;
+    }
+    if (shape === "quickstart_step") {
+      score -= 10;
+    }
+  }
+
+  if ((params.focusAnchors?.length ?? 0) > 0 && params.preferredDocShape === "specialized_task") {
+    if (shape === "specialized_task") {
+      score += 10;
     }
     if (shape === "overview") {
       score -= 6;
-    }
-    return score;
-  }
-
-  if (params.taskKind === "start_chat") {
-    if (shape === "quickstart_step") {
-      score += 14;
-    }
-    if (shape === "specialized_task") {
-      score += 8;
     }
   }
 
@@ -1729,8 +1700,8 @@ function scoreProceduralChunk(
   tokens: string[],
   signals: ReturnType<typeof detectQuerySignals>,
   refinement?: {
-    taskKind?: DocProceduralTaskKind;
     preferredDocShape?: DocPreferredDocShape;
+    focusAnchors?: string[];
   },
 ): number {
   const pathText = chunk.relativePath.toLowerCase();
@@ -1748,8 +1719,8 @@ function scoreProceduralChunk(
   score += scoreDocShapeSemantics({
     chunk,
     signals,
-    taskKind: refinement?.taskKind ?? detectProceduralTaskKind(query),
     preferredDocShape: refinement?.preferredDocShape ?? detectPreferredDocShape(query),
+    focusAnchors: refinement?.focusAnchors,
   });
   if (
     signals.normalizedQuery.includes("push notification") &&
@@ -1768,6 +1739,23 @@ function scoreProceduralChunk(
     }
     if (headingText.includes("use pushmessagereceiver") && !bodyText.includes("intent filter")) {
       score -= 24;
+    }
+  }
+  if (
+    (signals.normalizedQuery.includes("integrate") ||
+      signals.normalizedQuery.includes("integration")) &&
+    (signals.normalizedQuery.includes("server api") ||
+      signals.normalizedQuery.includes("platform chat api"))
+  ) {
+    if (pathText.includes("chat-server-api-list")) {
+      score -= 72;
+    }
+    if (
+      headingText.includes("default behaviors") ||
+      headingText.includes("user management") ||
+      headingText.includes("blocklist")
+    ) {
+      score -= 48;
     }
   }
   return score;
@@ -1819,8 +1807,8 @@ function scoreBucketedEntries(params: {
   question: string;
   bucket: DocRetrievalBucket;
   refinement?: {
-    taskKind?: DocProceduralTaskKind;
     preferredDocShape?: DocPreferredDocShape;
+    focusAnchors?: string[];
   };
   overrides?: RetrievalOverrides;
 }): Array<{
@@ -1832,10 +1820,11 @@ function scoreBucketedEntries(params: {
   pathPlatforms: string[];
 }> {
   const query = params.question.trim().toLowerCase();
-  const tokens = expandQueryTokens(query, tokenize(query));
+  const rawTokens = tokenize(query);
+  const tokens = expandQueryTokens(query, rawTokens);
   const scoringTokens = tokens.filter((token) => !GENERIC_QUERY_TOKENS.has(token));
-  const strongTokens = getStrongQueryTokens(tokens);
-  const coverageTokens = getCoverageCriticalQueryTokens(tokens);
+  const strongTokens = getStrongQueryTokens(rawTokens);
+  const coverageTokens = getCoverageCriticalQueryTokens(rawTokens);
   const signals = detectQuerySignals(query, tokens);
   const scoreChunkForBucket =
     params.bucket === "concept"
@@ -1923,6 +1912,9 @@ function scoreBucketedEntries(params: {
   if (strongTokens.length > 0 && bestStrongOverlap === 0 && bestScore < 45) {
     return [];
   }
+  if (coverageTokens.length >= 2 && bestCoverageOverlap === 0) {
+    return [];
+  }
   if (coverageTokens.length > 0 && bestCoverageOverlap === 0 && bestScore < 90) {
     return [];
   }
@@ -1968,8 +1960,8 @@ export function searchDocsForBucket(params: {
   limit: number;
   purpose?: RetrievalPurpose;
   refinement?: {
-    taskKind?: DocProceduralTaskKind;
     preferredDocShape?: DocPreferredDocShape;
+    focusAnchors?: string[];
   };
   overrides?: RetrievalOverrides;
 }): DocSearchHit[] {
@@ -1995,8 +1987,8 @@ function buildPurposeQuery(params: {
   question: string;
   bucket: DocRetrievalBucket;
   refinement?: {
-    taskKind?: DocProceduralTaskKind;
     preferredDocShape?: DocPreferredDocShape;
+    focusAnchors?: string[];
   };
 } {
   if (params.purpose === "overview") {
@@ -2020,13 +2012,17 @@ function buildPurposeQuery(params: {
       question: `${params.question} ${quickstartHints}`.trim(),
       bucket: "procedural",
       refinement: {
-        taskKind: params.state?.taskKind ?? detectProceduralTaskKind(params.question),
         preferredDocShape:
           normalizedQuestion.includes("first message") ||
           normalizedQuestion.includes("quickstart") ||
           normalizedQuestion.includes("from scratch")
             ? "quickstart_step"
             : "specialized_task",
+        focusAnchors: [
+          ...(params.state?.anchors.nounPhrases ?? []),
+          ...(params.state?.anchors.constraints ?? []),
+          ...(params.state?.anchors.apiSymbols ?? []),
+        ],
       },
     };
   }
@@ -2035,8 +2031,11 @@ function buildPurposeQuery(params: {
       question: `${params.question} api`,
       bucket: "procedural",
       refinement: {
-        taskKind: params.state?.taskKind ?? detectProceduralTaskKind(params.question),
         preferredDocShape: "specialized_task",
+        focusAnchors: [
+          ...(params.state?.anchors.nounPhrases ?? []),
+          ...(params.state?.anchors.apiSymbols ?? []),
+        ],
       },
     };
   }
@@ -2050,9 +2049,12 @@ function buildPurposeQuery(params: {
     question: params.question,
     bucket: "procedural",
     refinement: {
-      taskKind: params.state?.taskKind ?? detectProceduralTaskKind(params.question),
-      preferredDocShape:
-        params.state?.taskKind === "first_message" ? "quickstart_step" : "specialized_task",
+      preferredDocShape: "specialized_task",
+      focusAnchors: [
+        ...(params.state?.anchors.nounPhrases ?? []),
+        ...(params.state?.anchors.constraints ?? []),
+        ...(params.state?.anchors.apiSymbols ?? []),
+      ],
     },
   };
 }
@@ -2089,8 +2091,8 @@ export async function searchDocs(params: {
   dataDir?: string;
   maxResults?: number;
   refinement?: {
-    taskKind?: DocProceduralTaskKind;
     preferredDocShape?: DocPreferredDocShape;
+    focusAnchors?: string[];
   };
   overrides?: RetrievalOverrides;
 }): Promise<DocSearchHit[]> {
