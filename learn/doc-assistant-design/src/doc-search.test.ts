@@ -3,10 +3,29 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { searchDocs } from "./doc-search.js";
+import type { DocIndexChunk } from "./doc-index.js";
+import { searchDocs, searchDocsForBucket } from "./doc-search.js";
 
 async function makeTempDir(name: string): Promise<string> {
   return await fs.mkdtemp(path.join(os.tmpdir(), `${name}-`));
+}
+
+function makeChunk(params: {
+  id: string;
+  relativePath: string;
+  heading: string;
+  text: string;
+  tokens: string[];
+}): DocIndexChunk {
+  return {
+    id: params.id,
+    relativePath: params.relativePath,
+    heading: params.heading,
+    startLine: 1,
+    endLine: 5,
+    text: params.text,
+    tokens: params.tokens,
+  };
 }
 
 void test("searchDocs drops off-intent infra queries when docs have no coverage tokens", async () => {
@@ -239,4 +258,124 @@ void test("searchDocs prefers active leave docs over event and metadata noise fo
       ),
     true,
   );
+});
+
+void test("searchDocsForBucket gives concept overview docs a clear score lead over create and event pages", () => {
+  const hits = searchDocsForBucket({
+    chunks: [
+      makeChunk({
+        id: "overview",
+        relativePath: "docs/chatsdk-web/community-channels/overview.md",
+        heading: "Community channel overview",
+        text: "A community channel is a large-scale channel that organizes members into subchannels.",
+        tokens: ["community", "channel", "overview", "large", "scale", "subchannels", "members"],
+      }),
+      makeChunk({
+        id: "create",
+        relativePath: "docs/chatsdk-web/community-channels/creating-channel.md",
+        heading: "Create a community channel",
+        text: "Create a community channel and configure subchannels.",
+        tokens: ["create", "community", "channel", "configure", "subchannels"],
+      }),
+      makeChunk({
+        id: "events",
+        relativePath: "docs/chatsdk-web/community-channels/events.md",
+        heading: "Community channel events",
+        text: "Listen for channel and membership events in community channels.",
+        tokens: ["community", "channel", "events", "membership", "listen"],
+      }),
+    ],
+    question: "What is a community channel?",
+    bucket: "concept",
+    limit: 5,
+  });
+
+  assert.equal(hits[0]?.path, "docs/chatsdk-web/community-channels/overview.md");
+  assert.equal(hits[1]?.path, "docs/chatsdk-web/community-channels/creating-channel.md");
+  assert.equal(hits[2]?.path, "docs/chatsdk-web/community-channels/events.md");
+  assert.equal(hits[0].score > hits[1].score, true);
+  assert.equal(hits[1].score > hits[2].score, true);
+  assert.equal(hits[0].score - hits[1].score >= 40, true);
+});
+
+void test("searchDocsForBucket strongly boosts must-cover push notification language matches", () => {
+  const hits = searchDocsForBucket({
+    chunks: [
+      makeChunk({
+        id: "locale-guide",
+        relativePath: "docs/chatsdk-android/push/set-push-language.md",
+        heading: "Set the default language for push notification templates",
+        text: "Configure the default language and locale for push notification delivery.",
+        tokens: ["set", "default", "language", "locale", "push", "notification", "delivery"],
+      }),
+      makeChunk({
+        id: "style-guide",
+        relativePath: "docs/chatsdk-android/push/config-push-notification-style.md",
+        heading: "Configure push notification style",
+        text: "Customize icons and appearance for push notification banners.",
+        tokens: ["configure", "push", "notification", "style", "icons", "appearance"],
+      }),
+      makeChunk({
+        id: "generic-push",
+        relativePath: "docs/chatsdk-android/push/handle-push-notification-click.md",
+        heading: "Handle push notification click events",
+        text: "Implement the default navigation behavior when the user taps a push notification.",
+        tokens: ["handle", "push", "notification", "click", "events", "navigation"],
+      }),
+    ],
+    question: "How do I set the default language for push notification on Android?",
+    bucket: "procedural",
+    limit: 5,
+  });
+
+  assert.equal(hits[0]?.path, "docs/chatsdk-android/push/set-push-language.md");
+  assert.equal(hits[1]?.path, "docs/chatsdk-android/push/config-push-notification-style.md");
+  assert.equal(hits[0].score - hits[1].score >= 200, true);
+  assert.equal(hits[1].score > hits[2].score, true);
+});
+
+void test("searchDocsForBucket prefers exact send-intent headings over generic or body-only matches", () => {
+  const hits = searchDocsForBucket({
+    chunks: [
+      makeChunk({
+        id: "heading-win",
+        relativePath: "docs/chatsdk-web/guides/guide-a.md",
+        heading: "Send a targeted message",
+        text: "Use directedUserIds to deliver a message to selected users.",
+        tokens: ["send", "targeted", "message", "directeduserids", "selected", "users"],
+      }),
+      makeChunk({
+        id: "generic",
+        relativePath: "docs/chatsdk-web/guides/guide-c.md",
+        heading: "Send a message",
+        text: "Call channel.sendMessage with regular params.",
+        tokens: ["send", "message", "regular", "params"],
+      }),
+      makeChunk({
+        id: "body-only",
+        relativePath: "docs/chatsdk-web/guides/guide-b.md",
+        heading: "Message options",
+        text: "To send a targeted message, use directedUserIds for selected recipients.",
+        tokens: [
+          "message",
+          "options",
+          "send",
+          "targeted",
+          "message",
+          "directeduserids",
+          "selected",
+          "recipients",
+        ],
+      }),
+    ],
+    question: "How to send a targeted message?",
+    bucket: "procedural",
+    limit: 5,
+  });
+
+  assert.equal(hits[0]?.path, "docs/chatsdk-web/guides/guide-a.md");
+  assert.equal(hits[1]?.path, "docs/chatsdk-web/guides/guide-c.md");
+  assert.equal(hits[2]?.path, "docs/chatsdk-web/guides/guide-b.md");
+  assert.equal(hits[0].score > hits[1].score, true);
+  assert.equal(hits[1].score > hits[2].score, true);
 });

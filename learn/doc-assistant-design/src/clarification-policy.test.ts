@@ -88,4 +88,29 @@ void test("decideClarification asks for task focus on broad server integration q
 
   assert.equal(decision.shouldClarify, true);
   assert.equal(decision.kind, "task_focus");
+  assert.equal(decision.candidateOptions?.includes("blocklist"), true);
+  assert.equal(decision.candidateOptions?.includes("specific endpoint"), false);
+});
+
+void test("decideClarification derives token focus only when evidence mentions token docs", () => {
+  const decision = decideClarification({
+    state: buildQuestionState("How to integrate using Server API?"),
+    hits: [
+      makeHit(
+        "docs/platform-chat-api/user/register.md",
+        "Issue an access token",
+        "Use the Server API endpoint to issue an access token for the user.",
+      ),
+      makeHit(
+        "docs/platform-chat-api/webhook/signature-verification.md",
+        "Verify the webhook signature",
+        "Read the signature header and verify the webhook signature before you accept the callback.",
+      ),
+    ],
+  });
+
+  assert.equal(decision.shouldClarify, true);
+  assert.equal(decision.kind, "task_focus");
+  assert.equal(decision.candidateOptions?.includes("access token"), true);
+  assert.equal(decision.candidateOptions?.includes("webhook signature verification"), true);
 });

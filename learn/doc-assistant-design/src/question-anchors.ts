@@ -27,6 +27,7 @@ const VERB_PATTERNS: Array<{ phrase: string; patterns: RegExp[] }> = [
   { phrase: "forward", patterns: [/\bforward\b/giu, /转发/gu] },
   { phrase: "integrate", patterns: [/\b(?:integrate|integration)\b/giu, /集成|接入/gu] },
   { phrase: "initialize", patterns: [/\b(?:init|initialize)\b/giu, /初始化/gu] },
+  { phrase: "issue", patterns: [/\bissue\b/giu, /签发|发放/gu] },
   { phrase: "join", patterns: [/\bjoin\b/giu, /加入/gu] },
   { phrase: "leave", patterns: [/\bleave\b/giu, /离开|退出/gu] },
   {
@@ -48,6 +49,15 @@ const VERB_PATTERNS: Array<{ phrase: string; patterns: RegExp[] }> = [
 ];
 
 const NOUN_PATTERNS: Array<{ phrase: string; patterns: RegExp[] }> = [
+  {
+    phrase: "access token",
+    patterns: [
+      /\baccess tokens?\b/giu,
+      /\btokens?\b/giu,
+      /\bauth(?:entication)?\b/giu,
+      /令牌|鉴权|认证|token/gu,
+    ],
+  },
   { phrase: "api endpoint", patterns: [/\bapi endpoints?\b/giu, /接口地址|接口端点/gu] },
   { phrase: "call", patterns: [/\bcall\b/giu, /通话/gu] },
   { phrase: "channel", patterns: [/\bchannels?\b/giu, /频道/gu] },
@@ -89,6 +99,7 @@ const NOUN_PATTERNS: Array<{ phrase: string; patterns: RegExp[] }> = [
 const QUALIFIER_PATTERNS: Array<{ phrase: string; patterns: RegExp[] }> = [
   { phrase: "default", patterns: [/\bdefault\b/giu, /默认/gu] },
   { phrase: "for everyone", patterns: [/\bfor everyone\b/giu, /所有人/gu] },
+  { phrase: "for self only", patterns: [/\bfor self only\b/giu, /仅自己可见|仅自己/gu] },
   { phrase: "for moderators only", patterns: [/\bfor moderators only\b/giu, /仅管理员|仅版主/gu] },
   { phrase: "in thread", patterns: [/\bin threads?\b/giu, /在线程中|在话题中/gu] },
   { phrase: "on notification click", patterns: [/\bon notification click\b/giu, /通知点击/gu] },
@@ -144,6 +155,32 @@ const STOP_TERMS = new Set([
   "web",
   "what",
   "with",
+  "using",
+  "yourself",
+]);
+
+const GENERIC_UNKNOWN_FOCUS_TERMS = new Set([
+  "callsdk",
+  "chatsdk",
+  "auth",
+  "constraint",
+  "constraints",
+  "detail",
+  "details",
+  "docs",
+  "documentation",
+  "exact",
+  "flow",
+  "guide",
+  "guides",
+  "management",
+  "need",
+  "operation",
+  "operations",
+  "specific",
+  "task",
+  "tasks",
+  "want",
 ]);
 
 function dedupe(values: Iterable<string>): string[] {
@@ -210,9 +247,11 @@ export function extractQuestionAnchors(question: string): QuestionAnchors {
   }
   const unknownTerms = tokenizeUnknownTerms(normalized, knownTerms);
 
+  const dedupedNouns = dedupe(nounPhrases);
+
   return {
     verbPhrases: dedupe(verbPhrases),
-    nounPhrases: dedupe(nounPhrases),
+    nounPhrases: dedupedNouns,
     qualifiers: dedupe(qualifiers),
     constraints: dedupe(constraints),
     apiSymbols,
@@ -225,8 +264,14 @@ export function summarizeAnchorFocus(anchors: QuestionAnchors): string[] {
     ...anchors.nounPhrases,
     ...anchors.qualifiers,
     ...anchors.apiSymbols,
-    ...anchors.unknownTerms,
+    ...selectSpecificUnknownTerms(anchors),
   ]);
+}
+
+export function selectSpecificUnknownTerms(anchors: QuestionAnchors): string[] {
+  return anchors.unknownTerms.filter(
+    (term) => term.length >= 4 && !GENERIC_UNKNOWN_FOCUS_TERMS.has(term) && !/^\d+$/.test(term),
+  );
 }
 
 export function selectRequiredAnchors(state: {
@@ -236,6 +281,7 @@ export function selectRequiredAnchors(state: {
   const genericVerbs = new Set([
     "configure",
     "create",
+    "integrate",
     "initialize",
     "list",
     "send",
@@ -250,8 +296,9 @@ export function selectRequiredAnchors(state: {
   ];
   if (state.intent !== "concept") {
     required.push(...state.anchors.verbPhrases.filter((verb) => !genericVerbs.has(verb)));
+    required.push(...selectSpecificUnknownTerms(state.anchors));
   } else if (required.length === 0) {
-    required.push(...state.anchors.unknownTerms);
+    required.push(...selectSpecificUnknownTerms(state.anchors));
   }
   return dedupe(required);
 }
@@ -271,7 +318,8 @@ function hasSpecificTaskFocus(anchors: QuestionAnchors): boolean {
     anchors.nounPhrases.length > 0 ||
     anchors.constraints.length > 0 ||
     anchors.apiSymbols.length > 0 ||
-    anchors.qualifiers.length > 0
+    anchors.qualifiers.length > 0 ||
+    selectSpecificUnknownTerms(anchors).length > 0
   );
 }
 

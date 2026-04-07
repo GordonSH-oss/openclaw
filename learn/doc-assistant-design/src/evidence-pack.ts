@@ -1,4 +1,5 @@
 import type { DocCitation, DocSearchHit } from "./protocol/index.js";
+import { extractQuestionAnchors } from "./question-anchors.js";
 import type { QuestionState } from "./question-state.js";
 
 export type EvidenceGroupPurpose =
@@ -63,11 +64,23 @@ function toCitation(hit: DocSearchHit): DocCitation {
 
 function classifyEvidencePurpose(hit: DocSearchHit): EvidenceGroupPurpose {
   const normalized = [hit.path, hit.heading ?? "", hit.text].join("\n").toLowerCase();
+  const anchors = extractQuestionAnchors([hit.path, hit.heading ?? "", hit.text].join("\n"));
   if (hit.retrievalBucket === "concept") {
     if (normalized.includes("overview") || normalized.includes("what is ")) {
       return "definition";
     }
     return "overview";
+  }
+  const looksLikeConcreteProcedure =
+    anchors.verbPhrases.length > 0 ||
+    /\b(call|use|set|add|remove|verify|issue|return)\b/.test(normalized);
+  if (
+    looksLikeConcreteProcedure &&
+    (anchors.nounPhrases.length > 0 ||
+      normalized.includes("endpoint") ||
+      normalized.includes("header"))
+  ) {
+    return "task_steps";
   }
   if (
     normalized.includes("create") ||

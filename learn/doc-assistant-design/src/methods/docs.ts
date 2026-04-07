@@ -34,6 +34,7 @@ import {
 import { executeDocQuestion } from "../question-execution.js";
 import {
   appendQuestionHistoryEntry,
+  sanitizeHistoryDebugAnswers,
   loadQuestionHistory,
   sanitizeHistoryTaskFrame,
 } from "../question-history.js";
@@ -288,6 +289,7 @@ async function launchDocAssistantRun(params: {
           continuedFromRunId: terminal.continuedFromRunId,
           rewrittenQuestion: terminal.rewrittenQuestion,
           taskFrame: sanitizeHistoryTaskFrame(terminal.trace?.taskFrame),
+          debugAnswers: sanitizeHistoryDebugAnswers(terminal.trace?.["debugAnswers"]),
         },
       });
     } catch (error) {

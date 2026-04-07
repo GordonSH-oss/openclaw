@@ -434,10 +434,33 @@ function shouldShowRetrieval(result) {
   return result?.summary !== "no relevant documentation found";
 }
 
-function renderCitations(card, citations, meta = "") {
+function buildCompletionNotes(data) {
+  const notes = [];
+  if (data?.answerSurface?.trust === "non_authoritative") {
+    notes.push({
+      level: "warning",
+      text: "Non-authoritative result: this answer came from the mock/learning surface, not a real LLM provider.",
+    });
+  }
+  if (data?.answerSurface?.note === "openai_compatible_empty_output_fallback") {
+    notes.push({
+      level: "warning",
+      text: "Real provider returned no answer text. Showing the grounded local fallback answer instead.",
+    });
+  }
+  if (data?.answerSurface?.note === "rejected_prompt_scaffolding_output") {
+    notes.push({
+      level: "warning",
+      text: "Provider output was rejected because it echoed prompt scaffolding. Showing the grounded local fallback answer instead.",
+    });
+  }
+  return notes;
+}
+
+function renderCitations(card, citations, meta = "", notes = []) {
   const container = card.querySelector(".message-citations");
   container.innerHTML = "";
-  if ((!citations || citations.length === 0) && !meta) {
+  if ((!citations || citations.length === 0) && !meta && (!notes || notes.length === 0)) {
     return;
   }
 
@@ -451,6 +474,13 @@ function renderCitations(card, citations, meta = "") {
     metaNode.className = "citation-item";
     metaNode.textContent = meta;
     container.appendChild(metaNode);
+  }
+
+  for (const note of notes ?? []) {
+    const noteNode = document.createElement("div");
+    noteNode.className = `citation-item citation-note citation-note-${note.level ?? "info"}`;
+    noteNode.textContent = note.text;
+    container.appendChild(noteNode);
   }
 
   if (!citations || citations.length === 0) {
@@ -470,6 +500,75 @@ function renderCitations(card, citations, meta = "") {
     list.appendChild(item);
   }
   container.appendChild(list);
+}
+
+function summarizeDebugSource(debugAnswers) {
+  switch (debugAnswers?.finalAnswerSource) {
+    case "provider":
+      return "Final answer came from the real provider output.";
+    case "grounded_fallback":
+      return "Final answer fell back to the grounded local answer.";
+    case "grounded_bypass":
+      return "Provider rewrite was bypassed and the grounded answer was returned directly.";
+    case "learning":
+      return "Final answer came from the learning surface output.";
+    case "learning_fallback":
+      return "Learning surface output was rejected and the grounded answer was returned.";
+    default:
+      return "";
+  }
+}
+
+function renderDebugPanel(title, text) {
+  const panel = document.createElement("details");
+  panel.className = "debug-panel";
+
+  const summary = document.createElement("summary");
+  summary.textContent = title;
+  panel.appendChild(summary);
+
+  const body = document.createElement("div");
+  body.className = "debug-panel-body";
+  body.innerHTML = renderMarkdown(text);
+  panel.appendChild(body);
+
+  return panel;
+}
+
+function renderDebugAnswers(card, debugAnswers) {
+  const container = card.querySelector(".message-debug");
+  container.innerHTML = "";
+  if (!debugAnswers) {
+    return;
+  }
+
+  const title = document.createElement("div");
+  title.className = "debug-title";
+  title.textContent = "Debug comparison";
+  container.appendChild(title);
+
+  const summary = summarizeDebugSource(debugAnswers);
+  if (summary) {
+    const summaryNode = document.createElement("div");
+    summaryNode.className = "debug-summary";
+    summaryNode.textContent = summary;
+    container.appendChild(summaryNode);
+  }
+
+  if (debugAnswers.providerError) {
+    const errorNode = document.createElement("div");
+    errorNode.className = "debug-summary";
+    errorNode.textContent = `Provider error: ${debugAnswers.providerError}`;
+    container.appendChild(errorNode);
+  }
+
+  if (debugAnswers.providerAnswer) {
+    container.appendChild(renderDebugPanel("Provider answer", debugAnswers.providerAnswer));
+  }
+
+  if (debugAnswers.groundedAnswer) {
+    container.appendChild(renderDebugPanel("Grounded fallback", debugAnswers.groundedAnswer));
+  }
 }
 
 function appendSystemMessage(text) {
@@ -572,8 +671,9 @@ function handleEvent(frame) {
       data.selectedProvider || data.selectedModel
         ? `model: ${data.selectedProvider ?? "unknown"}/${data.selectedModel ?? "unknown"}`
         : (data.summary ?? "");
-    renderCitations(context.card, data.citations ?? [], meta);
+    renderCitations(context.card, data.citations ?? [], meta, buildCompletionNotes(data));
     renderRetrieval(context.card, shouldShowRetrieval(data) ? context.retrieval : []);
+    renderDebugAnswers(context.card, data.trace?.debugAnswers);
     state.pendingRuns.delete(data.runId);
     dom.askButton.disabled = false;
     dom.newSessionButton.disabled = false;

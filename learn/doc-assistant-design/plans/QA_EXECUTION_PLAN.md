@@ -979,7 +979,7 @@ npm test -- src/eval.test.ts
 
 ```bash
 cd learn/doc-assistant-design
-node --import ../gateway-design/node_modules/tsx/dist/loader.mjs --test \
+node --import ./node_modules/tsx/dist/loader.mjs --test \
   src/question-state.test.ts \
   src/question-execution.test.ts
 ```
@@ -1731,7 +1731,7 @@ npm test -- src/eval.test.ts
 
 ```bash
 cd learn/doc-assistant-design
-node --import ../gateway-design/node_modules/tsx/dist/loader.mjs --test \
+node --import ./node_modules/tsx/dist/loader.mjs --test \
   src/retrieval-plan.test.ts \
   src/doc-search.test.ts \
   src/evidence-pack.test.ts \

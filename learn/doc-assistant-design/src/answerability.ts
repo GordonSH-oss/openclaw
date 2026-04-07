@@ -1,6 +1,7 @@
 import type { DocSearchHit } from "./protocol/index.js";
 import { isBroadIntegrationRequest, selectRequiredAnchors } from "./question-anchors.js";
 import { buildQuestionState, type QuestionState } from "./question-state.js";
+import { normalizeSearchText } from "./search-text.js";
 import { labelEvidenceHit } from "./task-frame.js";
 
 type AnswerabilityVerdict = "answerable" | "insufficient_evidence";
@@ -13,16 +14,7 @@ export type AnswerabilityDecision = {
 };
 
 function normalizeAnswerabilityText(text: string): string {
-  return text
-    .toLowerCase()
-    .replace(/\bjavascript\b/g, "web")
-    .replace(/\bjs\b/g, "web")
-    .replace(/\bdirectchannel\b/g, "direct channel")
-    .replace(/\bgroupchannel\b/g, "group channel")
-    .replace(/\bopenchannel\b/g, "open channel")
-    .replace(/[^a-z0-9\u4e00-\u9fff]+/gi, " ")
-    .replace(/\s+/g, " ")
-    .trim();
+  return normalizeSearchText(text).replace(/\s+/g, " ").trim();
 }
 
 function normalizeEvidencePath(path: string): string {
@@ -151,6 +143,23 @@ export function decideAnswerability(params: {
       requiredAnchors,
       matchedAnchors,
     };
+  }
+
+  if (
+    isBroadIntegrationRequest(state) &&
+    !state.ambiguity.missingProduct &&
+    !state.ambiguity.missingPlatform
+  ) {
+    const evidenceLabels = params.hits.map((hit) => labelEvidenceHit(hit).labels);
+    const hasSetupEvidence = evidenceLabels.some((labels) => labels.includes("setup"));
+    if (!hasSetupEvidence) {
+      return {
+        verdict: "insufficient_evidence",
+        reason: "broad integration request is missing setup or initialization evidence",
+        requiredAnchors,
+        matchedAnchors,
+      };
+    }
   }
 
   if (params.hits.every((hit) => hit.path.includes("/partials/"))) {

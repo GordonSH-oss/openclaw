@@ -109,6 +109,19 @@ export type DocAnswerValidationResult = {
   downgradeTo?: "clarification" | "insufficient";
 };
 
+export type DocAnswerDebugAnswers = {
+  finalAnswerSource:
+    | "provider"
+    | "grounded_fallback"
+    | "grounded_bypass"
+    | "learning"
+    | "learning_fallback";
+  groundedAnswer?: string;
+  providerAnswer?: string;
+  providerError?: string;
+  providerKind?: "openai_compatible" | "learning";
+};
+
 export type DocFollowUpSource = "none" | "clarification_reuse" | "clarification_rewrite";
 
 export type DocMemoryEntryStatus = "pending_review" | "approved_standard" | "rejected";
@@ -205,6 +218,7 @@ export type DocQuestionHistoryEntry = {
   continuedFromRunId?: string;
   rewrittenQuestion?: string;
   taskFrame?: DocQuestionHistoryTaskFrame;
+  debugAnswers?: DocAnswerDebugAnswers;
 };
 
 export type AnswerMemoryEntry = {

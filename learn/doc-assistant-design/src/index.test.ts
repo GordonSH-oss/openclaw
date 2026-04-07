@@ -1984,6 +1984,8 @@ void test("buildDocAnswer turns webhook questions into a direct configuration gu
     result.answer.includes("Use the documented flow below to configure webhooks."),
     true,
   );
+  assert.equal(result.answer.includes("Steps\n1. Open the Webhooks settings"), true);
+  assert.equal(result.answer.includes("Steps\n- Open the Webhooks settings"), false);
   assert.equal(result.answer.includes("Open the Webhooks settings, click Config"), true);
   assert.equal(result.answer.includes("Verify the webhook signature"), true);
   assert.equal(result.answer.includes("token acquisition"), false);
@@ -3287,12 +3289,88 @@ void test("agent mode can use openai-compatible backend", async (t) => {
     },
     provider: "openai-compatible",
   });
+  const debugAnswers = result.trace?.["debugAnswers"] as
+    | {
+        finalAnswerSource?: string;
+        groundedAnswer?: string;
+        providerAnswer?: string;
+      }
+    | undefined;
 
   assert.equal(result.mode, "agent");
   assert.equal(result.selectedProvider, "openai-compatible");
   assert.equal(result.selectedModel, "gpt-test");
   assert.equal(result.answerSurface?.trust, "authoritative");
   assert.equal(result.answer.includes("Sources:"), true);
+  assert.equal(debugAnswers?.finalAnswerSource, "provider");
+  assert.equal(String(debugAnswers?.providerAnswer).includes("NCCallPushConfig"), true);
+  assert.equal(String(debugAnswers?.groundedAnswer).length > 0, true);
+});
+
+void test("agent mode normalizes bulleted step sections from openai-compatible answers", async (t) => {
+  const originalFetch = globalThis.fetch;
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+  globalThis.fetch = (async () =>
+    new Response(
+      JSON.stringify({
+        choices: [
+          {
+            message: {
+              content: [
+                "Use the documented flow below to configure webhooks.",
+                "",
+                "Steps",
+                "- Open the Webhooks settings, click Config, enter the callback URL, and save. [docs/platform-chat-api/webhook/overview.md:3-6]",
+                "- Verify the webhook signature before processing the callback payload. [docs/platform-chat-api/webhook/overview.md:7-9]",
+              ].join("\n"),
+            },
+          },
+        ],
+      }),
+      {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      },
+    )) as typeof fetch;
+
+  const result = await buildDocAnswer({
+    runId: "remote-steps-normalized-1",
+    question: "Just let me know how to implement webhook",
+    mode: "agent",
+    hits: [
+      {
+        path: "docs/platform-chat-api/webhook/overview.md",
+        heading: "Set up webhooks",
+        startLine: 3,
+        endLine: 6,
+        snippet:
+          "Open the Nexconn Console, go to Webhooks, click Config, enter the webhook URL, select the events, and save.",
+        text: "Open the Nexconn Console, go to Webhooks, click Config, enter the webhook URL, select the events, and save.",
+        score: 120,
+      },
+      {
+        path: "docs/platform-chat-api/webhook/overview.md",
+        heading: "Verify signatures",
+        startLine: 7,
+        endLine: 9,
+        snippet: "Verify the webhook signature before processing the callback payload.",
+        text: "Verify the webhook signature before processing the callback payload.",
+        score: 108,
+      },
+    ],
+    openAICompatible: {
+      baseURL: "https://example.com/v1",
+      apiKey: "test-key",
+      model: "gpt-test",
+    },
+    provider: "openai-compatible",
+  });
+
+  assert.equal(result.answer.includes("Steps\n1. Open the Webhooks settings"), true);
+  assert.equal(result.answer.includes("2. Verify the webhook signature"), true);
+  assert.equal(result.answer.includes("Steps\n- Open the Webhooks settings"), false);
 });
 
 void test("agent mode rejects prompt scaffolding echoes from openai-compatible responses", async (t) => {
@@ -3344,12 +3422,91 @@ void test("agent mode rejects prompt scaffolding echoes from openai-compatible r
     },
     provider: "openai-compatible",
   });
+  const debugAnswers = result.trace?.["debugAnswers"] as
+    | {
+        finalAnswerSource?: string;
+        providerAnswer?: string;
+        providerError?: string;
+      }
+    | undefined;
 
   assert.equal(result.answer.includes("Question:"), false);
   assert.equal(result.answer.includes("Retrieved documentation:"), false);
   assert.equal(result.answerSurface?.note, "rejected_prompt_scaffolding_output");
   assert.equal(result.selectedProvider, undefined);
   assert.equal(result.selectedModel, undefined);
+  assert.equal(debugAnswers?.finalAnswerSource, "grounded_fallback");
+  assert.equal(String(debugAnswers?.providerAnswer).includes("Question:"), true);
+  assert.equal(debugAnswers?.providerError, "OpenAI-compatible response echoed prompt scaffolding");
+});
+
+void test("agent mode falls back to grounded answer when openai-compatible returns empty content", async (t) => {
+  const originalFetch = globalThis.fetch;
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+  globalThis.fetch = (async () =>
+    new Response(
+      JSON.stringify({
+        choices: [
+          {
+            message: {
+              content: null,
+              reasoning_content: null,
+              tool_calls: null,
+            },
+          },
+        ],
+      }),
+      {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      },
+    )) as typeof fetch;
+
+  const result = await buildDocAnswer({
+    runId: "remote-empty-content-1",
+    question: "How do I configure push settings?",
+    mode: "agent",
+    hits: [
+      {
+        path: "docs/callsdk-ios/push-config.md",
+        heading: "Top-level object: `NCCallPushConfig`",
+        startLine: 5,
+        endLine: 10,
+        snippet: "Use NCCallPushConfig to configure push fields before starting a call.",
+        text: "Use NCCallPushConfig to configure push fields before starting a call.",
+        score: 12,
+      },
+    ],
+    openAICompatible: {
+      baseURL: "https://example.com/v1",
+      apiKey: "test-key",
+      model: "gpt-test",
+    },
+    provider: "openai-compatible",
+  });
+  const debugAnswers = result.trace?.["debugAnswers"] as
+    | {
+        finalAnswerSource?: string;
+        groundedAnswer?: string;
+        providerAnswer?: string;
+        providerError?: string;
+      }
+    | undefined;
+
+  assert.equal(result.answer.includes("NCCallPushConfig"), true);
+  assert.equal(result.answerSurface?.kind, "extractive");
+  assert.equal(result.answerSurface?.note, "openai_compatible_empty_output_fallback");
+  assert.equal(result.selectedProvider, undefined);
+  assert.equal(result.selectedModel, undefined);
+  assert.equal(debugAnswers?.finalAnswerSource, "grounded_fallback");
+  assert.equal(String(debugAnswers?.providerAnswer).includes('"content":null'), true);
+  assert.equal(
+    debugAnswers?.providerError,
+    "OpenAI-compatible response did not contain answer text",
+  );
+  assert.equal(String(debugAnswers?.groundedAnswer).includes("NCCallPushConfig"), true);
 });
 
 void test("agent mode bypasses openai-compatible calls for clarification-shaped grounded answers", async (t) => {

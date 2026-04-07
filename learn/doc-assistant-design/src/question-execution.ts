@@ -29,6 +29,7 @@ import {
 } from "./follow-up-context.js";
 import { buildGreetingAnswer, detectGreetingIntent } from "./greeting-intent.js";
 import type { DocAssistantMode, DocSearchHit, OpenAICompatibleConfig } from "./protocol/index.js";
+import { isBroadIntegrationRequest } from "./question-anchors.js";
 import {
   buildQuestionState,
   detectQuestionProduct,
@@ -446,8 +447,15 @@ export async function executeDocQuestion(params: {
     : flags.questionState && acceptedClarificationFollowUp && followUpPatch && followUpBaseState
       ? rewriteQuestionFromState(effectiveState)
       : params.question;
+  const effectiveQuestionState = buildQuestionState(effectiveQuestion);
   const continuedFromRunId = clarificationFollowUp?.runId;
   const selectedPlatform = acceptedClarificationFollowUp ? followUpPatch?.platform : undefined;
+  const canReuseClarificationHits = Boolean(
+    clarificationFollowUp &&
+    selectedPlatform &&
+    !isBroadIntegrationRequest(effectiveQuestionState) &&
+    shouldReuseClarificationHits(clarificationFollowUp, selectedPlatform),
+  );
 
   if (
     clarificationFollowUp &&
@@ -492,11 +500,7 @@ export async function executeDocQuestion(params: {
     }
   }
 
-  if (
-    clarificationFollowUp &&
-    selectedPlatform &&
-    shouldReuseClarificationHits(clarificationFollowUp, selectedPlatform)
-  ) {
+  if (clarificationFollowUp && selectedPlatform && canReuseClarificationHits) {
     const hits = selectPlatformHits(clarificationFollowUp.hits, selectedPlatform);
     await params.onRetrieved?.(hits);
     const evidence = buildEvidencePack({

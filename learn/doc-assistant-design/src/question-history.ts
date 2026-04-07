@@ -1,6 +1,7 @@
 import path from "node:path";
 import { appendJsonlAtomic, readJsonlSafe } from "./persistence.js";
 import type {
+  DocAnswerDebugAnswers,
   DocAnswerSurface,
   DocQuestionAnswerOutcome,
   DocQuestionHistoryEntry,
@@ -15,11 +16,31 @@ function getQuestionHistoryPath(dataDir?: string): string {
 }
 
 function toAnswerPreview(answer: string, maxLength = 220): string {
-  const compact = answer.replace(/\s+/g, " ").trim();
-  if (compact.length <= maxLength) {
-    return compact;
+  const lines = answer
+    .split(/\r?\n/)
+    .map((line) => line.replace(/\s+/g, " ").trim())
+    .filter(Boolean);
+  const previewLines: string[] = [];
+  let usedLength = 0;
+
+  for (const line of lines) {
+    const separatorLength = previewLines.length > 0 ? 1 : 0;
+    const remaining = maxLength - usedLength - separatorLength;
+    if (remaining <= 0) {
+      break;
+    }
+    if (line.length <= remaining) {
+      previewLines.push(line);
+      usedLength += separatorLength + line.length;
+      continue;
+    }
+    const clipped = remaining > 1 ? `${line.slice(0, remaining - 1)}…` : "…";
+    previewLines.push(clipped);
+    usedLength += separatorLength + clipped.length;
+    break;
   }
-  return `${compact.slice(0, maxLength - 1)}…`;
+
+  return previewLines.join("\n");
 }
 
 function isAllowedTaskFrameValue<T extends string>(
@@ -37,6 +58,45 @@ function sanitizeStringArray(value: unknown): string[] | undefined {
     (entry): entry is string => typeof entry === "string" && entry.length > 0,
   );
   return normalized.length > 0 ? normalized : undefined;
+}
+
+function isAllowedDebugAnswerValue<T extends string>(
+  value: unknown,
+  allowed: readonly T[],
+): value is T {
+  return typeof value === "string" && (allowed as readonly string[]).includes(value);
+}
+
+export function sanitizeHistoryDebugAnswers(value: unknown): DocAnswerDebugAnswers | undefined {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+  const raw = value as Record<string, unknown>;
+  const normalized: Partial<DocAnswerDebugAnswers> = {};
+  if (
+    isAllowedDebugAnswerValue(raw.finalAnswerSource, [
+      "provider",
+      "grounded_fallback",
+      "grounded_bypass",
+      "learning",
+      "learning_fallback",
+    ])
+  ) {
+    normalized.finalAnswerSource = raw.finalAnswerSource;
+  }
+  if (typeof raw.groundedAnswer === "string" && raw.groundedAnswer.length > 0) {
+    normalized.groundedAnswer = raw.groundedAnswer;
+  }
+  if (typeof raw.providerAnswer === "string" && raw.providerAnswer.length > 0) {
+    normalized.providerAnswer = raw.providerAnswer;
+  }
+  if (typeof raw.providerError === "string" && raw.providerError.length > 0) {
+    normalized.providerError = raw.providerError;
+  }
+  if (isAllowedDebugAnswerValue(raw.providerKind, ["openai_compatible", "learning"])) {
+    normalized.providerKind = raw.providerKind;
+  }
+  return normalized.finalAnswerSource ? (normalized as DocAnswerDebugAnswers) : undefined;
 }
 
 export function sanitizeHistoryTaskFrame(value: unknown): DocQuestionHistoryTaskFrame | undefined {
@@ -146,6 +206,7 @@ export async function appendQuestionHistoryEntry(params: {
     answer: string;
     answerSurface?: DocAnswerSurface;
     taskFrame?: DocQuestionHistoryTaskFrame;
+    debugAnswers?: DocAnswerDebugAnswers;
   };
 }): Promise<DocQuestionHistoryEntry> {
   const summary = summarizeQuestionOutcome({
@@ -189,6 +250,7 @@ export async function appendQuestionHistoryEntry(params: {
     continuedFromRunId: params.entry.continuedFromRunId,
     rewrittenQuestion: params.entry.rewrittenQuestion,
     taskFrame: sanitizeHistoryTaskFrame(params.entry.taskFrame),
+    debugAnswers: sanitizeHistoryDebugAnswers(params.entry.debugAnswers),
   };
 
   const historyPath = getQuestionHistoryPath(params.dataDir);

@@ -113,3 +113,54 @@ void test("decideAnswerability rejects broad server integration answers without 
   assert.equal(decision.verdict, "insufficient_evidence");
   assert.equal(decision.reason, "server api integration request still needs a narrower task focus");
 });
+
+void test("decideAnswerability accepts token-scoped server integration when token evidence is present", () => {
+  const question = "How to integrate using Server API for token/auth?";
+  const decision = decideAnswerability({
+    question,
+    state: buildQuestionState(question),
+    hits: [
+      makeHit({
+        path: "docs/platform-chat-api/user/register.md",
+        heading: "Issue an access token",
+        text: "Use the Server API endpoint to issue an access token for the user from your app server.",
+      }),
+    ],
+  });
+
+  assert.equal(decision.verdict, "answerable");
+});
+
+void test("decideAnswerability accepts open-set server focus terms like blocklist when evidence covers them", () => {
+  const question = "How to integrate using Server API for blocklist management?";
+  const decision = decideAnswerability({
+    question,
+    state: buildQuestionState(question),
+    hits: [
+      makeHit({
+        path: "docs/platform-chat-api/user/blocklist/add-to-blocklist.md",
+        heading: "Add to blocklist",
+        text: "Use the Server API blocklist endpoint to add a user to the blocklist from your app server.",
+      }),
+    ],
+  });
+
+  assert.equal(decision.verdict, "answerable");
+});
+
+void test("decideAnswerability accepts self-only delete wording when docs use equivalent phrasing", () => {
+  const question = "How to delete a message for myself on Web?";
+  const decision = decideAnswerability({
+    question,
+    state: buildQuestionState(question),
+    hits: [
+      makeHit({
+        path: "docs/chatsdk-web/message/delete.md",
+        heading: "Delete messages (for yourself only)",
+        text: "Remove messages from your own view only. Use deleteMessagesForMe after loading the target message in the Web Chat SDK.",
+      }),
+    ],
+  });
+
+  assert.equal(decision.verdict, "answerable");
+});

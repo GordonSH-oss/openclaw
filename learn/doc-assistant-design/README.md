@@ -1,11 +1,11 @@
 # Learn Doc Assistant
 
-`learn/doc-assistant-design` 是一个用于学习“本地 Markdown 文档问答”控制面的示例包。它复用了 `learn/gateway-design` 的核心心智模型，但把业务目标换成了技术文档助手：
+`learn/doc-assistant-design` 是一个用于学习“本地 Markdown 文档问答”控制面的示例包。它借鉴了 `learn/gateway-design` 的核心心智模型，但把业务目标换成了技术文档助手：
 
 - 通过 WebSocket/RPC 暴露问答接口
 - 给调用方分配临时 user id
 - 把 user id 绑定到稳定 session
-- 每次提问都重建本地 Markdown 索引并检索
+- 按需重建本地 Markdown 索引并检索
 - 基于检索结果生成 grounded answer
 - 可选把检索上下文交给 `learn/agent-design`，演示 retrieval + agent 的组合
 
@@ -29,6 +29,239 @@ src/
     docs.ts               # docs.* RPC methods
   server.ts               # 总装配入口
 ```
+
+## 架构设计
+
+这个 learning 包可以按 6 层来看。它不是“把问题丢给检索再拼答案”的单函数实现，而是一个小型控制面：
+
+```text
+transport / entry
+  -> rpc application surface
+  -> run orchestration
+  -> retrieval + reasoning subsystems
+  -> state / memory / persistence
+```
+
+### 1. 传输与入口层
+
+- `src/index.ts`
+  - 进程入口，读取 `.env`，调用 `createDocAssistantServer()`，打印已注册方法
+- `src/server.ts`
+  - composition root，总装配点
+  - 负责组装 `httpServer`、`router`、`runtime state`、WebSocket handlers、HTTP API、UI
+- `src/http-api.ts`
+  - HTTP adapter，把 REST 路径映射到同一套 `docs.*` RPC 方法
+  - 例如 `POST /api/doc-assistant/runs` 最终仍然分发到 `docs.ask`
+- `src/server-ws-runtime.ts`
+  - WebSocket adapter，负责把连接接入 `handleConnection()`
+- `src/http-ui.ts`
+  - 静态页面 adapter，服务 demo UI
+
+这一层采用的是 adapter 模式。HTTP、WebSocket、UI 都不直接实现业务，只负责把外部请求适配进统一的 method surface。
+
+### 2. 协议与方法层
+
+- `src/protocol/index.ts`
+  - 定义 wire contract 和领域 DTO
+  - 关键接口包括：
+    - `DocAssistantRequest` / `DocAssistantResponse` / `DocAssistantEvent`
+    - `ConnectedClient`
+    - `DocsAskParams` / `DocsRunStatusParams` / `DocsRunWaitParams`
+    - `DocsTerminalResult`
+    - `AnswerMemoryEntry`
+  - 同时提供参数校验函数，例如 `validateDocsAskParams()`、`validateDocsRunWaitParams()`
+- `src/method-router.ts`
+  - 一个很轻量的 command bus / RPC router
+  - 暴露 `register()`、`dispatch()`、`listMethods()`
+  - 内建 scope 检查和统一错误包装
+- `src/server-methods.ts`
+  - method registry，把方法名注册到具体 handler
+- `src/methods/docs.ts`
+  - application service 层
+  - 这里定义了系统对外真正可调用的接口：
+    - `docs.user.create`
+    - `docs.ask`
+    - `docs.run.status`
+    - `docs.run.wait`
+    - `docs.session.transcript.get`
+    - `docs.history.list`
+    - `docs.search.preview`
+    - `docs.admin.memory.list`
+    - `docs.admin.memory.get`
+    - `docs.admin.memory.approve`
+    - `docs.admin.memory.reject`
+    - `docs.admin.memory.update`
+    - `docs.methods`
+    - `docs.status`
+
+这一层采用 manifest-less method registration 的路由模式。调用方不需要知道底层是 HTTP 还是 WebSocket，只需要知道方法名和参数结构。
+
+### 3. 运行时与控制面层
+
+- `src/server-runtime-state.ts`
+  - 文档助手的 in-memory control plane
+  - 核心对象有：
+    - `EventBroadcaster`：向连接广播 `docs.retrieval`、`docs.delta`、`docs.completed`
+    - `DocRunState`：维护 `activeRuns` / `terminalRuns`
+    - `dedupe`：缓存 idempotency 结果，避免重复发起同一个 run
+    - `config`：保存 `docsRoot`、`defaultMode`、`adminToken`、默认模型配置
+- `docs.ask` 的生命周期
+  - 先立即返回 `DocsAcceptedResult`
+  - 后台异步执行 `executeDocQuestion()`
+  - 执行过程中可推送 retrieval / delta 事件
+  - 结束后进入 terminal result，并支持 `docs.run.wait`
+
+这里采用的是 run-state-machine + event-bus 设计。也就是把“请求已接收”“运行中”“终态结果”“实时事件”拆开，而不是做成同步阻塞 RPC。
+
+### 4. 执行编排层
+
+- `src/question-execution.ts`
+  - 这是单轮问答的 orchestrator，也是最核心的应用编排器
+  - 输入是 `runId + question + mode + docsRoot + callbacks`
+  - 输出是：
+    - `route: "greeting" | "memory" | "search"`
+    - `hits`
+    - `answer`
+  - 内部编排顺序大致是：
+    1. `buildQuestionState()` 解析问题状态
+    2. 检测是否是 clarification follow-up，并尝试重写问题
+    3. 命中 greeting route / answer memory route / retrieval route
+    4. 构造 staged retrieval plan
+    5. 执行检索并合并 hits
+    6. 运行 `answerability` 和 `clarification` policy
+    7. 调用 `buildDocAnswer()` 生成 grounded answer
+    8. 用 `validateAnswer()` 做结果校验和必要降级
+    9. 产出 trace、follow-up metadata、terminal answer
+
+这层是典型的 orchestration pipeline。每一步都调用独立子系统，本身尽量不把策略硬编码进传输层或存储层。
+
+### 5. 检索、判定和回答子系统
+
+这一层是文档助手的“推理内核”，但仍然被拆成多个小模块，而不是堆在一个文件里。
+
+- `src/doc-index.ts`
+  - 文档索引层
+  - 主要接口：
+    - `buildDocIndex()`
+    - `loadCachedDocIndex()`
+    - `isDocIndexFresh()`
+    - `rebuildDocIndexIfNeeded()`
+  - 负责扫描 Markdown、切 chunk、写入 `doc-index.json` 和 metadata
+- `src/doc-search.ts`
+  - 检索层
+  - 主要接口：
+    - `loadDocChunks()`
+    - `searchDocsForBucket()`
+    - `searchDocsForPurpose()`
+    - `searchDocs()`
+    - `toCitation()`
+  - 负责 lexical scoring、平台/产品/channel/API layer 对齐、doc shape/rerank、citation 生成
+- `src/question-state.ts`
+  - query understanding 层
+  - 把原始问题归一成 `QuestionState`
+  - 包括 language、intent、platform、product、apiLayer、channelKind、anchors、ambiguity
+- `src/retrieval-plan.ts`
+  - retrieval planner
+  - 把一个问题拆成 primary queries + expansion queries
+- `src/answerability.ts`
+  - answerability gate
+  - 判断当前证据是否足以支撑回答
+- `src/clarification-policy.ts`
+  - clarification gate
+  - 决定是否要继续追问 platform / product / api layer / task focus
+- `src/follow-up-context.ts`
+  - follow-up continuation 层
+  - 保存上一次 clarification 的上下文，支持“iOS 呢”“那 Web 呢”这类短跟进问题
+- `src/evidence-pack.ts`
+  - evidence normalization 层
+  - 把 hits 压缩成可供回答器和 validator 消费的证据包
+- `src/doc-answer.ts`
+  - answer synthesis 层
+  - 主要接口：
+    - `buildDocAnswer()`
+    - `renderClarificationAnswer()`
+    - `buildInsufficientEvidenceAnswer()`
+    - `buildTerminalResult()`
+  - 支持 extractive answer，也支持 agent / OpenAI-compatible 重写
+- `src/answer-render.ts` + `src/answer-plan.ts`
+  - prompt/render 层
+  - 负责把证据包和回答计划变成最终输出模板
+- `src/answer-validator.ts`
+  - post-generation validator
+  - 检查 citation topic mismatch、cross-platform、missing clarification 等问题
+
+这里采用的是 pipeline + policy object + strategy 模式的组合：
+
+- pipeline：检索、判定、生成、校验顺序明确
+- policy object：`answerability`、`clarification`、`validator` 都是独立决策器
+- strategy：`buildDocAnswer()` 会根据 mode 和 provider 走 extractive、learning agent、OpenAI-compatible 等不同回答策略
+
+### 6. 状态、记忆和持久化层
+
+- `src/user-store.ts`
+  - temp user 仓储，核心接口是 `createTempDocUser()`、`getTempDocUser()`
+- `src/session-store.ts`
+  - session 适配层，复用 `learn/session-memory-design`
+  - 核心接口是 `getOrCreateSession()`、`updateSessionEntry()`、`listSessions()`
+- `src/transcript-store.ts`
+  - transcript 适配层，负责追加用户消息和最终回答
+- `src/question-history.ts`
+  - 问答历史层，保存结构化 history entry，便于 QA 和后台查看
+- `src/answer-memory.ts`
+  - answer memory 仓储
+  - 负责标准答案缓存、review queue、审批流
+  - 核心接口包括：
+    - `findAnswerMemoryMatch()`
+    - `enqueueGeneratedAnswerMemory()`
+    - `approveAnswerMemoryEntry()`
+    - `rejectAnswerMemoryEntry()`
+    - `updateAnswerMemoryEntry()`
+- `src/retrieval-memory.ts`
+  - retrieval memory 仓储
+  - 用历史经验影响后续检索路径偏好
+- `src/persistence.ts`
+  - 最底层文件持久化 helper
+  - 提供 `writeJsonAtomic()`、`appendJsonlAtomic()`、`readJsonSafe()` 等原语
+
+这里采用 repository + adapter 模式。上层看到的是 user/session/transcript/memory 这些领域仓储，而不是直接散落的 JSON/JSONL 文件。
+
+### 一次 `docs.ask` 的主链路
+
+```text
+HTTP POST /runs or WS docs.ask
+  -> protocol validator
+  -> MethodRouter.dispatch()
+  -> docsAskHandler()
+  -> register run + return accepted
+  -> executeDocQuestion()
+     -> question-state / follow-up rewrite
+     -> memory hit or retrieval
+     -> answerability / clarification gate
+     -> buildDocAnswer()
+     -> validateAnswer()
+  -> append transcript / update session / append history
+  -> enqueue answer memory if cacheable
+  -> broadcast docs.completed
+```
+
+### 这个包的设计模式总结
+
+- Composition Root：`src/server.ts` 统一装配所有 runtime 依赖
+- Adapter / Ports-and-Adapters：HTTP、WebSocket、UI、OpenAI-compatible、session-memory 都是适配器
+- Command Bus / RPC Router：`MethodRouter` 按 method name 分发 handler
+- Orchestrator：`executeDocQuestion()` 统一协调多个子系统
+- Pipeline：问题理解 -> 检索 -> 证据判定 -> 生成 -> 校验 -> 落盘
+- Strategy：不同回答 surface 使用不同生成策略
+- Repository：user/session/transcript/history/memory 都通过仓储对象访问
+- Event-driven Run Model：`accepted`、`delta`、`completed`、`wait` 把长任务拆成多种语义
+
+### 为什么这样分层
+
+- 传输层和业务层分开，CLI、HTTP、WebSocket 可以复用同一套方法
+- 方法层和执行层分开，`docs.ask` 只负责控制面，不负责具体检索细节
+- 执行层和策略层分开，便于单测 `answerability`、`clarification`、`retrieval-plan`
+- 回答层和记忆层分开，标准答案审批流不会污染即时生成链路
+- session/transcript/history 分开，便于分别处理会话归属、聊天记录和 QA 分析
 
 ## 学习重点
 
@@ -79,7 +312,8 @@ src/
 
 ```bash
 cd learn/doc-assistant-design
-node --import ../gateway-design/node_modules/tsx/dist/loader.mjs src/index.ts
+npm install
+node --import ./node_modules/tsx/dist/loader.mjs src/index.ts
 npm test
 ```
 
@@ -120,7 +354,7 @@ curl http://127.0.0.1:8790/api/doc-assistant/status
 远端机器需要具备：
 
 - Node.js
-- 可用的 `node_modules`
+- 运行 `npm install` 后生成的本地 `node_modules`
 - 文档目录
 - 能访问你的 OpenAI-compatible 网关
 
@@ -132,15 +366,13 @@ curl http://127.0.0.1:8790/api/doc-assistant/status
   doc-assistant.log
   learn/
     doc-assistant-design/
-  gateway-design/
-    node_modules/
   rc-new-docs/
 ```
 
 这里的关键点是：
 
 - `learn/doc-assistant-design` 是实际运行目录
-- `gateway-design/node_modules/tsx/dist/loader.mjs` 被复用为 TS loader
+- `learn/doc-assistant-design/node_modules/tsx/dist/loader.mjs` 是本地 TS loader
 - `rc-new-docs/` 是文档根目录
 
 ### 第 1 步：本地确认代码可运行
@@ -181,7 +413,7 @@ set -euo pipefail
 export PATH="$HOME/.local/node/bin:$PATH"
 cd "$HOME/doc-assistant-deploy/learn/doc-assistant-design"
 
-node --import ../gateway-design/node_modules/tsx/dist/loader.mjs --input-type=module -e "
+node --import ./node_modules/tsx/dist/loader.mjs --input-type=module -e "
 import process from 'node:process';
 import { createDocAssistantServer } from './src/server.ts';
 import { loadDocAssistantDotEnv, resolveDocAssistantDocsRootFromEnv } from './src/env.ts';

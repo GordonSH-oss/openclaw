@@ -87,6 +87,13 @@ void test("buildQuestionState extracts anchors for recall questions", () => {
   assert.equal(state.heuristicHints?.messageSubtype, "generic");
 });
 
+void test("buildQuestionState canonicalizes self-only message deletion qualifiers", () => {
+  const state = buildQuestionState("How to delete message for myself on Web?");
+  assert.equal(state.platform, "web");
+  assert.equal(state.anchors.qualifiers.includes("for self only"), true);
+  assert.equal(state.anchors.unknownTerms.includes("myself"), false);
+});
+
 void test("buildQuestionState keeps unseen task anchors instead of collapsing them away", () => {
   const state = buildQuestionState("How to verify webhook signature permissions in a thread?");
   assert.equal(state.anchors.verbPhrases.includes("verify"), true);
@@ -101,6 +108,19 @@ void test("buildQuestionState extracts Chinese unseen task anchors", () => {
   assert.equal(state.anchors.nounPhrases.includes("message thread"), true);
   assert.equal(state.anchors.nounPhrases.includes("mention"), true);
   assert.equal(state.anchors.nounPhrases.includes("permission"), true);
+});
+
+void test("buildQuestionState treats token auth as a concrete server-task anchor", () => {
+  const state = buildQuestionState("How to integrate using Server API for token/auth?");
+  assert.equal(state.anchors.verbPhrases.includes("integrate"), true);
+  assert.equal(state.anchors.nounPhrases.includes("access token"), true);
+  assert.equal(state.ambiguity.missingProduct, false);
+});
+
+void test("buildQuestionState keeps open-set server focus terms like blocklist", () => {
+  const state = buildQuestionState("How to integrate using Server API for blocklist management?");
+  assert.equal(state.anchors.unknownTerms.includes("blocklist"), true);
+  assert.equal(state.anchors.unknownTerms.includes("management"), true);
 });
 
 void test("detectQuestionProduct does not mistake SDK method-call prose for Call SDK", () => {

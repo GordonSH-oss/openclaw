@@ -176,6 +176,14 @@ export function labelEvidenceHit(
   ) {
     labels.add("procedure");
   }
+  if (
+    /\b(add|remove|issue|verify|return|call|use|set)\b/.test(normalized) &&
+    (normalized.includes("endpoint") ||
+      normalized.includes("server api") ||
+      normalized.includes("header"))
+  ) {
+    labels.add("procedure");
+  }
   if (anchors.verbPhrases.length > 0) {
     labels.add("procedure");
   }

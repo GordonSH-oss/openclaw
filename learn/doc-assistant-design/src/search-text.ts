@@ -134,6 +134,11 @@ export function normalizeSearchText(text: string): string {
     .replace(/\bopenchannel\b/g, "open channel")
     .replace(/\bcommunity chats?\b/g, "community channel")
     .replace(/\bsingle chats?\b/g, "direct channel")
+    .replace(/\bfor\s+myself(?:\s+only)?\b/g, "for self only")
+    .replace(/\bfor\s+me\s+only\b/g, "for self only")
+    .replace(/\bfor\s+yourself(?:\s+only)?\b/g, "for self only")
+    .replace(/\b(?:from\s+)?(?:my|your)\s+own\s+view\s+only\b/g, "for self only")
+    .replace(/\bfor\s+all\s+participants\b/g, "for everyone")
     .replace(/[^a-z0-9\u4e00-\u9fff]+/gi, " ")
     .trim();
 }

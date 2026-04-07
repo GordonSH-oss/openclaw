@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { searchDocs } from "./doc-search.js";
 import { updateClarificationStateAfterAnswer } from "./follow-up-context.js";
 import { executeDocQuestion } from "./question-execution.js";
 
@@ -72,6 +73,89 @@ async function createProductClarificationDocs(): Promise<string> {
   return docsRoot;
 }
 
+async function createWeakChatIntegrationFollowUpDocs(): Promise<string> {
+  const docsRoot = await makeTempDir("doc-assistant-weak-chat-integration-followup");
+  await fs.mkdir(path.join(docsRoot, "docs", "chatsdk-web"), {
+    recursive: true,
+  });
+  await fs.mkdir(path.join(docsRoot, "docs", "chatsdk-flutter"), {
+    recursive: true,
+  });
+  await fs.mkdir(path.join(docsRoot, "docs", "callsdk-web"), {
+    recursive: true,
+  });
+  await fs.mkdir(path.join(docsRoot, "docs", "chatsdk-android", "community-channels"), {
+    recursive: true,
+  });
+  await fs.mkdir(path.join(docsRoot, "docs", "chatsdk-android", "overview"), {
+    recursive: true,
+  });
+  await fs.mkdir(path.join(docsRoot, "docs", "chatsdk-android", "connection"), {
+    recursive: true,
+  });
+  await fs.writeFile(
+    path.join(docsRoot, "docs", "chatsdk-web", "getting-started.md"),
+    [
+      "# Integrate Chat SDK",
+      "",
+      "Import the Web Chat SDK package and initialize the chat client before you connect the user.",
+      "",
+    ].join("\n"),
+    "utf-8",
+  );
+  await fs.writeFile(
+    path.join(docsRoot, "docs", "chatsdk-flutter", "getting-started.md"),
+    [
+      "# Integrate Chat SDK",
+      "",
+      "Import the Flutter Chat SDK package and initialize the chat client before you connect the user.",
+      "",
+    ].join("\n"),
+    "utf-8",
+  );
+  await fs.writeFile(
+    path.join(docsRoot, "docs", "callsdk-web", "callplus-integration-to-chat.md"),
+    [
+      "# Integrate Call SDK with Chat",
+      "",
+      "Integrate Call into an app that already uses the Chat SDK so users can move between messaging and calling.",
+      "",
+    ].join("\n"),
+    "utf-8",
+  );
+  await fs.writeFile(
+    path.join(docsRoot, "docs", "chatsdk-android", "overview", "integration-overview.md"),
+    [
+      "# Android integration overview",
+      "",
+      "This page explains the Android Chat SDK integration surface and the main client capabilities available after connection succeeds.",
+      "",
+    ].join("\n"),
+    "utf-8",
+  );
+  await fs.writeFile(
+    path.join(docsRoot, "docs", "chatsdk-android", "community-channels", "creating-channel.md"),
+    [
+      "# Creating community channels",
+      "",
+      "The Chat SDK does not provide client-side APIs for creating community channels or subchannels. Use the Server API to create them.",
+      "",
+    ].join("\n"),
+    "utf-8",
+  );
+  await fs.writeFile(
+    path.join(docsRoot, "docs", "chatsdk-android", "connection", "connect.md"),
+    [
+      "# Connect to server",
+      "",
+      "Your app must establish a connection to the Nexconn server before it can send and receive messages through the Chat SDK.",
+      "",
+    ].join("\n"),
+    "utf-8",
+  );
+  return docsRoot;
+}
+
 async function createServerTaskClarificationDocs(): Promise<string> {
   const docsRoot = await makeTempDir("doc-assistant-server-task-clarify");
   await fs.mkdir(path.join(docsRoot, "docs", "chatsdk-web"), {
@@ -81,6 +165,9 @@ async function createServerTaskClarificationDocs(): Promise<string> {
     recursive: true,
   });
   await fs.mkdir(path.join(docsRoot, "docs", "platform-chat-api", "webhook"), {
+    recursive: true,
+  });
+  await fs.mkdir(path.join(docsRoot, "docs", "platform-chat-api", "user"), {
     recursive: true,
   });
   await fs.writeFile(
@@ -129,6 +216,72 @@ async function createServerTaskClarificationDocs(): Promise<string> {
       "# Verify the webhook signature",
       "",
       "To verify the webhook signature, read the signature header, compute the expected HMAC value, and reject the callback when the signature does not match.",
+      "",
+    ].join("\n"),
+    "utf-8",
+  );
+  await fs.writeFile(
+    path.join(docsRoot, "docs", "platform-chat-api", "user", "issue-access-token.md"),
+    [
+      "# Issue an access token",
+      "",
+      "To integrate token issuance with the Server API, call the access token endpoint from your app server and return the access token to the client after authentication succeeds.",
+      "",
+    ].join("\n"),
+    "utf-8",
+  );
+  return docsRoot;
+}
+
+async function createSelfOnlyDeleteClarificationDocs(): Promise<string> {
+  const docsRoot = await makeTempDir("doc-assistant-self-only-delete-clarify");
+  await fs.mkdir(path.join(docsRoot, "docs", "chatsdk-web", "message"), {
+    recursive: true,
+  });
+  await fs.mkdir(path.join(docsRoot, "docs", "chatsdk-ios", "message"), {
+    recursive: true,
+  });
+  await fs.mkdir(path.join(docsRoot, "docs", "chatsdk-flutter", "community-channels"), {
+    recursive: true,
+  });
+  await fs.writeFile(
+    path.join(docsRoot, "docs", "chatsdk-web", "message", "delete.md"),
+    [
+      "# Delete direct messages",
+      "",
+      "## Delete messages (for yourself only)",
+      "",
+      "Remove messages from your own view only.",
+      "",
+      'Create a `DirectChannel("<target-user-id>")`, load the target `Message`, and call `deleteMessagesForMe`.',
+      "",
+      "## Delete a message for all participants",
+      "",
+      "Use `deleteMessageForAll` to remove the message for everyone in the channel.",
+      "",
+    ].join("\n"),
+    "utf-8",
+  );
+  await fs.writeFile(
+    path.join(docsRoot, "docs", "chatsdk-ios", "message", "delete.md"),
+    [
+      "# Delete direct messages on iOS",
+      "",
+      "## Delete specific messages (for me only)",
+      "",
+      "Delete messages for the current user only on iOS.",
+      "",
+    ].join("\n"),
+    "utf-8",
+  );
+  await fs.writeFile(
+    path.join(docsRoot, "docs", "chatsdk-flutter", "community-channels", "delete-message.md"),
+    [
+      "# Delete community messages on Flutter",
+      "",
+      "## Delete messages before a timestamp (specific subchannel)",
+      "",
+      "Delete messages before a timestamp for the current user in Flutter.",
       "",
     ].join("\n"),
     "utf-8",
@@ -585,6 +738,8 @@ void test("server integration follow-up asks for narrower task focus before answ
   assert.equal(second.answer.rewrittenQuestion, "How to integrate for Server API?");
   assert.equal(second.answer.summary, "task clarification required");
   assert.equal(second.answer.answer.includes("User blocklist"), false);
+  assert.equal(second.answer.answer.includes("access token"), true);
+  assert.equal(second.answer.answer.includes("webhook signature verification"), true);
 
   await updateClarificationStateAfterAnswer({
     sessionId,
@@ -617,6 +772,241 @@ void test("server integration follow-up asks for narrower task focus before answ
   assert.notEqual(third.answer.summary, "task clarification required");
   assert.equal(third.answer.answer.toLowerCase().includes("signature"), true);
   assert.equal(third.answer.answer.includes("User blocklist"), false);
+});
+
+void test("server integration task-focus follow-up accepts token/auth and retrieves token docs", async () => {
+  const docsRoot = await createServerTaskClarificationDocs();
+  const dataDir = await makeTempDir("doc-assistant-server-token-followup");
+  const sessionId = "server-token-followup-session";
+
+  const first = await executeDocQuestion({
+    runId: "server-token-clarify-1",
+    question: "How to integrate?",
+    sessionId,
+    mode: "extractive",
+    docsRoot,
+    dataDir,
+    maxResults: 5,
+  });
+
+  await updateClarificationStateAfterAnswer({
+    sessionId,
+    runId: "server-token-clarify-1",
+    question: "How to integrate?",
+    hits: first.hits,
+    summary: first.answer.summary,
+    pendingQuestion: first.answer.pendingClarificationQuestion,
+    clarificationKind: first.answer.pendingClarificationKind,
+    clarificationHits: first.answer.clarificationHits,
+    route: first.route,
+    dataDir,
+  });
+
+  const second = await executeDocQuestion({
+    runId: "server-token-clarify-2",
+    question: "Server API",
+    sessionId,
+    mode: "extractive",
+    docsRoot,
+    dataDir,
+    maxResults: 5,
+  });
+
+  await updateClarificationStateAfterAnswer({
+    sessionId,
+    runId: "server-token-clarify-2",
+    question: "Server API",
+    hits: second.hits,
+    summary: second.answer.summary,
+    pendingQuestion: second.answer.pendingClarificationQuestion,
+    clarificationKind: second.answer.pendingClarificationKind,
+    clarificationHits: second.answer.clarificationHits,
+    route: second.route,
+    dataDir,
+  });
+
+  const third = await executeDocQuestion({
+    runId: "server-token-clarify-3",
+    question: "token/auth",
+    sessionId,
+    mode: "extractive",
+    docsRoot,
+    dataDir,
+    maxResults: 5,
+  });
+
+  assert.equal(third.answer.followUpSource, "clarification_rewrite");
+  assert.equal(third.answer.rewrittenQuestion, "How to integrate for Server API for token/auth?");
+  assert.notEqual(third.answer.summary, "task clarification required");
+  assert.notEqual(third.answer.summary, "insufficient documentation evidence");
+  assert.equal(
+    third.hits.some((hit) => hit.path.includes("platform-chat-api/user/issue-access-token.md")),
+    true,
+  );
+});
+
+void test("server integration task-focus follow-up accepts blocklist management as open-set focus", async () => {
+  const docsRoot = await createServerTaskClarificationDocs();
+  const dataDir = await makeTempDir("doc-assistant-server-blocklist-followup");
+  const sessionId = "server-blocklist-followup-session";
+
+  const first = await executeDocQuestion({
+    runId: "server-blocklist-clarify-1",
+    question: "How to integrate?",
+    sessionId,
+    mode: "extractive",
+    docsRoot,
+    dataDir,
+    maxResults: 5,
+  });
+
+  await updateClarificationStateAfterAnswer({
+    sessionId,
+    runId: "server-blocklist-clarify-1",
+    question: "How to integrate?",
+    hits: first.hits,
+    summary: first.answer.summary,
+    pendingQuestion: first.answer.pendingClarificationQuestion,
+    clarificationKind: first.answer.pendingClarificationKind,
+    clarificationHits: first.answer.clarificationHits,
+    route: first.route,
+    dataDir,
+  });
+
+  const second = await executeDocQuestion({
+    runId: "server-blocklist-clarify-2",
+    question: "Server API",
+    sessionId,
+    mode: "extractive",
+    docsRoot,
+    dataDir,
+    maxResults: 5,
+  });
+
+  await updateClarificationStateAfterAnswer({
+    sessionId,
+    runId: "server-blocklist-clarify-2",
+    question: "Server API",
+    hits: second.hits,
+    summary: second.answer.summary,
+    pendingQuestion: second.answer.pendingClarificationQuestion,
+    clarificationKind: second.answer.pendingClarificationKind,
+    clarificationHits: second.answer.clarificationHits,
+    route: second.route,
+    dataDir,
+  });
+
+  const third = await executeDocQuestion({
+    runId: "server-blocklist-clarify-3",
+    question: "blocklist management",
+    sessionId,
+    mode: "extractive",
+    docsRoot,
+    dataDir,
+    maxResults: 5,
+  });
+
+  assert.equal(third.answer.followUpSource, "clarification_rewrite");
+  assert.equal(
+    third.answer.rewrittenQuestion,
+    "How to integrate for Server API for blocklist management?",
+  );
+  assert.notEqual(third.answer.summary, "task clarification required");
+  assert.notEqual(third.answer.summary, "insufficient documentation evidence");
+  assert.equal(
+    third.hits.some((hit) => hit.path.includes("platform-chat-api/chat-server-api-list.md")),
+    true,
+  );
+});
+
+void test("broad Chat SDK integration follow-up reruns retrieval and refuses weak Android-only reuse", async () => {
+  const docsRoot = await createWeakChatIntegrationFollowUpDocs();
+  const dataDir = await makeTempDir("doc-assistant-weak-chat-integration-followup-data");
+  const sessionId = "weak-chat-integration-followup-session";
+  const clarificationHits = await searchDocs({
+    query: "How to integrate for Chat SDK?",
+    docsRoot,
+    dataDir,
+    maxResults: 5,
+  });
+
+  await updateClarificationStateAfterAnswer({
+    sessionId,
+    runId: "weak-chat-integration-1",
+    question: "How to integrate for Chat SDK?",
+    hits: clarificationHits,
+    summary: "platform clarification required",
+    pendingQuestion: "How to integrate for Chat SDK?",
+    clarificationKind: "platform",
+    clarificationHits,
+    route: "search",
+    dataDir,
+  });
+
+  const third = await executeDocQuestion({
+    runId: "weak-chat-integration-2",
+    question: "Android",
+    sessionId,
+    mode: "extractive",
+    docsRoot,
+    dataDir,
+    maxResults: 5,
+  });
+
+  assert.equal(third.answer.followUpSource, "clarification_rewrite");
+  assert.equal(third.answer.rewrittenQuestion, "How to integrate for Chat SDK on Android?");
+  assert.equal(third.answer.summary, "insufficient documentation evidence");
+  assert.equal(third.answer.answer.includes("start a direct chat"), false);
+});
+
+void test("platform clarification reuse accepts self-only delete wording after semantic normalization", async () => {
+  const docsRoot = await createSelfOnlyDeleteClarificationDocs();
+  const dataDir = await makeTempDir("doc-assistant-self-only-delete-followup");
+  const sessionId = "self-only-delete-followup-session";
+
+  const first = await executeDocQuestion({
+    runId: "self-only-delete-clarify-1",
+    question: "how to delete message for myself?",
+    sessionId,
+    mode: "extractive",
+    docsRoot,
+    dataDir,
+    maxResults: 5,
+  });
+
+  assert.equal(first.answer.summary, "platform clarification required");
+
+  await updateClarificationStateAfterAnswer({
+    sessionId,
+    runId: "self-only-delete-clarify-1",
+    question: "how to delete message for myself?",
+    hits: first.hits,
+    summary: first.answer.summary,
+    pendingQuestion: first.answer.pendingClarificationQuestion,
+    clarificationKind: first.answer.pendingClarificationKind,
+    clarificationHits: first.answer.clarificationHits,
+    route: first.route,
+    dataDir,
+  });
+
+  const second = await executeDocQuestion({
+    runId: "self-only-delete-clarify-2",
+    question: "web",
+    sessionId,
+    mode: "extractive",
+    docsRoot,
+    dataDir,
+    maxResults: 5,
+  });
+
+  assert.equal(second.answer.followUpSource, "clarification_reuse");
+  assert.equal(second.answer.rewrittenQuestion, "how to delete message for myself on Web?");
+  assert.notEqual(second.answer.summary, "insufficient documentation evidence");
+  assert.equal(second.answer.summary.startsWith("guided answer from "), true);
+  assert.equal(
+    second.hits.some((hit) => hit.path.includes("docs/chatsdk-web/message/delete.md")),
+    true,
+  );
 });
 
 void test("executeDocQuestion treats partial-only push language matches as insufficient evidence", async () => {

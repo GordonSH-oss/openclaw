@@ -27,11 +27,11 @@ async function createFixtureDocs(): Promise<string> {
     [
       "# Top-level object: `NCCallPushConfig`",
       "",
-      "Use NCCallPushConfig to define pushTitle and pushContent.",
+      "Use NCCallPushConfig to configure push settings such as pushTitle and pushContent.",
       "",
       "# iOS-specific object: `NCCallIOSPushConfig`",
       "",
-      "Use NCCallIOSPushConfig to define threadId and apnsCollapseId.",
+      "Use NCCallIOSPushConfig to configure iOS-specific push settings such as threadId and apnsCollapseId.",
     ].join("\n"),
     "utf-8",
   );

@@ -1,6 +1,6 @@
 import { detectDocShape } from "./doc-shape.js";
 import type { DocSearchHit } from "./protocol/index.js";
-import { isBroadIntegrationRequest } from "./question-anchors.js";
+import { extractQuestionAnchors, isBroadIntegrationRequest } from "./question-anchors.js";
 import {
   detectQuestionChannelKind,
   detectQuestionPlatform,
@@ -27,9 +27,93 @@ export type ClarificationDecision = {
   candidateOptions?: string[];
 };
 
-function collectHitPlatforms(hits: DocSearchHit[]): QuestionPlatform[] {
+function getAuthoritativeHits(hits: DocSearchHit[]): DocSearchHit[] {
   const authoritativeHits = hits.filter((hit) => !hit.path.includes("/partials/"));
-  const sourceHits = authoritativeHits.length > 0 ? authoritativeHits : hits;
+  return authoritativeHits.length > 0 ? authoritativeHits : hits;
+}
+
+function addTaskFocusCandidate(
+  candidates: Map<string, number>,
+  value: string | undefined,
+  score: number,
+): void {
+  if (!value) {
+    return;
+  }
+  candidates.set(value, Math.max(candidates.get(value) ?? 0, score));
+}
+
+function collectTaskFocusCandidates(
+  hits: DocSearchHit[],
+  language: QuestionState["language"],
+): string[] {
+  const candidates = new Map<string, number>();
+  const endpointPattern = /\/v\d+\/[a-z0-9/_-]+/gi;
+
+  for (const hit of getAuthoritativeHits(hits).slice(0, 8)) {
+    const combinedText = [hit.path, hit.heading ?? "", hit.text].join("\n");
+    const normalized = combinedText.toLowerCase();
+    const anchors = extractQuestionAnchors(combinedText);
+    const nounSet = new Set(anchors.nounPhrases);
+    const constraintSet = new Set(anchors.constraints);
+
+    if (
+      nounSet.has("access token") ||
+      normalized.includes("access token") ||
+      normalized.includes("/access-token/") ||
+      normalized.includes("authentication")
+    ) {
+      addTaskFocusCandidate(
+        candidates,
+        language === "zh" ? "access token / 鉴权" : "access token",
+        10,
+      );
+    }
+
+    if (
+      nounSet.has("webhook signature") ||
+      (nounSet.has("webhook") &&
+        (nounSet.has("signature") || constraintSet.has("signature verification")))
+    ) {
+      addTaskFocusCandidate(
+        candidates,
+        language === "zh" ? "webhook / 签名校验" : "webhook signature verification",
+        9,
+      );
+    }
+
+    if (nounSet.has("permission") || constraintSet.has("permission")) {
+      const permissionCandidate = nounSet.has("mention")
+        ? language === "zh"
+          ? "提及权限"
+          : "mention permission"
+        : nounSet.has("message thread")
+          ? language === "zh"
+            ? "话题权限"
+            : "thread permission"
+          : language === "zh"
+            ? "permission"
+            : "permission";
+      addTaskFocusCandidate(candidates, permissionCandidate, 8);
+    }
+
+    if (normalized.includes("blocklist")) {
+      addTaskFocusCandidate(candidates, language === "zh" ? "黑名单" : "blocklist", 7);
+    }
+
+    for (const match of combinedText.matchAll(endpointPattern)) {
+      addTaskFocusCandidate(candidates, match[0], 6);
+    }
+  }
+
+  return Array.from(candidates.entries())
+    .toSorted((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
+    .map(([value]) => value)
+    .slice(0, 5);
+}
+
+function collectHitPlatforms(hits: DocSearchHit[]): QuestionPlatform[] {
+  const sourceHits = getAuthoritativeHits(hits);
   return Array.from(
     new Set(
       sourceHits
@@ -40,8 +124,7 @@ function collectHitPlatforms(hits: DocSearchHit[]): QuestionPlatform[] {
 }
 
 function collectHitChannelKinds(hits: DocSearchHit[]): QuestionChannelKind[] {
-  const authoritativeHits = hits.filter((hit) => !hit.path.includes("/partials/"));
-  const sourceHits = authoritativeHits.length > 0 ? authoritativeHits : hits;
+  const sourceHits = getAuthoritativeHits(hits);
   return Array.from(
     new Set(
       sourceHits
@@ -52,8 +135,7 @@ function collectHitChannelKinds(hits: DocSearchHit[]): QuestionChannelKind[] {
 }
 
 function collectHitProducts(hits: DocSearchHit[]): QuestionProduct[] {
-  const authoritativeHits = hits.filter((hit) => !hit.path.includes("/partials/"));
-  const sourceHits = authoritativeHits.length > 0 ? authoritativeHits : hits;
+  const sourceHits = getAuthoritativeHits(hits);
   return Array.from(
     new Set(
       sourceHits
@@ -67,12 +149,12 @@ function buildClarificationPrompt(kind: ClarificationKind, state: QuestionState)
   if (kind === "task_focus") {
     if (state.product === "server" || state.apiLayer === "server") {
       return state.language === "zh"
-        ? "Server API 的接入范围还太宽。请告诉我你具体要做什么，例如 token / 鉴权、webhook 或签名校验、消息/频道操作、权限控制，或者某个具体 endpoint。"
-        : "Server API integration is still too broad. Tell me what you need, such as token/auth, webhook or signature verification, messaging or channel operations, permission control, or a specific endpoint.";
+        ? "Server API 的接入范围还太宽。请告诉我你具体要完成的服务端任务，或者直接给我一个更具体的 endpoint、对象或约束。"
+        : "Server API integration is still too broad. Tell me the exact server-side task you need, or name a more specific endpoint, object, or constraint.";
     }
     return state.language === "zh"
-      ? "这个接入问题还需要再收窄一点。请告诉我你具体要做什么，例如初始化、连接、发送消息、权限、webhook，或者某个具体 API。"
-      : "This integration question is still too broad. Tell me the exact task, such as initialization, connection, messaging, permissions, webhook setup, or a specific API.";
+      ? "这个接入问题还需要再收窄一点。请告诉我你具体要完成的任务，或者直接给我一个更具体的 API、对象或约束。"
+      : "This integration question is still too broad. Tell me the exact task, or name a more specific API, object, or constraint.";
   }
   if (kind === "channel_kind") {
     return state.language === "zh"
@@ -150,21 +232,13 @@ export function decideClarification(params: {
   }
 
   if (needsTaskFocusClarification(state, hits)) {
+    const candidateOptions = collectTaskFocusCandidates(hits, state.language);
     return {
       shouldClarify: true,
       kind: "task_focus",
       question: buildClarificationPrompt("task_focus", state),
       reason: "server api integration request is still too broad after stable-slot clarification",
-      candidateOptions:
-        state.language === "zh"
-          ? ["token / 鉴权", "webhook / 签名校验", "消息 / 频道操作", "权限控制", "具体 endpoint"]
-          : [
-              "token/auth",
-              "webhook/signature verification",
-              "messaging/channel operations",
-              "permissions",
-              "specific endpoint",
-            ],
+      candidateOptions,
     };
   }
 

@@ -4,12 +4,40 @@ import { detectQuestionPlatform } from "./question-state.js";
 import { buildTaskFrame, labelEvidenceHit, type TaskFrame } from "./task-frame.js";
 
 export const DEFAULT_DOC_ASSISTANT_AGENT_MODEL = "gpt-5.4";
+const DOC_ASSISTANT_SYSTEM_PROMPT =
+  "You are a technical documentation assistant. Answer only from the provided evidence. Do not invent APIs, fields, or behavior.";
+
+export class OpenAICompatibleAnswerError extends Error {
+  readonly code: "empty_output" | "prompt_scaffolding";
+  readonly rawAnswer?: string;
+
+  constructor(params: {
+    code: "empty_output" | "prompt_scaffolding";
+    message: string;
+    rawAnswer?: string;
+  }) {
+    super(params.message);
+    this.name = "OpenAICompatibleAnswerError";
+    this.code = params.code;
+    this.rawAnswer = params.rawAnswer;
+  }
+}
 
 type ChatCompletionMessage = {
-  content?: string | Array<{ type?: string; text?: string }>;
+  content?:
+    | string
+    | Array<{ type?: string; text?: string }>
+    | {
+        text?: string;
+        content?: string | Array<{ type?: string; text?: string }> | Record<string, unknown>;
+        value?: string;
+        output_text?: string;
+        parts?: Array<{ text?: string } | string>;
+      };
 };
 
 type ChatCompletionChoice = {
+  text?: string;
   message?: {
     content?: ChatCompletionMessage["content"];
   };
@@ -23,8 +51,70 @@ type ChatCompletionResponse = {
   };
 };
 
+type ResponsesOutputContentPart =
+  | string
+  | {
+      type?: string;
+      text?: string;
+      content?: string;
+    };
+
+type ResponsesOutputItem = {
+  type?: string;
+  role?: string;
+  content?: ResponsesOutputContentPart[];
+};
+
+type ResponsesApiResponse = {
+  output_text?: string | null;
+  output?: ResponsesOutputItem[];
+  usage?: {
+    input_tokens?: number;
+    output_tokens?: number;
+  };
+};
+
 function joinUrl(baseURL: string, pathname: string): string {
   return `${baseURL.replace(/\/+$/, "")}${pathname}`;
+}
+
+function buildChatCompletionsBody(params: { model: string; prompt: string }): string {
+  return JSON.stringify({
+    model: params.model,
+    temperature: 0.1,
+    stream: false,
+    messages: [
+      {
+        role: "system",
+        content: DOC_ASSISTANT_SYSTEM_PROMPT,
+      },
+      {
+        role: "user",
+        content: params.prompt,
+      },
+    ],
+  });
+}
+
+function buildResponsesBody(params: { model: string; prompt: string }): string {
+  return JSON.stringify({
+    model: params.model,
+    temperature: 0.1,
+    instructions: DOC_ASSISTANT_SYSTEM_PROMPT,
+    input: params.prompt,
+  });
+}
+
+function stringifyPayloadForDebug(payload: unknown): string | undefined {
+  try {
+    const serialized = JSON.stringify(payload);
+    if (!serialized) {
+      return undefined;
+    }
+    return serialized.length > 4000 ? `${serialized.slice(0, 4000)}...[truncated]` : serialized;
+  } catch {
+    return undefined;
+  }
 }
 
 function extractTextContent(content: ChatCompletionMessage["content"]): string {
@@ -32,10 +122,64 @@ function extractTextContent(content: ChatCompletionMessage["content"]): string {
     return content.trim();
   }
   if (!Array.isArray(content)) {
+    if (!content || typeof content !== "object") {
+      return "";
+    }
+    if (typeof content.text === "string") {
+      return content.text.trim();
+    }
+    if (typeof content.value === "string") {
+      return content.value.trim();
+    }
+    if (typeof content.output_text === "string") {
+      return content.output_text.trim();
+    }
+    if (Array.isArray(content.parts)) {
+      return content.parts
+        .map((part) => {
+          if (typeof part === "string") {
+            return part;
+          }
+          if (part && typeof part.text === "string") {
+            return part.text;
+          }
+          return "";
+        })
+        .join("")
+        .trim();
+    }
+    if ("content" in content) {
+      return extractTextContent(content.content);
+    }
     return "";
   }
   return content
     .map((part) => (typeof part?.text === "string" ? part.text : ""))
+    .join("")
+    .trim();
+}
+
+function extractResponsesTextContent(payload: ResponsesApiResponse): string {
+  if (typeof payload.output_text === "string" && payload.output_text.trim().length > 0) {
+    return payload.output_text.trim();
+  }
+  if (!Array.isArray(payload.output)) {
+    return "";
+  }
+  return payload.output
+    .flatMap((item) => item.content ?? [])
+    .map((part) => {
+      if (typeof part === "string") {
+        return part;
+      }
+      if (typeof part?.text === "string") {
+        return part.text;
+      }
+      if (typeof part?.content === "string") {
+        return part.content;
+      }
+      return "";
+    })
     .join("")
     .trim();
 }
@@ -176,6 +320,9 @@ function buildPrompt(question: string, hits: DocSearchHit[]): string {
     language === "en"
       ? "Prefer these sections when the evidence supports them: What you need, Steps, Key APIs or docs, Notes, Sources."
       : "Prefer these sections when the evidence supports them: 准备工作, 步骤, 关键 API / 文档, 注意事项, Sources.",
+    language === "en"
+      ? "Use numbered lists for executable Steps. Reserve bullets for notes or key points."
+      : "可执行的步骤请使用有序列表；项目符号只用于注意事项或关键点。",
     "Include inline citations like [path:start-end].",
     "End with a Sources section that lists the cited paths.",
   ].join("\n");
@@ -198,6 +345,56 @@ function isLikelyPromptScaffoldingEcho(text: string): boolean {
   return matches >= 3;
 }
 
+async function requestOpenAICompatibleCompletion(params: {
+  config: OpenAICompatibleConfig;
+  model: string;
+  prompt: string;
+}): Promise<ChatCompletionResponse> {
+  const response = await fetch(joinUrl(params.config.baseURL, "/chat/completions"), {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${params.config.apiKey}`,
+    },
+    body: buildChatCompletionsBody({
+      model: params.model,
+      prompt: params.prompt,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`OpenAI-compatible request failed: ${response.status} ${response.statusText}`);
+  }
+
+  return (await response.json()) as ChatCompletionResponse;
+}
+
+async function requestOpenAICompatibleResponse(params: {
+  config: OpenAICompatibleConfig;
+  model: string;
+  prompt: string;
+}): Promise<ResponsesApiResponse> {
+  const response = await fetch(joinUrl(params.config.baseURL, "/responses"), {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${params.config.apiKey}`,
+    },
+    body: buildResponsesBody({
+      model: params.model,
+      prompt: params.prompt,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(
+      `OpenAI-compatible Responses request failed: ${response.status} ${response.statusText}`,
+    );
+  }
+
+  return (await response.json()) as ResponsesApiResponse;
+}
+
 export async function answerWithOpenAICompatible(params: {
   config: OpenAICompatibleConfig;
   question: string;
@@ -207,6 +404,7 @@ export async function answerWithOpenAICompatible(params: {
   onDelta?: (data: { text: string; delta: string }) => void;
 }): Promise<{
   answer: string;
+  rawAnswer: string;
   selectedModel: string;
   selectedProvider: string;
 }> {
@@ -221,54 +419,84 @@ export async function answerWithOpenAICompatible(params: {
     }));
   const prompt = params.prompt ?? buildPrompt(params.question, params.hits);
   const model = params.config.model ?? DEFAULT_DOC_ASSISTANT_AGENT_MODEL;
-  const response = await fetch(joinUrl(params.config.baseURL, "/chat/completions"), {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${params.config.apiKey}`,
-    },
-    body: JSON.stringify({
+  const attemptPayloads: string[] = [];
+
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    const payload = await requestOpenAICompatibleCompletion({
+      config: params.config,
       model,
-      temperature: 0.1,
-      stream: false,
-      messages: [
-        {
-          role: "system",
-          content:
-            "You are a technical documentation assistant. Answer only from the provided evidence. Do not invent APIs, fields, or behavior.",
-        },
-        {
-          role: "user",
-          content: prompt,
-        },
-      ],
-    }),
+      prompt,
+    });
+    const text =
+      extractTextContent(payload.choices?.[0]?.message?.content) ||
+      (typeof payload.choices?.[0]?.text === "string" ? payload.choices[0].text.trim() : "");
+    const debugPayload = stringifyPayloadForDebug(payload);
+    if (debugPayload) {
+      attemptPayloads.push(`chat attempt ${attempt}: ${debugPayload}`);
+    }
+    if (!text) {
+      continue;
+    }
+    if (isLikelyPromptScaffoldingEcho(text)) {
+      throw new OpenAICompatibleAnswerError({
+        code: "prompt_scaffolding",
+        message: "OpenAI-compatible response echoed prompt scaffolding",
+        rawAnswer: text,
+      });
+    }
+
+    const answer = text.includes("Sources:")
+      ? text
+      : `${text.trim()}\n\n${renderSourcesAppendix(citations)}`;
+    params.onDelta?.({
+      text: answer,
+      delta: answer,
+    });
+
+    return {
+      answer,
+      rawAnswer: text,
+      selectedModel: model,
+      selectedProvider: "openai-compatible",
+    };
+  }
+
+  const responsesPayload = await requestOpenAICompatibleResponse({
+    config: params.config,
+    model,
+    prompt,
   });
-
-  if (!response.ok) {
-    throw new Error(`OpenAI-compatible request failed: ${response.status} ${response.statusText}`);
+  const responsesText = extractResponsesTextContent(responsesPayload);
+  const responsesDebugPayload = stringifyPayloadForDebug(responsesPayload);
+  if (responsesDebugPayload) {
+    attemptPayloads.push(`responses fallback: ${responsesDebugPayload}`);
   }
+  if (responsesText) {
+    if (isLikelyPromptScaffoldingEcho(responsesText)) {
+      throw new OpenAICompatibleAnswerError({
+        code: "prompt_scaffolding",
+        message: "OpenAI-compatible response echoed prompt scaffolding",
+        rawAnswer: responsesText,
+      });
+    }
+    const answer = responsesText.includes("Sources:")
+      ? responsesText
+      : `${responsesText.trim()}\n\n${renderSourcesAppendix(citations)}`;
+    params.onDelta?.({
+      text: answer,
+      delta: answer,
+    });
 
-  const payload = (await response.json()) as ChatCompletionResponse;
-  const text = extractTextContent(payload.choices?.[0]?.message?.content);
-  if (!text) {
-    throw new Error("OpenAI-compatible response did not contain answer text");
+    return {
+      answer,
+      rawAnswer: responsesText,
+      selectedModel: model,
+      selectedProvider: "openai-compatible",
+    };
   }
-  if (isLikelyPromptScaffoldingEcho(text)) {
-    throw new Error("OpenAI-compatible response echoed prompt scaffolding");
-  }
-
-  const answer = text.includes("Sources:")
-    ? text
-    : `${text.trim()}\n\n${renderSourcesAppendix(citations)}`;
-  params.onDelta?.({
-    text: answer,
-    delta: answer,
+  throw new OpenAICompatibleAnswerError({
+    code: "empty_output",
+    message: "OpenAI-compatible response did not contain answer text",
+    rawAnswer: attemptPayloads.join("\n"),
   });
-
-  return {
-    answer,
-    selectedModel: model,
-    selectedProvider: "openai-compatible",
-  };
 }

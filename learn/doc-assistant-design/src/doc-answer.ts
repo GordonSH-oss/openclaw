@@ -5,8 +5,9 @@ import { buildAgentPromptFromPlan } from "./answer-render.js";
 import type { ClarificationDecision } from "./clarification-policy.js";
 import { detectDocShape, type DocSearchDocShape } from "./doc-shape.js";
 import { buildEvidencePack, type EvidencePack } from "./evidence-pack.js";
-import { answerWithOpenAICompatible } from "./openai-compatible.js";
+import { answerWithOpenAICompatible, OpenAICompatibleAnswerError } from "./openai-compatible.js";
 import type {
+  DocAnswerDebugAnswers,
   DocAnswerValidationResult,
   DocAnswerReviewStatus,
   DocAnswerSurface,
@@ -159,6 +160,78 @@ function renderSourcesAppendix(citations: DocCitation[]): string {
 
 function stripListMarker(line: string): string {
   return line.replace(/^\s*-\s+/, "");
+}
+
+function stripOrderedListMarker(line: string): string {
+  return line.replace(/^\s*\d+\.\s+/, "");
+}
+
+function stripAnyListMarker(line: string): string {
+  return stripOrderedListMarker(stripListMarker(line));
+}
+
+function isStepSectionHeading(line: string): boolean {
+  const trimmed = line.trim();
+  return trimmed === "Steps" || trimmed === "步骤";
+}
+
+function isKnownSectionHeading(line: string): boolean {
+  const trimmed = line.trim();
+  return new Set([
+    "What you need",
+    "准备工作",
+    "Steps",
+    "步骤",
+    "Key APIs or docs",
+    "关键 API / 文档",
+    "Notes",
+    "注意事项",
+    "Definition",
+    "定义",
+    "Key points",
+    "关键点",
+    "Sources:",
+  ]).has(trimmed);
+}
+
+function renderOrderedSection(title: string, lines: string[]): string {
+  return [title, ...lines.map((line, index) => `${index + 1}. ${stripAnyListMarker(line)}`)].join(
+    "\n",
+  );
+}
+
+function normalizeProceduralStepSections(answer: string): string {
+  const lines = answer.split("\n");
+  const normalized: string[] = [];
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index] ?? "";
+    normalized.push(line);
+    if (!isStepSectionHeading(line)) {
+      continue;
+    }
+
+    const sectionLines: string[] = [];
+    let cursor = index + 1;
+    while (cursor < lines.length) {
+      const current = lines[cursor] ?? "";
+      if (!current.trim() || isKnownSectionHeading(current)) {
+        break;
+      }
+      sectionLines.push(current);
+      cursor += 1;
+    }
+
+    const shouldRenumber = sectionLines.some((entry) => /^\s*(?:-|\d+\.)\s+/.test(entry));
+    normalized.push(
+      ...(shouldRenumber
+        ? sectionLines.map((entry, stepIndex) => `${stepIndex + 1}. ${stripAnyListMarker(entry)}`)
+        : sectionLines),
+    );
+    index = cursor - 1;
+  }
+
+  return normalized.join("\n");
 }
 
 function sectionLabel(
@@ -1549,6 +1622,7 @@ export function buildInsufficientEvidenceAnswer(
 }
 
 function buildGuideIntro(params: {
+  question: string;
   language: AnswerLanguage;
   taskFrame: TaskFrame;
   platform?: DocPlatform;
@@ -1574,8 +1648,8 @@ function buildGuideIntro(params: {
     !isSendGuide &&
     !isChannelCreationGuide &&
     (isDirectChatTaskFrame(params.taskFrame) ||
-      Boolean(params.channelHit) ||
-      Boolean(params.sendHit));
+      ((Boolean(params.channelHit) || Boolean(params.sendHit)) &&
+        isChannelFocusedQuestion(params.question)));
   const genericFriendlyMessageSubtype =
     params.messageSubtype === "text"
       ? params.language === "en"
@@ -2117,6 +2191,7 @@ function isPushClickQuestion(question: string): boolean {
 
 function filterQuestionScopedGuideHits(question: string, hits: AnalyzedHit[]): AnalyzedHit[] {
   const normalizedQuestion = normalizeAnswerText(question);
+  const questionState = buildQuestionState(question);
   let scopedHits = hits;
 
   const explicitProduct = normalizedQuestion.includes("callsdk")
@@ -2234,6 +2309,34 @@ function filterQuestionScopedGuideHits(question: string, hits: AnalyzedHit[]): A
     }
   }
 
+  const genericFocusAnchors = new Set([
+    "call",
+    "channel",
+    "conversation",
+    "message",
+    "notification",
+    "permission",
+    "signature",
+    "user",
+    "webhook",
+  ]);
+  const explicitFocusAnchors = [
+    ...questionState.anchors.nounPhrases,
+    ...questionState.anchors.constraints,
+    ...questionState.anchors.apiSymbols,
+  ].filter((anchor) => !genericFocusAnchors.has(anchor));
+  if (explicitFocusAnchors.length > 0) {
+    const anchorScoped = scopedHits.filter((hit) => {
+      const normalized = normalizeAnswerText([hit.path, hit.heading ?? "", hit.text].join("\n"));
+      return explicitFocusAnchors.some((anchor) =>
+        normalized.includes(normalizeAnswerText(anchor)),
+      );
+    });
+    if (anchorScoped.length > 0) {
+      scopedHits = anchorScoped;
+    }
+  }
+
   return scopedHits;
 }
 
@@ -2331,7 +2434,10 @@ function detectGuideAnswerKind(params: {
   if (normalizedQuestion.includes("direct channel")) {
     return "start_chat";
   }
-  if (isStartChatQuestion(params.question) || params.channelHit) {
+  if (
+    isStartChatQuestion(params.question) ||
+    (params.channelHit && isChannelFocusedQuestion(params.question))
+  ) {
     return "start_chat";
   }
   return "generic_guide";
@@ -2604,9 +2710,47 @@ function buildGuideAnswer(
     ? detectMessageSubtype(question, sendHit)
     : "generic";
   const overviewHit = pickBestHit(workingHits, ["platform", "start_chat", "setup"]);
-  const webhookGuide =
+  const genericGuideFocusAnchors = new Set([
+    "call",
+    "channel",
+    "chat",
+    "community channel",
+    "conversation",
+    "direct channel",
+    "group channel",
+    "message",
+    "notification",
+    "open channel",
+    "permission",
+    "signature",
+    "user",
+    "webhook",
+  ]);
+  const explicitFocusHits = workingHits.filter((hit) =>
+    taskFrame.anchors.focus.some((anchor) => {
+      if (genericGuideFocusAnchors.has(anchor)) {
+        return false;
+      }
+      const normalizedAnchor = normalizeAnswerText(anchor);
+      if (normalizedAnchor.length < 4) {
+        return false;
+      }
+      const normalizedHit = normalizeAnswerText([hit.path, hit.heading ?? "", hit.text].join("\n"));
+      return normalizedHit.includes(normalizedAnchor);
+    }),
+  );
+  const webhookRequested =
     normalizeAnswerText(question).includes("webhook") ||
-    workingHits.some((hit) => isWebhookHit(hit));
+    taskFrame.anchors.focus.some(
+      (anchor) => anchor.includes("webhook") || anchor.includes("signature"),
+    ) ||
+    taskFrame.anchors.constraints.some((anchor) => anchor.includes("signature"));
+  const webhookGuide =
+    webhookRequested ||
+    (taskFrame.coverage?.matched.some(
+      (anchor) => anchor.includes("webhook") || anchor.includes("signature"),
+    ) ??
+      false);
   const webhookStepHits = webhookGuide
     ? workingHits.filter((hit) => {
         const normalizedHeadingPath = normalizeAnswerText([hit.path, hit.heading ?? ""].join("\n"));
@@ -2657,16 +2801,18 @@ function buildGuideAnswer(
           ? [navigationHit, channelHit, sendHit].filter(
               (hit, index, all): hit is AnalyzedHit => Boolean(hit) && all.indexOf(hit) === index,
             )
-          : [
-              importHit,
-              initializeHit,
-              effectiveConnectHit,
-              navigationHit,
-              channelHit,
-              sendHit,
-            ].filter(
-              (hit, index, all): hit is AnalyzedHit => Boolean(hit) && all.indexOf(hit) === index,
-            );
+          : explicitFocusHits.length > 0
+            ? explicitFocusHits.slice(0, 3)
+            : [
+                importHit,
+                initializeHit,
+                effectiveConnectHit,
+                navigationHit,
+                channelHit,
+                sendHit,
+              ].filter(
+                (hit, index, all): hit is AnalyzedHit => Boolean(hit) && all.indexOf(hit) === index,
+              );
   const autoSharedRule = buildCommunityCreationServerRule(question, workingHits, language);
   const prependStepLines = Array.from(
     new Set([
@@ -2786,6 +2932,7 @@ function buildGuideAnswer(
     mode: "extractive",
     answer: [
       buildGuideIntro({
+        question,
         language,
         taskFrame,
         platform: selectedPlatform,
@@ -2805,10 +2952,7 @@ function buildGuideAnswer(
           ].join("\n")
         : "",
       combinedStepLines.length > 0
-        ? [
-            sectionLabel(language, "steps"),
-            ...combinedStepLines.map((line) => `- ${stripListMarker(line)}`),
-          ].join("\n")
+        ? renderOrderedSection(sectionLabel(language, "steps"), combinedStepLines)
         : "",
       apiTerms.length > 0
         ? [sectionLabel(language, "apis"), ...apiTerms.map((term) => `\`${term}\``)].join("\n")
@@ -3041,6 +3185,16 @@ function buildLearningAgentSurface(params: {
   };
 }
 
+function withDebugAnswers(
+  trace: Record<string, unknown> | undefined,
+  debugAnswers: DocAnswerDebugAnswers,
+): Record<string, unknown> {
+  return {
+    ...trace,
+    debugAnswers,
+  };
+}
+
 export async function buildDocAnswer(params: {
   runId: string;
   question: string;
@@ -3094,6 +3248,7 @@ export async function buildDocAnswer(params: {
   if (params.mode === "extractive") {
     return {
       ...grounded,
+      answer: normalizeProceduralStepSections(grounded.answer),
       answerSurface: buildExtractiveAnswerSurface(),
       trace: renderedEvidence
         ? {
@@ -3113,10 +3268,16 @@ export async function buildDocAnswer(params: {
       ...grounded,
       mode: "agent",
       answerSurface: buildExtractiveAnswerSurface("agent_bypassed_for_grounded_answer"),
-      trace: {
-        ...grounded.trace,
-        taskFrame,
-      },
+      trace: withDebugAnswers(
+        {
+          ...grounded.trace,
+          taskFrame,
+        },
+        {
+          finalAnswerSource: "grounded_bypass",
+          groundedAnswer: grounded.answer,
+        },
+      ),
     };
   }
   if (
@@ -3138,7 +3299,7 @@ export async function buildDocAnswer(params: {
       return {
         ...grounded,
         mode: "agent",
-        answer: remote.answer,
+        answer: normalizeProceduralStepSections(remote.answer),
         summary: `answered with ${remote.selectedProvider}/${remote.selectedModel}`,
         selectedProvider: remote.selectedProvider,
         selectedModel: remote.selectedModel,
@@ -3147,30 +3308,47 @@ export async function buildDocAnswer(params: {
           trust: "authoritative",
           outputContract: "plain_text",
         },
-        trace: {
-          ...grounded.trace,
-          answerPlan,
-          taskFrame,
-        },
+        trace: withDebugAnswers(
+          {
+            ...grounded.trace,
+            answerPlan,
+            taskFrame,
+          },
+          {
+            finalAnswerSource: "provider",
+            groundedAnswer: grounded.answer,
+            providerAnswer: remote.rawAnswer,
+            providerKind: "openai_compatible",
+          },
+        ),
       };
     } catch (error) {
-      if (!(error instanceof Error) || !error.message.includes("prompt scaffolding")) {
+      if (!(error instanceof OpenAICompatibleAnswerError)) {
         throw error;
       }
       return {
         ...grounded,
         mode: "agent",
-        answerSurface: {
-          kind: "openai_compatible",
-          trust: "authoritative",
-          outputContract: "plain_text",
-          note: "rejected_prompt_scaffolding_output",
-        },
-        trace: {
-          ...grounded.trace,
-          answerPlan,
-          taskFrame,
-        },
+        answerSurface: buildExtractiveAnswerSurface(
+          error.code === "prompt_scaffolding"
+            ? "rejected_prompt_scaffolding_output"
+            : "openai_compatible_empty_output_fallback",
+        ),
+        trace: withDebugAnswers(
+          {
+            ...grounded.trace,
+            answerPlan,
+            taskFrame,
+            openAICompatibleError: error.message,
+          },
+          {
+            finalAnswerSource: "grounded_fallback",
+            groundedAnswer: grounded.answer,
+            providerAnswer: error.rawAnswer,
+            providerError: error.message,
+            providerKind: "openai_compatible",
+          },
+        ),
       };
     }
   }
@@ -3214,7 +3392,9 @@ export async function buildDocAnswer(params: {
   const terminal = await agentRun.completion;
   const acceptedAnswer = extractAcceptedAgentAnswer(terminal.reply);
   const surfaceNote = acceptedAnswer ? undefined : "rejected_prompt_scaffolding_output";
-  const terminalAnswer = acceptedAnswer || lastVisible || grounded.answer;
+  const terminalAnswer = normalizeProceduralStepSections(
+    acceptedAnswer || lastVisible || grounded.answer,
+  );
   if (terminalAnswer && !emittedDelta) {
     emitDelta({
       text: terminalAnswer,
@@ -3237,17 +3417,25 @@ export async function buildDocAnswer(params: {
       model: terminal.selectedModel ?? params.model,
       note: surfaceNote,
     }),
-    trace: renderedEvidence
-      ? {
-          answerPlan,
-          taskFrame,
-          evidence: {
-            groupCount: renderedEvidence.groups.length,
-            warnings: renderedEvidence.warnings,
-            trimEvents: renderedEvidence.trimEvents,
-          },
-        }
-      : undefined,
+    trace: withDebugAnswers(
+      renderedEvidence
+        ? {
+            answerPlan,
+            taskFrame,
+            evidence: {
+              groupCount: renderedEvidence.groups.length,
+              warnings: renderedEvidence.warnings,
+              trimEvents: renderedEvidence.trimEvents,
+            },
+          }
+        : undefined,
+      {
+        finalAnswerSource: acceptedAnswer ? "learning" : "learning_fallback",
+        groundedAnswer: grounded.answer,
+        providerAnswer: terminal.reply,
+        providerKind: "learning",
+      },
+    ),
   };
 }
 

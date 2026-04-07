@@ -5,10 +5,19 @@
   "type": "module",
   "main": "src/index.ts",
   "scripts": {
-    "ask": "node --import ../gateway-design/node_modules/tsx/dist/loader.mjs src/cli.ts",
-    "dev": "node --import ../gateway-design/node_modules/tsx/dist/loader.mjs src/index.ts",
-    "eval": "node --import ../gateway-design/node_modules/tsx/dist/loader.mjs src/eval.ts",
-    "test": "node --import ../gateway-design/node_modules/tsx/dist/loader.mjs --test src/*.test.ts",
+    "ask": "node --import ./node_modules/tsx/dist/loader.mjs src/cli.ts",
+    "dev": "node --import ./node_modules/tsx/dist/loader.mjs src/index.ts",
+    "eval": "node --import ./node_modules/tsx/dist/loader.mjs src/eval.ts",
+    "test": "node --import ./node_modules/tsx/dist/loader.mjs --test src/*.test.ts",
     "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/ws": "^8.5.13",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
   }
 }
