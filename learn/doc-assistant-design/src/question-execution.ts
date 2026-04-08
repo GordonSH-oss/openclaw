@@ -15,7 +15,7 @@ import {
   searchDocsForPurpose,
   type RetrievalOverrides,
 } from "./doc-search.js";
-import { buildEvidencePack } from "./evidence-pack.js";
+import { buildEvidencePack, type EvidencePack } from "./evidence-pack.js";
 import { getDocAssistantFeatureFlags } from "./feature-flags.js";
 import {
   detectClarificationFollowUpQuestion,
@@ -40,6 +40,7 @@ import {
   rewriteQuestionFromState,
   type QuestionState,
 } from "./question-state.js";
+import { resolveRetrievalBudget, type RetrievalBudget } from "./retrieval-budget.js";
 import { findRetrievalMemoryMatch } from "./retrieval-memory.js";
 import { buildRetrievalPlan } from "./retrieval-plan.js";
 import { createDocAssistantTrace } from "./trace.js";
@@ -136,25 +137,122 @@ function maybeReturnClarification(params: {
   });
 }
 
+type RetrievalTrace = {
+  pass: "initial" | "retry";
+  primaryQueries: Array<{ purpose: string; query: string; hitCount: number }>;
+  expansionQueries: Array<{ purpose: string; query: string; hitCount: number }>;
+  mergedHitCount: number;
+  budget: {
+    source: RetrievalBudget["source"];
+    hitLimit: number;
+    maxPrimaryQueries: number;
+    maxExpansionQueries: number;
+    evidenceTotalBudgetChars: number;
+    evidenceGroupBudgetChars: number;
+    reasons: string[];
+    complexityScore: number;
+    overrideMaxResults?: number;
+  };
+};
+
+function buildEvidenceForBudget(params: {
+  state: QuestionState;
+  hits: DocSearchHit[];
+  budget: RetrievalBudget;
+  useEvidencePack: boolean;
+}): EvidencePack {
+  if (!params.useEvidencePack) {
+    return buildEvidencePack({
+      state: params.state,
+      hits: params.hits,
+      totalBudgetChars: Number.MAX_SAFE_INTEGER,
+      groupBudgetChars: Number.MAX_SAFE_INTEGER,
+    });
+  }
+  return buildEvidencePack({
+    state: params.state,
+    hits: params.hits,
+    totalBudgetChars: params.budget.evidenceTotalBudgetChars,
+    groupBudgetChars: params.budget.evidenceGroupBudgetChars,
+  });
+}
+
+function shouldRetryRetrieval(params: {
+  question: string;
+  state: QuestionState;
+  hits: DocSearchHit[];
+  evidence: EvidencePack;
+  budget: RetrievalBudget;
+  clarificationDecision: ReturnType<typeof decideClarification>;
+}): { retry: boolean; reasons: string[] } {
+  if (
+    params.budget.source === "override" ||
+    params.budget.retryHitLimit <= params.budget.hitLimit
+  ) {
+    return { retry: false, reasons: [] };
+  }
+
+  if (
+    params.clarificationDecision.shouldClarify &&
+    (params.clarificationDecision.kind === "task_focus" ||
+      params.clarificationDecision.kind === "platform" ||
+      params.clarificationDecision.kind === "channel_kind" ||
+      params.clarificationDecision.kind === "api_layer" ||
+      params.clarificationDecision.kind === "product")
+  ) {
+    return { retry: false, reasons: [] };
+  }
+
+  const reasons: string[] = [];
+  if (params.hits.length > 0 && params.hits.length < Math.min(4, params.budget.hitLimit)) {
+    reasons.push("low_hit_count");
+  }
+  if (params.evidence.warnings.length > 0) {
+    reasons.push(...params.evidence.warnings);
+  }
+  if (
+    params.state.intent === "mixed" &&
+    (!params.hits.some((hit) => hit.retrievalBucket === "concept") ||
+      !params.hits.some((hit) => hit.retrievalBucket === "procedural"))
+  ) {
+    reasons.push("mixed_question_unbalanced_hits");
+  }
+  const answerability = decideAnswerability({
+    question: params.question,
+    hits: params.hits,
+    state: params.state,
+  });
+  if (
+    answerability.verdict !== "answerable" &&
+    answerability.reason.toLowerCase().includes("missing required anchors")
+  ) {
+    reasons.push("missing_required_anchors");
+  }
+
+  return {
+    retry: reasons.length > 0,
+    reasons,
+  };
+}
+
 async function runStagedRetrieval(params: {
   question: string;
   state: QuestionState;
   docsRoot: string;
   dataDir?: string;
   maxResults?: number;
+  budget?: RetrievalBudget;
   overrides?: RetrievalOverrides;
+  pass: "initial" | "retry";
 }): Promise<{
   hits: DocSearchHit[];
   plan: ReturnType<typeof buildRetrievalPlan>;
-  trace: {
-    primaryQueries: Array<{ purpose: string; query: string; hitCount: number }>;
-    expansionQueries: Array<{ purpose: string; query: string; hitCount: number }>;
-    mergedHitCount: number;
-  };
+  trace: RetrievalTrace;
 }> {
   const plan = buildRetrievalPlan({
     state: params.state,
     maxResults: params.maxResults,
+    budget: params.budget,
   });
   const chunks = await loadDocChunks({
     docsRoot: params.docsRoot,
@@ -202,12 +300,24 @@ async function runStagedRetrieval(params: {
 
   if (!allowExpansionQueries) {
     return {
-      hits: merged.slice(0, params.maxResults ?? 5),
+      hits: merged.slice(0, params.budget?.hitLimit ?? params.maxResults ?? 5),
       plan,
       trace: {
+        pass: params.pass,
         primaryQueries,
         expansionQueries,
         mergedHitCount: merged.length,
+        budget: {
+          source: params.budget?.source ?? "override",
+          hitLimit: params.budget?.hitLimit ?? params.maxResults ?? 5,
+          maxPrimaryQueries: params.budget?.maxPrimaryQueries ?? 3,
+          maxExpansionQueries: params.budget?.maxExpansionQueries ?? 4,
+          evidenceTotalBudgetChars: params.budget?.evidenceTotalBudgetChars ?? 5_000,
+          evidenceGroupBudgetChars: params.budget?.evidenceGroupBudgetChars ?? 1_200,
+          reasons: params.budget?.reasons ?? ["manual_override"],
+          complexityScore: params.budget?.complexityScore ?? 0,
+          overrideMaxResults: params.budget?.overrideMaxResults,
+        },
       },
     };
   }
@@ -237,13 +347,116 @@ async function runStagedRetrieval(params: {
   }
 
   return {
-    hits: merged.slice(0, params.maxResults ?? 5),
+    hits: merged.slice(0, params.budget?.hitLimit ?? params.maxResults ?? 5),
     plan,
     trace: {
+      pass: params.pass,
       primaryQueries,
       expansionQueries,
       mergedHitCount: merged.length,
+      budget: {
+        source: params.budget?.source ?? "override",
+        hitLimit: params.budget?.hitLimit ?? params.maxResults ?? 5,
+        maxPrimaryQueries: params.budget?.maxPrimaryQueries ?? 3,
+        maxExpansionQueries: params.budget?.maxExpansionQueries ?? 4,
+        evidenceTotalBudgetChars: params.budget?.evidenceTotalBudgetChars ?? 5_000,
+        evidenceGroupBudgetChars: params.budget?.evidenceGroupBudgetChars ?? 1_200,
+        reasons: params.budget?.reasons ?? ["manual_override"],
+        complexityScore: params.budget?.complexityScore ?? 0,
+        overrideMaxResults: params.budget?.overrideMaxResults,
+      },
     },
+  };
+}
+
+async function runRetrievalPass(params: {
+  question: string;
+  state: QuestionState;
+  docsRoot: string;
+  dataDir?: string;
+  budget: RetrievalBudget;
+  flags: ReturnType<typeof getDocAssistantFeatureFlags>;
+  pass: "initial" | "retry";
+  preferredDocShape?: "quickstart_step" | "specialized_task";
+  overrides?: RetrievalOverrides;
+}): Promise<{
+  hits: DocSearchHit[];
+  evidence: EvidencePack;
+  retrievalTrace: RetrievalTrace;
+}> {
+  const retrieval = params.flags.stagedRetrieval
+    ? await runStagedRetrieval({
+        question: params.question,
+        state: params.state,
+        docsRoot: params.docsRoot,
+        dataDir: params.dataDir,
+        budget: params.budget,
+        overrides: params.overrides,
+        pass: params.pass,
+      })
+    : {
+        hits: [] as DocSearchHit[],
+        plan: buildRetrievalPlan({
+          state: params.state,
+          budget: params.budget,
+        }),
+        trace: {
+          pass: params.pass,
+          primaryQueries: [],
+          expansionQueries: [],
+          mergedHitCount: 0,
+          budget: {
+            source: params.budget.source,
+            hitLimit: params.budget.hitLimit,
+            maxPrimaryQueries: params.budget.maxPrimaryQueries,
+            maxExpansionQueries: params.budget.maxExpansionQueries,
+            evidenceTotalBudgetChars: params.budget.evidenceTotalBudgetChars,
+            evidenceGroupBudgetChars: params.budget.evidenceGroupBudgetChars,
+            reasons: params.budget.reasons,
+            complexityScore: params.budget.complexityScore,
+            overrideMaxResults: params.budget.overrideMaxResults,
+          },
+        },
+      };
+  const legacyHits = await searchDocs({
+    query: params.question,
+    docsRoot: params.docsRoot,
+    dataDir: params.dataDir,
+    maxResults: params.budget.hitLimit,
+    refinement: {
+      preferredDocShape: params.preferredDocShape,
+      focusAnchors: [
+        ...params.state.anchors.nounPhrases,
+        ...params.state.anchors.constraints,
+        ...params.state.anchors.apiSymbols,
+      ],
+    },
+    overrides: params.overrides,
+  });
+  const mergedHits: DocSearchHit[] = [];
+  const seenHitKeys = new Set<string>();
+  for (const hit of [...legacyHits, ...retrieval.hits]) {
+    const key = `${hit.path}:${hit.startLine}:${hit.endLine}`;
+    if (seenHitKeys.has(key)) {
+      continue;
+    }
+    seenHitKeys.add(key);
+    mergedHits.push(hit);
+  }
+  const hits = filterHitsForResolvedState(mergedHits, params.state).slice(
+    0,
+    params.budget.hitLimit,
+  );
+  const evidence = buildEvidenceForBudget({
+    state: params.state,
+    hits,
+    budget: params.budget,
+    useEvidencePack: params.flags.evidencePack,
+  });
+  return {
+    hits,
+    evidence,
+    retrievalTrace: retrieval.trace,
   };
 }
 
@@ -255,11 +468,7 @@ function finalizeValidatedAnswer(params: {
   answer: DocAnswerResult;
   evidence: ReturnType<typeof buildEvidencePack>;
   flags: ReturnType<typeof getDocAssistantFeatureFlags>;
-  retrievalTrace?: {
-    primaryQueries: Array<{ purpose: string; query: string; hitCount: number }>;
-    expansionQueries: Array<{ purpose: string; query: string; hitCount: number }>;
-    mergedHitCount: number;
-  };
+  retrievalTrace?: Record<string, unknown>;
 }): DocAnswerResult {
   const normalizedSummary = params.answer.summary.toLowerCase();
   if (!params.flags.validator) {
@@ -502,6 +711,19 @@ export async function executeDocQuestion(params: {
     !isBroadIntegrationRequest(effectiveQuestionState) &&
     shouldReuseClarificationHits(clarificationFollowUp, selectedPlatform),
   );
+  const resolvedFollowUpSource =
+    acceptedClarificationFollowUp && canReuseClarificationHits
+      ? "clarification_reuse"
+      : acceptedLlmFollowUp || acceptedContextualFollowUp
+        ? "contextual_rewrite"
+        : acceptedClarificationFollowUp || clarificationFollowUp
+          ? "clarification_rewrite"
+          : "none";
+  const retrievalBudget = resolveRetrievalBudget({
+    state: effectiveState,
+    overrideMaxResults: params.maxResults,
+    followUpSource: resolvedFollowUpSource,
+  });
 
   if (
     clarificationFollowUp &&
@@ -549,9 +771,11 @@ export async function executeDocQuestion(params: {
   if (clarificationFollowUp && selectedPlatform && canReuseClarificationHits) {
     const hits = selectPlatformHits(clarificationFollowUp.hits, selectedPlatform);
     await params.onRetrieved?.(hits);
-    const evidence = buildEvidencePack({
+    const evidence = buildEvidenceForBudget({
       state: effectiveState,
       hits,
+      budget: retrievalBudget,
+      useEvidencePack: flags.evidencePack,
     });
     const insufficient = maybeReturnInsufficientEvidence({
       question: effectiveQuestion,
@@ -573,6 +797,10 @@ export async function executeDocQuestion(params: {
               groupCount: evidence.groups.length,
               warnings: evidence.warnings,
               trimEvents: evidence.trimEvents,
+            },
+            retrievalBudget: {
+              ...retrievalBudget,
+              retryUsed: false,
             },
             transitions: ["clarification_reuse", "insufficient_evidence"],
           },
@@ -607,6 +835,10 @@ export async function executeDocQuestion(params: {
               groupCount: evidence.groups.length,
               warnings: evidence.warnings,
               trimEvents: evidence.trimEvents,
+            },
+            retrievalBudget: {
+              ...retrievalBudget,
+              retryUsed: false,
             },
             transitions: ["clarification_reuse", "clarification_required"],
           },
@@ -654,6 +886,10 @@ export async function executeDocQuestion(params: {
             "clarification_reuse",
             ...((validated.trace?.transitions as string[] | undefined) ?? []).filter(Boolean),
           ],
+          retrievalBudget: {
+            ...retrievalBudget,
+            retryUsed: false,
+          },
         },
         followUpSource: acceptedClarificationFollowUp ? "clarification_reuse" : undefined,
         continuedFromRunId,
@@ -744,68 +980,66 @@ export async function executeDocQuestion(params: {
         discouragedPaths: retrievalMemoryMatch.entry.discouragedPaths,
       }
     : undefined;
-  const retrieval = flags.stagedRetrieval
-    ? await runStagedRetrieval({
-        question: effectiveQuestion,
-        state: effectiveState,
-        docsRoot: params.docsRoot,
-        dataDir: params.dataDir,
-        maxResults: params.maxResults,
-        overrides: retrievalOverrides,
-      })
-    : {
-        hits: [] as DocSearchHit[],
-        plan: buildRetrievalPlan({
-          state: effectiveState,
-          maxResults: params.maxResults,
-        }),
-        trace: {
-          primaryQueries: [],
-          expansionQueries: [],
-          mergedHitCount: 0,
-        },
-      };
-  const legacyHits = await searchDocs({
-    query: effectiveQuestion,
+  let retrievalPass = await runRetrievalPass({
+    question: effectiveQuestion,
+    state: effectiveState,
     docsRoot: params.docsRoot,
     dataDir: params.dataDir,
-    maxResults: params.maxResults,
-    refinement: {
-      preferredDocShape: clarificationFollowUp?.preferredDocShape,
-      focusAnchors: [
-        ...effectiveState.anchors.nounPhrases,
-        ...effectiveState.anchors.constraints,
-        ...effectiveState.anchors.apiSymbols,
-      ],
-    },
+    budget: retrievalBudget,
+    flags,
+    pass: "initial",
+    preferredDocShape: clarificationFollowUp?.preferredDocShape,
     overrides: retrievalOverrides,
   });
-  const mergedHits: DocSearchHit[] = [];
-  const seenHitKeys = new Set<string>();
-  for (const hit of [...legacyHits, ...retrieval.hits]) {
-    const key = `${hit.path}:${hit.startLine}:${hit.endLine}`;
-    if (seenHitKeys.has(key)) {
-      continue;
-    }
-    seenHitKeys.add(key);
-    mergedHits.push(hit);
+  const initialRetrievalTrace = retrievalPass.retrievalTrace;
+  const clarificationDecision = decideClarification({
+    state: effectiveState,
+    hits: retrievalPass.hits,
+  });
+  const retryDecision = shouldRetryRetrieval({
+    question: effectiveQuestion,
+    state: effectiveState,
+    hits: retrievalPass.hits,
+    evidence: retrievalPass.evidence,
+    budget: retrievalBudget,
+    clarificationDecision,
+  });
+  let retryUsed = false;
+  if (retryDecision.retry) {
+    const retryBudget: RetrievalBudget = {
+      ...retrievalBudget,
+      hitLimit: retrievalBudget.retryHitLimit,
+      evidenceTotalBudgetChars: retrievalBudget.retryEvidenceTotalBudgetChars,
+      evidenceGroupBudgetChars: retrievalBudget.retryEvidenceGroupBudgetChars,
+    };
+    retrievalPass = await runRetrievalPass({
+      question: effectiveQuestion,
+      state: effectiveState,
+      docsRoot: params.docsRoot,
+      dataDir: params.dataDir,
+      budget: retryBudget,
+      flags,
+      pass: "retry",
+      preferredDocShape: clarificationFollowUp?.preferredDocShape,
+      overrides: retrievalOverrides,
+    });
+    retryUsed = true;
   }
-  const hits = filterHitsForResolvedState(mergedHits, effectiveState).slice(
-    0,
-    params.maxResults ?? 5,
-  );
+  const hits = retrievalPass.hits;
+  const evidence = retrievalPass.evidence;
   await params.onRetrieved?.(hits);
-  const evidence = flags.evidencePack
-    ? buildEvidencePack({
-        state: effectiveState,
-        hits,
-      })
-    : buildEvidencePack({
-        state: effectiveState,
-        hits,
-        totalBudgetChars: Number.MAX_SAFE_INTEGER,
-        groupBudgetChars: Number.MAX_SAFE_INTEGER,
-      });
+  const retrievalTrace = retryUsed
+    ? {
+        initialPass: initialRetrievalTrace,
+        finalPass: retrievalPass.retrievalTrace,
+        retry: {
+          used: true,
+          reasons: retryDecision.reasons,
+          fromHitLimit: retrievalBudget.hitLimit,
+          toHitLimit: retrievalPass.retrievalTrace.budget.hitLimit,
+        },
+      }
+    : initialRetrievalTrace;
   const insufficient = maybeReturnInsufficientEvidence({
     question: effectiveQuestion,
     state: effectiveState,
@@ -822,11 +1056,17 @@ export async function executeDocQuestion(params: {
           ...baseTrace,
           route: "search",
           state: effectiveState,
-          retrieval: retrieval.trace,
+          retrieval: retrievalTrace,
           evidence: {
             groupCount: evidence.groups.length,
             warnings: evidence.warnings,
             trimEvents: evidence.trimEvents,
+          },
+          retrievalBudget: {
+            ...retrievalBudget,
+            retryUsed,
+            retryReasons: retryDecision.reasons,
+            finalHitLimit: retrievalPass.retrievalTrace.budget.hitLimit,
           },
           memory: retrievalMemoryMatch
             ? {
@@ -836,15 +1076,12 @@ export async function executeDocQuestion(params: {
                 discouragedPaths: retrievalMemoryMatch.entry.discouragedPaths,
               }
             : undefined,
-          transitions: ["insufficient_evidence"],
+          transitions: [
+            ...(retryUsed ? ["retrieval_retry_expanded"] : []),
+            "insufficient_evidence",
+          ],
         },
-        followUpSource: acceptedClarificationFollowUp
-          ? "clarification_rewrite"
-          : acceptedLlmFollowUp
-            ? "contextual_rewrite"
-            : acceptedContextualFollowUp
-              ? "contextual_rewrite"
-              : undefined,
+        followUpSource: resolvedFollowUpSource === "none" ? undefined : resolvedFollowUpSource,
         continuedFromRunId,
         rewrittenQuestion:
           acceptedLlmFollowUp || acceptedContextualFollowUp || clarificationFollowUp
@@ -874,11 +1111,17 @@ export async function executeDocQuestion(params: {
           clarification: {
             kind: clarification.pendingClarificationKind,
           },
-          retrieval: retrieval.trace,
+          retrieval: retrievalTrace,
           evidence: {
             groupCount: evidence.groups.length,
             warnings: evidence.warnings,
             trimEvents: evidence.trimEvents,
+          },
+          retrievalBudget: {
+            ...retrievalBudget,
+            retryUsed,
+            retryReasons: retryDecision.reasons,
+            finalHitLimit: retrievalPass.retrievalTrace.budget.hitLimit,
           },
           memory: retrievalMemoryMatch
             ? {
@@ -888,15 +1131,12 @@ export async function executeDocQuestion(params: {
                 discouragedPaths: retrievalMemoryMatch.entry.discouragedPaths,
               }
             : undefined,
-          transitions: ["clarification_required"],
+          transitions: [
+            ...(retryUsed ? ["retrieval_retry_expanded"] : []),
+            "clarification_required",
+          ],
         },
-        followUpSource: acceptedClarificationFollowUp
-          ? "clarification_rewrite"
-          : acceptedLlmFollowUp
-            ? "contextual_rewrite"
-            : acceptedContextualFollowUp
-              ? "contextual_rewrite"
-              : undefined,
+        followUpSource: resolvedFollowUpSource === "none" ? undefined : resolvedFollowUpSource,
         continuedFromRunId,
         rewrittenQuestion:
           acceptedLlmFollowUp || acceptedContextualFollowUp || clarificationFollowUp
@@ -927,7 +1167,7 @@ export async function executeDocQuestion(params: {
     answer,
     evidence,
     flags,
-    retrievalTrace: retrieval.trace,
+    retrievalTrace: retrievalTrace,
   });
   return {
     route: "search",
@@ -948,19 +1188,20 @@ export async function executeDocQuestion(params: {
               requiredClarification: retrievalMemoryMatch.entry.requiredClarification,
             }
           : undefined,
+        retrievalBudget: {
+          ...retrievalBudget,
+          retryUsed,
+          retryReasons: retryDecision.reasons,
+          finalHitLimit: retrievalPass.retrievalTrace.budget.hitLimit,
+        },
         answerSurface: validated.answerSurface,
         transitions: [
+          ...(retryUsed ? ["retrieval_retry_expanded"] : []),
           ...(retrievalMemoryMatch ? ["retrieval_memory_override"] : []),
           ...((validated.trace?.transitions as string[] | undefined) ?? []).filter(Boolean),
         ],
       },
-      followUpSource: acceptedClarificationFollowUp
-        ? "clarification_rewrite"
-        : acceptedLlmFollowUp
-          ? "contextual_rewrite"
-          : acceptedContextualFollowUp
-            ? "contextual_rewrite"
-            : undefined,
+      followUpSource: resolvedFollowUpSource === "none" ? undefined : resolvedFollowUpSource,
       continuedFromRunId,
       rewrittenQuestion:
         acceptedLlmFollowUp || acceptedContextualFollowUp || clarificationFollowUp

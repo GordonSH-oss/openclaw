@@ -57,6 +57,17 @@ function nextRequestId() {
   return String(state.requestId);
 }
 
+function parseOptionalPositiveInteger(value) {
+  if (!value.trim()) {
+    return undefined;
+  }
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return undefined;
+  }
+  return Math.floor(parsed);
+}
+
 function createWebSocketUrl() {
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
   return `${protocol}//${window.location.host}/ws?clientId=doc-assistant-ui`;
@@ -737,12 +748,13 @@ async function askQuestion() {
   dom.askButton.disabled = true;
   dom.newSessionButton.disabled = true;
 
+  const maxResultsOverride = parseOptionalPositiveInteger(dom.maxResultsInput.value);
   const response = await rpc("docs.ask", {
     userId: state.userId,
     question,
     idempotencyKey: globalThis.crypto?.randomUUID?.() ?? `run-${Date.now()}`,
     mode: dom.modeSelect.value,
-    maxResults: Number(dom.maxResultsInput.value) || 4,
+    ...(maxResultsOverride ? { maxResults: maxResultsOverride } : {}),
   });
 
   if (!response.ok) {

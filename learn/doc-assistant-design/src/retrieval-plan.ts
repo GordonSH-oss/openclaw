@@ -1,6 +1,7 @@
 import { extractQuestionAnchors, summarizeAnchorFocus } from "./question-anchors.js";
 import { planDocQuestion } from "./question-planning.js";
 import type { QuestionState } from "./question-state.js";
+import type { RetrievalBudget } from "./retrieval-budget.js";
 
 export type RetrievalPurpose =
   | "primary_concept"
@@ -96,6 +97,12 @@ function buildExpansionSeeds(
   const verbs = state.anchors.verbPhrases.slice(0, 2);
   const constraints = state.anchors.constraints.slice(0, 2);
   const apiSymbols = state.anchors.apiSymbols.slice(0, 2);
+  const hasStructuredFocus =
+    stableSlotHints.length > 0 ||
+    state.anchors.nounPhrases.length > 0 ||
+    state.anchors.qualifiers.length > 0 ||
+    constraints.length > 0 ||
+    apiSymbols.length > 0;
   const seeds: Array<{
     purpose: RetrievalPurpose;
     query: string;
@@ -110,7 +117,7 @@ function buildExpansionSeeds(
     });
   }
 
-  if (stableSlotHints.length > 0 || focus.length > 0 || verbs.length > 0) {
+  if (hasStructuredFocus) {
     seeds.push({
       purpose: "prerequisite",
       query: [...stableSlotHints, ...focus, ...verbs, "quickstart setup"].filter(Boolean).join(" "),
@@ -140,8 +147,15 @@ function buildExpansionSeeds(
 export function buildRetrievalPlan(params: {
   state: QuestionState;
   maxResults?: number;
+  budget?: RetrievalBudget;
 }): RetrievalPlan {
-  const maxResults = Math.max(3, params.maxResults ?? 5);
+  const maxResults = Math.max(3, params.budget?.hitLimit ?? params.maxResults ?? 5);
+  const conceptPrimaryLimit = params.budget?.primaryConceptLimit ?? Math.min(maxResults, 4);
+  const proceduralPrimaryLimit = params.budget?.primaryProceduralLimit ?? Math.min(maxResults, 4);
+  const overviewExpansionLimit = params.budget?.overviewExpansionLimit ?? 2;
+  const relatedExpansionLimit = params.budget?.relatedExpansionLimit ?? 2;
+  const maxPrimaryQueries = params.budget?.maxPrimaryQueries ?? 3;
+  const maxExpansionQueries = params.budget?.maxExpansionQueries ?? 4;
   const plan = planDocQuestion(params.state.rawQuestion);
   const primaryQueries: RetrievalQuery[] = [];
   const expansionQueries: RetrievalQuery[] = [];
@@ -153,7 +167,7 @@ export function buildRetrievalPlan(params: {
         purpose: step.intent === "concept" ? "primary_concept" : "primary_procedural",
         query: step.question,
         bucket: step.intent === "concept" ? "concept" : "procedural",
-        limit: Math.min(maxResults, step.intent === "concept" ? 3 : 4),
+        limit: step.intent === "concept" ? conceptPrimaryLimit : proceduralPrimaryLimit,
       });
       for (const seed of buildExpansionSeeds(step.question, {
         ...params.state,
@@ -164,7 +178,7 @@ export function buildRetrievalPlan(params: {
           purpose: seed.purpose,
           query: seed.query,
           bucket: seed.bucket,
-          limit: seed.purpose === "overview" ? 2 : 2,
+          limit: seed.purpose === "overview" ? overviewExpansionLimit : relatedExpansionLimit,
         });
       }
     }
@@ -173,20 +187,20 @@ export function buildRetrievalPlan(params: {
       purpose: params.state.intent === "concept" ? "primary_concept" : "primary_procedural",
       query: params.state.rawQuestion,
       bucket: params.state.intent === "concept" ? "concept" : "procedural",
-      limit: Math.min(maxResults, params.state.intent === "concept" ? 4 : 4),
+      limit: params.state.intent === "concept" ? conceptPrimaryLimit : proceduralPrimaryLimit,
     });
     for (const seed of buildExpansionSeeds(params.state.rawQuestion, params.state)) {
       expansionQueries.push({
         purpose: seed.purpose,
         query: seed.query,
         bucket: seed.bucket,
-        limit: seed.purpose === "overview" ? 2 : 2,
+        limit: seed.purpose === "overview" ? overviewExpansionLimit : relatedExpansionLimit,
       });
     }
   }
 
   return {
-    primaryQueries: dedupeQueries(primaryQueries).slice(0, 3),
-    expansionQueries: dedupeQueries(expansionQueries).slice(0, 4),
+    primaryQueries: dedupeQueries(primaryQueries).slice(0, maxPrimaryQueries),
+    expansionQueries: dedupeQueries(expansionQueries).slice(0, maxExpansionQueries),
   };
 }

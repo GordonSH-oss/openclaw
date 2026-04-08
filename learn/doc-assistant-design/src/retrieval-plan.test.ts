@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { buildQuestionState } from "./question-state.js";
+import { resolveRetrievalBudget } from "./retrieval-budget.js";
 import { buildRetrievalPlan } from "./retrieval-plan.js";
 
 void test("buildRetrievalPlan creates primary and expansion queries for procedural questions", () => {
@@ -15,7 +16,7 @@ void test("buildRetrievalPlan creates primary and expansion queries for procedur
     true,
   );
   assert.equal(
-    plan.expansionQueries.some((query) => query.purpose === "api"),
+    plan.expansionQueries.some((query) => query.purpose === "overview"),
     true,
   );
 });
@@ -51,4 +52,18 @@ void test("buildRetrievalPlan skips generic prerequisite expansion for off-inten
     plan.expansionQueries.some((query) => query.purpose === "prerequisite"),
     false,
   );
+});
+
+void test("buildRetrievalPlan honors expanded dynamic budgets for broader questions", () => {
+  const state = buildQuestionState("What is Chat SDK? How do I integrate it on Web?");
+  const budget = resolveRetrievalBudget({ state });
+  const plan = buildRetrievalPlan({
+    state,
+    budget,
+  });
+
+  assert.equal(budget.hitLimit >= 8, true);
+  assert.equal(plan.primaryQueries.length >= 2, true);
+  assert.equal(plan.expansionQueries.length >= 3, true);
+  assert.equal(plan.primaryQueries[1]?.limit >= 5, true);
 });

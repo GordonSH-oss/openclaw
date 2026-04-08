@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { renderClarificationAnswer } from "./doc-answer.js";
 import { searchDocs } from "./doc-search.js";
 import { updateClarificationStateAfterAnswer } from "./follow-up-context.js";
 import { executeDocQuestion } from "./question-execution.js";
@@ -506,52 +507,6 @@ async function createIOSDirectChannelCreationDocs(): Promise<string> {
   return docsRoot;
 }
 
-async function createPinChannelClarificationDocs(): Promise<string> {
-  const docsRoot = await makeTempDir("doc-assistant-pin-channel-clarify");
-  await fs.mkdir(path.join(docsRoot, "docs", "chatsdk-ios", "direct-system-channels"), {
-    recursive: true,
-  });
-  await fs.mkdir(path.join(docsRoot, "docs", "chatsdk-ios", "group-channels"), {
-    recursive: true,
-  });
-  await fs.mkdir(path.join(docsRoot, "docs", "chatsdk-android", "community-channels"), {
-    recursive: true,
-  });
-  await fs.writeFile(
-    path.join(docsRoot, "docs", "chatsdk-ios", "direct-system-channels", "pinning-channel.md"),
-    [
-      "# Pin a channel in the channel list",
-      "",
-      'Call `channel.pin()` on `DirectChannel(channelId: "userId")`.',
-      "",
-    ].join("\n"),
-    "utf-8",
-  );
-  await fs.writeFile(
-    path.join(docsRoot, "docs", "chatsdk-ios", "group-channels", "manage-group-channel.md"),
-    [
-      "# Manage group channel",
-      "",
-      "## Create a group",
-      "",
-      "Call `GroupChannel.createGroup(params:completion:)` to create a new group.",
-      "",
-    ].join("\n"),
-    "utf-8",
-  );
-  await fs.writeFile(
-    path.join(docsRoot, "docs", "chatsdk-android", "community-channels", "creating-channel.md"),
-    [
-      "# Creating community channels",
-      "",
-      "The Android Chat SDK does not provide client-side APIs for creating community channels or subchannels.",
-      "",
-    ].join("\n"),
-    "utf-8",
-  );
-  return docsRoot;
-}
-
 async function createIOSOpenChannelDestroyDocs(): Promise<string> {
   const docsRoot = await makeTempDir("doc-assistant-ios-open-channel-destroy");
   await fs.mkdir(path.join(docsRoot, "docs", "chatsdk-ios", "open-channels"), {
@@ -627,6 +582,37 @@ async function createIOSOpenChannelDestroyDocs(): Promise<string> {
       "Adopt `NCOpenChannelHandler` to observe open channel enter and exit events.",
       "",
       "When the channel is destroyed, `onChannelDestroyed(...)` fires.",
+      "",
+    ].join("\n"),
+    "utf-8",
+  );
+  return docsRoot;
+}
+
+async function createSparseWebOnboardingDocs(): Promise<string> {
+  const docsRoot = await makeTempDir("doc-assistant-sparse-web-onboarding");
+  await fs.mkdir(path.join(docsRoot, "docs", "chatsdk-web", "getting-started"), {
+    recursive: true,
+  });
+  await fs.mkdir(path.join(docsRoot, "docs", "chatsdk-web", "direct-system-channels"), {
+    recursive: true,
+  });
+  await fs.writeFile(
+    path.join(docsRoot, "docs", "chatsdk-web", "getting-started", "integration.md"),
+    [
+      "# Integrate Chat SDK on Web",
+      "",
+      "Install the Chat SDK package, initialize the client, and connect the current user before you start a conversation.",
+      "",
+    ].join("\n"),
+    "utf-8",
+  );
+  await fs.writeFile(
+    path.join(docsRoot, "docs", "chatsdk-web", "direct-system-channels", "send-first-message.md"),
+    [
+      "# Send the first direct message",
+      "",
+      "Create a direct channel for the target user and call `sendTextMessage(...)` after the client finishes connecting.",
       "",
     ].join("\n"),
     "utf-8",
@@ -1055,19 +1041,50 @@ void test("platform clarification reuse accepts self-only delete wording after s
   );
 });
 
-void test("platform clarification examples prefer docs that match the asked action", async () => {
-  const docsRoot = await createPinChannelClarificationDocs();
-  const result = await executeDocQuestion({
-    runId: "pin-channel-clarify-1",
+void test("platform clarification examples prefer docs that match the asked action", () => {
+  const result = renderClarificationAnswer({
+    decision: { shouldClarify: true, kind: "platform" },
     question: "How to pin a channel?",
     mode: "extractive",
-    docsRoot,
-    maxResults: 5,
+    hits: [
+      {
+        path: "docs/chatsdk-ios/direct-system-channels/pinning-channel.md",
+        heading: "Pin a channel in the channel list",
+        startLine: 16,
+        endLine: 19,
+        snippet:
+          "Pinning a channel updates the `isPinned` field on `NCBaseChannel` and syncs the state to the server.",
+        text: "Pinning a channel updates the `isPinned` field on `NCBaseChannel` and syncs the state to the server.",
+        score: 48,
+        docShape: "generic_reference",
+      },
+      {
+        path: "docs/chatsdk-android/community-channels/creating-channel.md",
+        heading: "Creating community channels",
+        startLine: 6,
+        endLine: 9,
+        snippet:
+          "The Chat SDK does not provide client-side APIs for creating community channels or subchannels.",
+        text: "The Chat SDK does not provide client-side APIs for creating community channels or subchannels.",
+        score: 46,
+        docShape: "specialized_task",
+      },
+      {
+        path: "docs/chatsdk-ios/group-channels/manage-group-channel.md",
+        heading: "Create a group",
+        startLine: 84,
+        endLine: 150,
+        snippet: "Call `GroupChannel.createGroup(params:completion:)` to create a new group.",
+        text: "Call `GroupChannel.createGroup(params:completion:)` to create a new group.",
+        score: 46,
+        docShape: "specialized_task",
+      },
+    ],
   });
 
-  assert.equal(result.answer.summary, "platform clarification required");
-  assert.equal(result.answer.answer.includes("Pin a channel in the channel list"), true);
-  assert.equal(result.answer.answer.includes("Creating community channels"), false);
+  assert.equal(result.summary, "platform clarification required");
+  assert.equal(result.answer.includes("Pin a channel in the channel list"), true);
+  assert.equal(result.answer.includes("Creating community channels"), false);
 });
 
 void test("resolved-answer follow-up rewrites dependent code-snippet requests onto the prior topic", async () => {
@@ -1314,7 +1331,7 @@ void test("unseen platform follow-up reruns retrieval instead of replaying the p
     maxResults: 5,
   });
 
-  assert.equal(invalid.answer.summary, "no relevant documentation found");
+  assert.equal(invalid.answer.summary, "insufficient documentation evidence");
   assert.equal(invalid.answer.followUpSource, "clarification_rewrite");
   assert.equal(invalid.answer.rewrittenQuestion, "How to create a direct channel on Web?");
   assert.equal(invalid.answer.answer.includes("Android / Flutter"), false);
@@ -1396,4 +1413,29 @@ void test("destroy-open-channel questions do not drift into join steps when only
   assert.equal(result.answer.answer.includes("destroys the channel itself"), true);
   assert.equal(result.answer.answer.includes("OpenChannelDeleteMetadataParams"), false);
   assert.equal(result.answer.answer.includes("NCOpenChannelHandler"), false);
+});
+
+void test("executeDocQuestion expands retrieval dynamically when the first pass is sparse", async () => {
+  const docsRoot = await createSparseWebOnboardingDocs();
+  const result = await executeDocQuestion({
+    runId: "dynamic-retrieval-budget-1",
+    question: "How do I integrate Chat SDK on Web and send the first direct message?",
+    mode: "extractive",
+    docsRoot,
+  });
+
+  const trace = (result.answer.trace ?? {}) as {
+    retrievalBudget?: {
+      hitLimit: number;
+      retryUsed?: boolean;
+      retryReasons?: string[];
+      finalHitLimit?: number;
+    };
+  };
+
+  assert.equal(result.route, "search");
+  assert.equal(trace.retrievalBudget?.hitLimit, 4);
+  assert.equal(trace.retrievalBudget?.retryUsed, true);
+  assert.equal(trace.retrievalBudget?.retryReasons?.includes("low_hit_count"), true);
+  assert.equal((trace.retrievalBudget?.finalHitLimit ?? 0) > trace.retrievalBudget.hitLimit, true);
 });
