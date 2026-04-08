@@ -206,18 +206,7 @@ export function decideClarification(params: {
   const hitChannelKinds = collectHitChannelKinds(hits);
   const hitProducts = collectHitProducts(hits);
 
-  if (state.ambiguity.missingApiLayer) {
-    return {
-      shouldClarify: true,
-      kind: "api_layer",
-      question: buildClarificationPrompt("api_layer", state),
-      reason: "retrieval spans both client SDK and server API material",
-      pendingState: { apiLayer: undefined },
-      candidateOptions: ["client", "server"],
-    };
-  }
-
-  if (state.ambiguity.missingProduct && hits.length > 0) {
+  if (state.ambiguity.missingProduct && (hits.length > 0 || isBroadIntegrationRequest(state))) {
     return {
       shouldClarify: true,
       kind: "product",
@@ -227,7 +216,18 @@ export function decideClarification(params: {
           ? "retrieval spans multiple product surfaces"
           : "question does not specify whether the user needs chat, call, or server docs",
       pendingState: { product: undefined },
-      candidateOptions: hitProducts.length > 0 ? hitProducts : ["chat", "call", "server"],
+      candidateOptions: hitProducts.length > 1 ? hitProducts : ["chat", "call", "server"],
+    };
+  }
+
+  if (state.ambiguity.missingApiLayer) {
+    return {
+      shouldClarify: true,
+      kind: "api_layer",
+      question: buildClarificationPrompt("api_layer", state),
+      reason: "retrieval spans both client SDK and server API material",
+      pendingState: { apiLayer: undefined },
+      candidateOptions: ["client", "server"],
     };
   }
 

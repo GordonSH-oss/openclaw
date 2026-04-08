@@ -74,6 +74,28 @@ async function createProductClarificationDocs(): Promise<string> {
   return docsRoot;
 }
 
+async function createCallOneToOneDocs(): Promise<string> {
+  const docsRoot = await makeTempDir("doc-assistant-call-one-to-one");
+  await fs.mkdir(path.join(docsRoot, "docs", "callsdk-ios"), {
+    recursive: true,
+  });
+  await fs.writeFile(
+    path.join(docsRoot, "docs", "callsdk-ios", "one-to-one-call.md"),
+    [
+      "# Start a 1-to-1 call",
+      "",
+      "Use `startCall` to place a 1-to-1 call in the iOS Call SDK.",
+      "",
+      "## Receive and accept an incoming call",
+      "",
+      "Use `acceptCall` to accept the incoming 1-to-1 call.",
+      "",
+    ].join("\n"),
+    "utf-8",
+  );
+  return docsRoot;
+}
+
 async function createWeakChatIntegrationFollowUpDocs(): Promise<string> {
   const docsRoot = await makeTempDir("doc-assistant-weak-chat-integration-followup");
   await fs.mkdir(path.join(docsRoot, "docs", "chatsdk-web"), {
@@ -620,7 +642,7 @@ async function createSparseWebOnboardingDocs(): Promise<string> {
   return docsRoot;
 }
 
-void test("executeDocQuestion asks for api layer clarification before answering generic connect questions", async () => {
+void test("executeDocQuestion asks for product clarification before answering generic connect questions", async () => {
   const docsRoot = await createConnectClarificationDocs();
   const result = await executeDocQuestion({
     runId: "connect-clarify-1",
@@ -631,12 +653,12 @@ void test("executeDocQuestion asks for api layer clarification before answering 
   });
 
   assert.equal(result.route, "search");
-  assert.equal(result.answer.summary, "api layer clarification required");
-  assert.equal(result.answer.answer.includes("client SDK"), true);
+  assert.equal(result.answer.summary, "product clarification required");
+  assert.equal(result.answer.answer.includes("Chat SDK"), true);
   assert.equal(result.answer.answer.includes("Server API"), true);
 });
 
-void test("api layer clarification follow-up rewrites the question and continues", async () => {
+void test("product clarification follow-up rewrites the generic connect question and continues", async () => {
   const docsRoot = await createConnectClarificationDocs();
   const dataDir = await makeTempDir("doc-assistant-connect-followup");
   const sessionId = "connect-followup-session";
@@ -675,8 +697,23 @@ void test("api layer clarification follow-up rewrites the question and continues
   });
 
   assert.equal(second.answer.followUpSource, "clarification_rewrite");
-  assert.equal(second.answer.rewrittenQuestion, "How to connect using Server API?");
-  assert.notEqual(second.answer.summary, "api layer clarification required");
+  assert.equal(second.answer.rewrittenQuestion, "How to connect for Server API?");
+  assert.notEqual(second.answer.summary, "product clarification required");
+});
+
+void test("Call SDK one-to-one questions answer from call docs without direct-channel clarification leakage", async () => {
+  const docsRoot = await createCallOneToOneDocs();
+  const result = await executeDocQuestion({
+    runId: "call-one-to-one-1",
+    question: "How do I start or accept a 1-to-1 call in the iOS Call SDK?",
+    mode: "extractive",
+    docsRoot,
+    maxResults: 5,
+  });
+
+  assert.notEqual(result.answer.summary, "insufficient documentation evidence");
+  assert.equal(result.answer.answer.includes("direct channel"), false);
+  assert.equal(result.hits[0]?.path.endsWith("docs/callsdk-ios/one-to-one-call.md"), true);
 });
 
 void test("product clarification follow-up rewrites the question and continues", async () => {

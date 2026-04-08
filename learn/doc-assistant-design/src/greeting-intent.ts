@@ -1,9 +1,17 @@
 import { detectQuestionLanguage, type AnswerLanguage } from "./answer-language.js";
+import { decideAnswerability } from "./answerability.js";
+import { decideClarification } from "./clarification-policy.js";
 import type { DocAnswerResult } from "./doc-answer.js";
 import { buildDocIndex, type DocIndexChunk } from "./doc-index.js";
+import { searchDocs } from "./doc-search.js";
 import type { DocAssistantMode } from "./protocol/index.js";
+import { buildQuestionState } from "./question-state.js";
 
 type GreetingIntentKind = "greeting" | "assistant_intro" | "small_talk";
+type StarterTopic = {
+  display: string;
+  validationQuery: string;
+};
 
 export type GreetingIntentMatch = {
   kind: GreetingIntentKind;
@@ -147,37 +155,62 @@ export function detectGreetingIntent(question: string): GreetingIntentMatch | nu
   return null;
 }
 
-function mapAreaToStarterTopic(area: string, language: AnswerLanguage): string | null {
+function mapAreaToStarterTopic(area: string, language: AnswerLanguage): StarterTopic | null {
   const normalizedArea = area.toLowerCase();
   if (normalizedArea.includes("chatsdk") && normalizedArea.includes("android")) {
-    return language === "zh"
-      ? "Android Chat SDK 如何初始化并开始单聊？"
-      : "How do I initialize the Android Chat SDK and start a direct chat?";
+    return {
+      display:
+        language === "zh"
+          ? "Android Chat SDK 如何初始化并开始单聊？"
+          : "How do I initialize the Android Chat SDK and start a direct chat?",
+      validationQuery: "How do I initialize the Android Chat SDK and start a direct chat?",
+    };
   }
   if (normalizedArea.includes("chatsdk") && normalizedArea.includes("ios")) {
-    return language === "zh"
-      ? "iOS Chat SDK 如何连接用户并发送第一条消息？"
-      : "How do I connect a user in the iOS Chat SDK and send the first message?";
+    return {
+      display:
+        language === "zh"
+          ? "iOS Chat SDK 如何连接用户并发送第一条消息？"
+          : "How do I connect a user in the iOS Chat SDK and send the first message?",
+      validationQuery: "How do I connect a user in the iOS Chat SDK and send the first message?",
+    };
   }
   if (normalizedArea.includes("chatsdk") && normalizedArea.includes("web")) {
-    return language === "zh"
-      ? "Web Chat SDK 如何初始化并创建 DirectChannel？"
-      : "How do I initialize the Web Chat SDK and create a DirectChannel?";
+    return {
+      display:
+        language === "zh"
+          ? "Web Chat SDK 如何初始化并创建 DirectChannel？"
+          : "How do I initialize the Web Chat SDK and create a DirectChannel?",
+      validationQuery: "How do I initialize the Web Chat SDK and create a DirectChannel?",
+    };
   }
   if (normalizedArea.includes("callsdk") && normalizedArea.includes("ios")) {
-    return language === "zh"
-      ? "iOS Call SDK 如何发起或接听 1 对 1 通话？"
-      : "How do I start or accept a 1-to-1 call in the iOS Call SDK?";
+    return {
+      display:
+        language === "zh"
+          ? "iOS Call SDK 如何发起或接听 1 对 1 通话？"
+          : "How do I start or accept a 1-to-1 call in the iOS Call SDK?",
+      validationQuery: "How do I start or accept a 1-to-1 call in the iOS Call SDK?",
+    };
   }
   if (normalizedArea.includes("callsdk") && normalizedArea.includes("web")) {
-    return language === "zh"
-      ? "Web Call SDK 如何发起 1 对 1 通话或配置推送？"
-      : "How do I start a 1-to-1 call or configure push in the Web Call SDK?";
+    return {
+      display:
+        language === "zh"
+          ? "Web Call SDK 如何发起 1 对 1 通话或配置推送？"
+          : "How do I start a 1-to-1 call or configure push in the Web Call SDK?",
+      validationQuery: "How do I start a 1-to-1 call or configure push in the Web Call SDK?",
+    };
   }
   if (normalizedArea.includes("platform-chat-api")) {
-    return language === "zh"
-      ? "服务端消息同步、历史消息和发送回执怎么配置？"
-      : "How do I configure server-side message sync, message history, and delivery callbacks?";
+    return {
+      display:
+        language === "zh"
+          ? "服务端消息同步、历史消息和发送回执怎么配置？"
+          : "How do I configure server-side message sync, message history, and delivery callbacks?",
+      validationQuery:
+        "How do I configure server-side message sync, message history, and delivery callbacks?",
+    };
   }
   return null;
 }
@@ -190,7 +223,38 @@ function extractAreaName(chunk: DocIndexChunk): string | null {
   return segments[1] ?? null;
 }
 
-async function buildDynamicStarterTopics(params: {
+async function isAnswerableStarterTopic(params: {
+  topic: StarterTopic;
+  docsRoot: string;
+  dataDir?: string;
+}): Promise<boolean> {
+  const state = buildQuestionState(params.topic.validationQuery);
+  const hits = await searchDocs({
+    query: params.topic.validationQuery,
+    docsRoot: params.docsRoot,
+    dataDir: params.dataDir,
+    maxResults: 5,
+  });
+  if (hits.length === 0) {
+    return false;
+  }
+  const clarification = decideClarification({
+    state,
+    hits,
+  });
+  if (clarification.shouldClarify) {
+    return false;
+  }
+  return (
+    decideAnswerability({
+      question: params.topic.validationQuery,
+      state,
+      hits,
+    }).verdict === "answerable"
+  );
+}
+
+async function buildValidatedStarterTopics(params: {
   docsRoot: string;
   dataDir?: string;
   language: AnswerLanguage;
@@ -199,7 +263,7 @@ async function buildDynamicStarterTopics(params: {
     docsRoot: params.docsRoot,
     dataDir: params.dataDir,
   });
-  const suggestions: string[] = [];
+  const candidates: StarterTopic[] = [];
   const seenAreas = new Set<string>();
   const seenSuggestions = new Set<string>();
 
@@ -210,12 +274,26 @@ async function buildDynamicStarterTopics(params: {
     }
     seenAreas.add(area);
     const suggestion = mapAreaToStarterTopic(area, params.language);
-    if (!suggestion || seenSuggestions.has(suggestion)) {
+    if (!suggestion || seenSuggestions.has(suggestion.display)) {
       continue;
     }
-    seenSuggestions.add(suggestion);
-    suggestions.push(suggestion);
-    if (suggestions.length >= 2) {
+    seenSuggestions.add(suggestion.display);
+    candidates.push(suggestion);
+  }
+
+  const suggestions: string[] = [];
+  for (const candidate of candidates) {
+    if (
+      !(await isAnswerableStarterTopic({
+        topic: candidate,
+        docsRoot: params.docsRoot,
+        dataDir: params.dataDir,
+      }))
+    ) {
+      continue;
+    }
+    suggestions.push(candidate.display);
+    if (suggestions.length >= 5) {
       break;
     }
   }
@@ -231,28 +309,12 @@ export async function buildGreetingAnswer(params: {
   match: GreetingIntentMatch;
 }): Promise<DocAnswerResult> {
   const language = detectQuestionLanguage(params.question);
-  const dynamicTopics = await buildDynamicStarterTopics({
+  const starterTopics = await buildValidatedStarterTopics({
     docsRoot: params.docsRoot,
     dataDir: params.dataDir,
     language,
   });
-  const fixedTopics =
-    language === "zh"
-      ? [
-          "Android / iOS / Web Chat SDK 怎么接入和初始化？",
-          "如何连接当前用户并建立聊天会话？",
-          "如何开始单聊、群聊，或者发送第一条消息？",
-          "如何配置推送、通知点击和会话跳转？",
-          "如何发起、接听或升级音视频通话？",
-        ]
-      : [
-          "How do I integrate and initialize the Android, iOS, or Web Chat SDK?",
-          "How do I connect the current user and establish a chat session?",
-          "How do I start a direct chat, a group chat, or send the first message?",
-          "How do I configure push, notification click handling, and conversation navigation?",
-          "How do I start, accept, or upgrade an audio or video call?",
-        ];
-  const starterTopics = Array.from(new Set([...fixedTopics, ...dynamicTopics])).slice(0, 7);
+  const directExample = starterTopics[0];
 
   const introLine =
     params.match.kind === "small_talk" && params.match.normalizedQuestion.includes("谢")
@@ -272,11 +334,15 @@ export async function buildGreetingAnswer(params: {
       language === "zh"
         ? "你可以直接告诉我平台、SDK 和目标场景，我会优先根据本地文档整理成开发者可执行的回答。"
         : "Tell me the platform, SDK, and target scenario, and I’ll answer from the local docs first.",
-      language === "zh" ? "例如你可以这样问：" : "For example:",
+      starterTopics.length > 0 ? (language === "zh" ? "例如你可以这样问：" : "For example:") : "",
       ...starterTopics.map((topic) => `- ${topic}`),
-      language === "zh"
-        ? "如果你已经有具体问题，也可以直接输入完整句子，比如“Android Chat SDK 如何开始 direct chat？”"
-        : 'If you already have a concrete question, ask it directly, for example: "How do I start a direct chat in the Android Chat SDK?"',
+      directExample
+        ? language === "zh"
+          ? `如果你已经有具体问题，也可以直接输入完整句子，比如“${directExample}”`
+          : `If you already have a concrete question, ask it directly, for example: "${directExample}"`
+        : language === "zh"
+          ? "如果你已经有具体问题，也可以直接输入完整句子。"
+          : "If you already have a concrete question, ask it directly.",
     ].join("\n"),
     summary: "guided greeting",
     citations: [],

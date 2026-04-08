@@ -46,14 +46,24 @@ void test("decideClarification asks for channel kind when channel creation hits 
   assert.equal(decision.kind, "channel_kind");
 });
 
-void test("decideClarification asks for api layer on generic connect questions", () => {
+void test("decideClarification asks for product first on generic connect questions", () => {
   const decision = decideClarification({
     state: buildQuestionState("How to connect?"),
     hits: [makeHit("docs/chatsdk-android/connection/connect.md", "Connect", "client sdk connect")],
   });
 
   assert.equal(decision.shouldClarify, true);
-  assert.equal(decision.kind, "api_layer");
+  assert.equal(decision.kind, "product");
+});
+
+void test("decideClarification asks for product even before retrieval hits exist", () => {
+  const decision = decideClarification({
+    state: buildQuestionState("How to integrate?"),
+    hits: [],
+  });
+
+  assert.equal(decision.shouldClarify, true);
+  assert.equal(decision.kind, "product");
 });
 
 void test("decideClarification asks for product on generic integration questions", () => {

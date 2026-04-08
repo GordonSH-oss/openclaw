@@ -653,7 +653,16 @@ void test("HTTP API greeting runs skip retrieval and complete with a guided gree
     waitPayload.result.answer.includes("I'm your Nexconn documentation assistant"),
     true,
   );
-  assert.equal(waitPayload.result.answer.includes("For example:"), true);
+  assert.equal(
+    waitPayload.result.answer.includes("If you already have a concrete question, ask it directly."),
+    true,
+  );
+  assert.equal(
+    waitPayload.result.answer.includes(
+      "How do I start or accept a 1-to-1 call in the iOS Call SDK?",
+    ),
+    false,
+  );
   assert.deepEqual(waitPayload.result.citations, []);
 
   const completedEvent = await harness.events.waitFor("docs.completed", (frame) => {

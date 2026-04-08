@@ -95,6 +95,13 @@ export function detectQuestionPlatform(value: string): QuestionPlatform | undefi
 
 export function detectQuestionChannelKind(value: string): QuestionChannelKind | undefined {
   const normalized = normalizeQuestionText(value);
+  const looksLikeCallFlow =
+    normalized.includes("call sdk") ||
+    normalized.includes("callsdk") ||
+    /\b(?:audio|video|group|incoming|outgoing|one to one|1 to 1)\s+call\b/.test(normalized) ||
+    /\b(?:start|make|place|accept|answer|upgrade|receive|join)\b[\w\s-]{0,40}\bcall\b/.test(
+      normalized,
+    );
   if (normalized.includes("open channel")) {
     return "open";
   }
@@ -108,7 +115,8 @@ export function detectQuestionChannelKind(value: string): QuestionChannelKind | 
   if (
     normalized.includes("direct system channels") ||
     normalized.includes("direct channel") ||
-    normalized.includes("one to one") ||
+    (normalized.includes("one to one") && !looksLikeCallFlow) ||
+    (normalized.includes("1 to 1") && !looksLikeCallFlow) ||
     normalized.includes("single chat") ||
     normalized.includes("单聊")
   ) {
@@ -421,11 +429,34 @@ function computeQuestionAmbiguity(
   };
 }
 
+function normalizeDraftByProduct(
+  draft: Omit<QuestionState, "ambiguity">,
+): Omit<QuestionState, "ambiguity"> {
+  if (draft.product !== "call") {
+    return draft;
+  }
+
+  return {
+    ...draft,
+    channelKind: undefined,
+    anchors: {
+      ...draft.anchors,
+      nounPhrases: draft.anchors.nounPhrases.filter((anchor) => anchor !== "direct channel"),
+    },
+    heuristicHints: {
+      ...draft.heuristicHints,
+      taskKind:
+        draft.heuristicHints.taskKind === "start_chat" ? "generic" : draft.heuristicHints.taskKind,
+    },
+    referent: draft.referent === "direct channel" ? undefined : draft.referent,
+  };
+}
+
 export function buildQuestionState(question: string): QuestionState {
   const rawQuestion = question.trim();
   const normalizedQuestion = normalizeQuestionText(rawQuestion);
   const intent = detectQuestionIntent(rawQuestion);
-  const draft: Omit<QuestionState, "ambiguity"> = {
+  const rawDraft: Omit<QuestionState, "ambiguity"> = {
     rawQuestion,
     normalizedQuestion,
     language: detectQuestionLanguage(rawQuestion),
@@ -443,6 +474,7 @@ export function buildQuestionState(question: string): QuestionState {
       messageSubtype: detectQuestionMessageSubtype(rawQuestion),
     },
   };
+  const draft = normalizeDraftByProduct(rawDraft);
 
   return {
     ...draft,
@@ -454,7 +486,7 @@ export function mergeQuestionState(
   base: QuestionState,
   patch: Partial<QuestionState>,
 ): QuestionState {
-  const draft: Omit<QuestionState, "ambiguity"> = {
+  const rawDraft: Omit<QuestionState, "ambiguity"> = {
     ...base,
     ...patch,
     rawQuestion: base.rawQuestion,
@@ -470,6 +502,7 @@ export function mergeQuestionState(
       messageSubtype: detectQuestionMessageSubtype(base.rawQuestion),
     },
   };
+  const draft = normalizeDraftByProduct(rawDraft);
   return {
     ...draft,
     ambiguity: computeQuestionAmbiguity(draft),

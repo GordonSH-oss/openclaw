@@ -65,7 +65,13 @@ const NOUN_PATTERNS: Array<{ phrase: string; patterns: RegExp[] }> = [
   { phrase: "conversation", patterns: [/\bconversations?\b/giu, /会话/gu] },
   {
     phrase: "direct channel",
-    patterns: [/\bdirect channels?\b/giu, /\bdirectchannel\b/giu, /\bone to one\b/giu, /单聊/gu],
+    patterns: [
+      /\bdirect channels?\b/giu,
+      /\bdirectchannel\b/giu,
+      /\bone to one (?:chat|conversation)\b/giu,
+      /\b1 to 1 (?:chat|conversation)\b/giu,
+      /单聊/gu,
+    ],
   },
   { phrase: "forwarded message", patterns: [/\bforward(?:ed)? messages?\b/giu, /转发消息/gu] },
   {

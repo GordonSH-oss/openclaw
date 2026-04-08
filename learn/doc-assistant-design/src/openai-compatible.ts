@@ -1,4 +1,10 @@
 import { detectAnswerLanguage } from "./answer-language.js";
+import {
+  fulfillProviderDocumentContextRequest,
+  parseProviderDocumentContextRequest,
+  renderExpandedDocumentContext,
+  renderProviderDocumentAccessGuidance,
+} from "./document-context.js";
 import type { DocCitation, DocSearchHit, OpenAICompatibleConfig } from "./protocol/index.js";
 import { detectQuestionPlatform } from "./question-state.js";
 import { buildTaskFrame, labelEvidenceHit, type TaskFrame } from "./task-frame.js";
@@ -284,7 +290,7 @@ function detectEvidenceGroupKey(params: { frame: TaskFrame; hit: DocSearchHit })
   return parts.join("/");
 }
 
-function buildPrompt(question: string, hits: DocSearchHit[]): string {
+function buildPrompt(question: string, hits: DocSearchHit[], documentAccessBlock?: string): string {
   const language = detectAnswerLanguage(question, hits);
   const frame = buildTaskFrame({
     question,
@@ -338,6 +344,7 @@ function buildPrompt(question: string, hits: DocSearchHit[]): string {
       : "可执行的步骤请使用有序列表；项目符号只用于注意事项或关键点。",
     "Include inline citations like [path:start-end].",
     "End with a Sources section that lists the cited paths.",
+    documentAccessBlock ?? "",
   ].join("\n");
 }
 
@@ -425,12 +432,89 @@ async function requestOpenAICompatibleResponse(params: {
   return (await response.json()) as ResponsesApiResponse;
 }
 
+async function requestAnswerTextWithFallback(params: {
+  config: OpenAICompatibleConfig;
+  model: string;
+  prompt: string;
+}): Promise<{
+  text: string;
+  rawAnswer: string;
+  debugPayloads: string[];
+}> {
+  const debugPayloads: string[] = [];
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    const payload = await requestOpenAICompatibleCompletion(params);
+    const text =
+      extractTextContent(payload.choices?.[0]?.message?.content) ||
+      (typeof payload.choices?.[0]?.text === "string" ? payload.choices[0].text.trim() : "");
+    const debugPayload = stringifyPayloadForDebug(payload);
+    if (debugPayload) {
+      debugPayloads.push(`chat attempt ${attempt}: ${debugPayload}`);
+    }
+    if (!text) {
+      continue;
+    }
+    if (isLikelyPromptScaffoldingEcho(text)) {
+      throw new OpenAICompatibleAnswerError({
+        code: "prompt_scaffolding",
+        message: "OpenAI-compatible response echoed prompt scaffolding",
+        rawAnswer: text,
+      });
+    }
+    return {
+      text,
+      rawAnswer: text,
+      debugPayloads,
+    };
+  }
+
+  const responsesPayload = await requestOpenAICompatibleResponse(params);
+  const responsesText = extractResponsesTextContent(responsesPayload);
+  const responsesDebugPayload = stringifyPayloadForDebug(responsesPayload);
+  if (responsesDebugPayload) {
+    debugPayloads.push(`responses fallback: ${responsesDebugPayload}`);
+  }
+  if (responsesText) {
+    if (isLikelyPromptScaffoldingEcho(responsesText)) {
+      throw new OpenAICompatibleAnswerError({
+        code: "prompt_scaffolding",
+        message: "OpenAI-compatible response echoed prompt scaffolding",
+        rawAnswer: responsesText,
+      });
+    }
+    return {
+      text: responsesText,
+      rawAnswer: responsesText,
+      debugPayloads,
+    };
+  }
+
+  throw new OpenAICompatibleAnswerError({
+    code: "empty_output",
+    message: "OpenAI-compatible response did not contain answer text",
+    rawAnswer: debugPayloads.join("\n"),
+  });
+}
+
+function appendExpandedContextToPrompt(prompt: string, block: string): string {
+  return [
+    prompt,
+    "",
+    "Additional original-document context requested by the model:",
+    block,
+    "",
+    "Use this added source context together with the prior evidence. If more source context is still required, request one more bounded document read. Otherwise answer normally.",
+  ].join("\n");
+}
+
 export async function answerWithOpenAICompatible(params: {
   config: OpenAICompatibleConfig;
   question: string;
   hits: DocSearchHit[];
   prompt?: string;
   citations?: DocCitation[];
+  docsRoot?: string;
+  documentHits?: DocSearchHit[];
   onDelta?: (data: { text: string; delta: string }) => void;
 }): Promise<{
   answer: string;
@@ -447,37 +531,55 @@ export async function answerWithOpenAICompatible(params: {
       endLine: hit.endLine,
       snippet: hit.snippet,
     }));
-  const prompt = params.prompt ?? buildPrompt(params.question, params.hits);
+  const documentHits = params.documentHits ?? params.hits;
+  const initialDocumentAccessBlock =
+    params.docsRoot && documentHits.length > 0
+      ? renderProviderDocumentAccessGuidance({
+          hits: documentHits,
+        })
+      : "";
+  let prompt =
+    params.prompt ??
+    buildPrompt(
+      params.question,
+      params.hits,
+      initialDocumentAccessBlock.length > 0 ? initialDocumentAccessBlock : undefined,
+    );
   const model = params.config.model ?? DEFAULT_DOC_ASSISTANT_AGENT_MODEL;
-  const attemptPayloads: string[] = [];
-
-  for (let attempt = 1; attempt <= 2; attempt += 1) {
-    const payload = await requestOpenAICompatibleCompletion({
+  let lastRawAnswer = "";
+  for (let round = 0; round < 3; round += 1) {
+    const response = await requestAnswerTextWithFallback({
       config: params.config,
       model,
       prompt,
     });
-    const text =
-      extractTextContent(payload.choices?.[0]?.message?.content) ||
-      (typeof payload.choices?.[0]?.text === "string" ? payload.choices[0].text.trim() : "");
-    const debugPayload = stringifyPayloadForDebug(payload);
-    if (debugPayload) {
-      attemptPayloads.push(`chat attempt ${attempt}: ${debugPayload}`);
-    }
-    if (!text) {
+    lastRawAnswer = response.rawAnswer;
+    const request =
+      params.docsRoot && documentHits.length > 0
+        ? parseProviderDocumentContextRequest(response.text)
+        : undefined;
+    if (request && round < 2) {
+      const expandedContext = await fulfillProviderDocumentContextRequest({
+        request,
+        hits: documentHits,
+        docsRoot: params.docsRoot,
+      });
+      if (!expandedContext) {
+        prompt = appendExpandedContextToPrompt(
+          prompt,
+          "The previous document request could not be fulfilled. Request one listed path with a valid bounded line range, or answer with the current evidence.",
+        );
+        continue;
+      }
+      prompt = appendExpandedContextToPrompt(
+        prompt,
+        renderExpandedDocumentContext(expandedContext),
+      );
       continue;
     }
-    if (isLikelyPromptScaffoldingEcho(text)) {
-      throw new OpenAICompatibleAnswerError({
-        code: "prompt_scaffolding",
-        message: "OpenAI-compatible response echoed prompt scaffolding",
-        rawAnswer: text,
-      });
-    }
-
-    const answer = text.includes("Sources:")
-      ? text
-      : `${text.trim()}\n\n${renderSourcesAppendix(citations)}`;
+    const answer = response.text.includes("Sources:")
+      ? response.text
+      : `${response.text.trim()}\n\n${renderSourcesAppendix(citations)}`;
     params.onDelta?.({
       text: answer,
       delta: answer,
@@ -485,50 +587,25 @@ export async function answerWithOpenAICompatible(params: {
 
     return {
       answer,
-      rawAnswer: text,
+      rawAnswer: response.rawAnswer,
       selectedModel: model,
       selectedProvider: "openai-compatible",
     };
   }
 
-  const responsesPayload = await requestOpenAICompatibleResponse({
-    config: params.config,
-    model,
-    prompt,
+  const answer = lastRawAnswer.includes("Sources:")
+    ? lastRawAnswer
+    : `${lastRawAnswer.trim()}\n\n${renderSourcesAppendix(citations)}`;
+  params.onDelta?.({
+    text: answer,
+    delta: answer,
   });
-  const responsesText = extractResponsesTextContent(responsesPayload);
-  const responsesDebugPayload = stringifyPayloadForDebug(responsesPayload);
-  if (responsesDebugPayload) {
-    attemptPayloads.push(`responses fallback: ${responsesDebugPayload}`);
-  }
-  if (responsesText) {
-    if (isLikelyPromptScaffoldingEcho(responsesText)) {
-      throw new OpenAICompatibleAnswerError({
-        code: "prompt_scaffolding",
-        message: "OpenAI-compatible response echoed prompt scaffolding",
-        rawAnswer: responsesText,
-      });
-    }
-    const answer = responsesText.includes("Sources:")
-      ? responsesText
-      : `${responsesText.trim()}\n\n${renderSourcesAppendix(citations)}`;
-    params.onDelta?.({
-      text: answer,
-      delta: answer,
-    });
-
-    return {
-      answer,
-      rawAnswer: responsesText,
-      selectedModel: model,
-      selectedProvider: "openai-compatible",
-    };
-  }
-  throw new OpenAICompatibleAnswerError({
-    code: "empty_output",
-    message: "OpenAI-compatible response did not contain answer text",
-    rawAnswer: attemptPayloads.join("\n"),
-  });
+  return {
+    answer,
+    rawAnswer: lastRawAnswer,
+    selectedModel: model,
+    selectedProvider: "openai-compatible",
+  };
 }
 
 export async function detectFollowUpRewriteWithOpenAICompatible(params: {

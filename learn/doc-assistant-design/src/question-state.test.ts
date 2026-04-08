@@ -139,6 +139,15 @@ void test("detectQuestionProduct does not mistake SDK method-call prose for Call
   assert.equal(detectQuestionProduct("How to start a one-to-one call on iOS?"), "call");
 });
 
+void test("buildQuestionState keeps Call SDK one-to-one questions out of direct-channel chat semantics", () => {
+  const state = buildQuestionState("How do I start or accept a 1-to-1 call in the iOS Call SDK?");
+  assert.equal(state.product, "call");
+  assert.equal(state.channelKind, undefined);
+  assert.equal(state.anchors.nounPhrases.includes("call"), true);
+  assert.equal(state.anchors.nounPhrases.includes("direct channel"), false);
+  assert.equal(state.heuristicHints?.taskKind, "generic");
+});
+
 void test("rewriteQuestionFromState merges follow-up slots back into the question", () => {
   const base = buildQuestionState("How to create a channel?");
   const merged = mergeQuestionState(base, {

@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { buildAnswerPlan } from "./answer-plan.js";
 import { buildAgentPromptFromPlan, renderExtractiveAnswer } from "./answer-render.js";
+import { DOCUMENT_CONTEXT_REQUEST_START } from "./document-context.js";
 import type { EvidencePack } from "./evidence-pack.js";
+import type { DocSearchHit } from "./protocol/index.js";
 import { buildQuestionState } from "./question-state.js";
 
 const state = buildQuestionState("How to send a targeted message on Web?");
@@ -24,6 +26,18 @@ const evidence: EvidencePack = {
     },
   ],
 };
+
+const documentAccessHits: DocSearchHit[] = [
+  {
+    path: "docs/chatsdk-web/group-channel/direct.md",
+    heading: "Send a targeted message",
+    startLine: 20,
+    endLine: 48,
+    snippet: "Set directedUserIds before sendMessage.",
+    text: "Set directedUserIds before sendMessage and review the surrounding caveats in the same page.",
+    score: 100,
+  },
+];
 
 void test("renderExtractiveAnswer preserves section order from the plan", () => {
   const plan = buildAnswerPlan({
@@ -54,8 +68,11 @@ void test("buildAgentPromptFromPlan includes plan and evidence", () => {
     plan,
     evidence,
     draftAnswer: "Draft answer",
+    documentAccessHits,
   });
   assert.equal(prompt.includes("Plan kind"), true);
   assert.equal(prompt.includes("directedUserIds"), true);
+  assert.equal(prompt.includes("Bounded source-document access"), true);
+  assert.equal(prompt.includes(DOCUMENT_CONTEXT_REQUEST_START), true);
   assert.equal(prompt.includes("FINAL_ANSWER_START"), true);
 });

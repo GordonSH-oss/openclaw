@@ -198,6 +198,13 @@ export function planDocQuestion(question: string): DocQuestionPlan {
 
 export function detectProceduralTaskKind(question: string): DocProceduralTaskKind {
   const normalized = normalizeSearchText(question);
+  const mentionsCallFlow =
+    normalized.includes("call sdk") ||
+    normalized.includes("callsdk") ||
+    /\b(?:audio|video|group|incoming|outgoing|one to one|1 to 1)\s+call\b/.test(normalized) ||
+    /\b(?:start|make|place|accept|answer|upgrade|receive|join)\b[\w\s-]{0,40}\bcall\b/.test(
+      normalized,
+    );
   const mentionsChannel =
     normalized.includes("channel") ||
     normalized.includes("conversation") ||
@@ -228,6 +235,9 @@ export function detectProceduralTaskKind(question: string): DocProceduralTaskKin
   }
   if (normalized.includes("send") && mentionsMessage) {
     return "send_message";
+  }
+  if (mentionsCallFlow) {
+    return "generic";
   }
   if (
     normalized.includes("start") ||

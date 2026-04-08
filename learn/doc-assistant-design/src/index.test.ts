@@ -37,12 +37,26 @@ async function createGreetingFixtureDocs(): Promise<string> {
   await fs.mkdir(path.join(docsRoot, "callsdk-ios"), { recursive: true });
   await fs.writeFile(
     path.join(docsRoot, "chatsdk-android", "getting-started.md"),
-    "# Getting started\n\nInitialize the Android Chat SDK and send your first message.\n",
+    [
+      "# Getting started",
+      "",
+      "Initialize the Android Chat SDK before using chat features.",
+      "",
+      "Create a direct channel for the target user to start a one-to-one chat.",
+      "",
+    ].join("\n"),
     "utf-8",
   );
   await fs.writeFile(
     path.join(docsRoot, "callsdk-ios", "one-to-one-call.md"),
-    "# One-to-one call\n\nStart or accept a one-to-one call on iOS.\n",
+    [
+      "# One-to-one call",
+      "",
+      "Start a one-to-one call on iOS.",
+      "",
+      "Receive and accept an incoming one-to-one call on iOS.",
+      "",
+    ].join("\n"),
     "utf-8",
   );
   return docsRoot;
@@ -2372,9 +2386,9 @@ void test("docs.ask greeting inputs skip retrieval and return a guided welcome a
   assert.equal(terminal.summary, "guided greeting");
   assert.deepEqual(terminal.citations, []);
   assert.equal(terminal.answer.includes("我是你的 Nexconn 文档助手"), true);
-  assert.equal(terminal.answer.includes("Android / iOS / Web Chat SDK 怎么接入和初始化"), true);
   assert.equal(terminal.answer.includes("Android Chat SDK 如何初始化并开始单聊"), true);
   assert.equal(terminal.answer.includes("iOS Call SDK 如何发起或接听 1 对 1 通话"), true);
+  assert.equal(terminal.answer.includes("Android / iOS / Web Chat SDK 怎么接入和初始化"), false);
   assert.equal(
     client
       .getEvents("docs.retrieval")
@@ -2437,14 +2451,18 @@ void test("docs.ask English greeting inputs return an English guided welcome ans
   assert.equal(terminal.summary, "guided greeting");
   assert.equal(terminal.answer.includes("I'm your Nexconn documentation assistant"), true);
   assert.equal(
-    terminal.answer.includes(
-      "How do I integrate and initialize the Android, iOS, or Web Chat SDK?",
-    ),
+    terminal.answer.includes("How do I initialize the Android Chat SDK and start a direct chat?"),
     true,
   );
   assert.equal(
     terminal.answer.includes("How do I start or accept a 1-to-1 call in the iOS Call SDK?"),
     true,
+  );
+  assert.equal(
+    terminal.answer.includes(
+      "How do I integrate and initialize the Android, iOS, or Web Chat SDK?",
+    ),
+    false,
   );
   assert.equal(terminal.answer.includes("For example:"), true);
 });

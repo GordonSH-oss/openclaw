@@ -1,9 +1,14 @@
-import { runLearningAgentCommand } from "../../agent-design/src/index.js";
+import { runLearningAgentCommand, type LearningAgentResult } from "../../agent-design/src/index.js";
 import { detectAnswerLanguage, type AnswerLanguage } from "./answer-language.js";
 import { buildAnswerPlan } from "./answer-plan.js";
 import { buildAgentPromptFromPlan } from "./answer-render.js";
 import type { ClarificationDecision } from "./clarification-policy.js";
 import { detectDocShape, type DocSearchDocShape } from "./doc-shape.js";
+import {
+  fulfillProviderDocumentContextRequest,
+  parseProviderDocumentContextRequest,
+  type ProviderExpandedDocumentContext,
+} from "./document-context.js";
 import { buildEvidencePack, type EvidencePack } from "./evidence-pack.js";
 import { answerWithOpenAICompatible, OpenAICompatibleAnswerError } from "./openai-compatible.js";
 import type {
@@ -3110,32 +3115,36 @@ function buildGroundedAnswer(
   return buildGuideAnswer(question, hits, language);
 }
 
-function buildAgentPrompt(
-  question: string,
-  groundedAnswer: string,
-  hits: DocSearchHit[],
-  evidence?: EvidencePack,
-): string {
+function buildAgentPrompt(params: {
+  question: string;
+  groundedAnswer: string;
+  hits: DocSearchHit[];
+  evidence?: EvidencePack;
+  documentAccessHits?: DocSearchHit[];
+  expandedDocumentContexts?: ProviderExpandedDocumentContext[];
+}): string {
   const renderedEvidence =
-    evidence ??
+    params.evidence ??
     buildEvidencePack({
-      state: buildQuestionState(question),
-      hits,
+      state: buildQuestionState(params.question),
+      hits: params.hits,
     });
-  const state = renderedEvidence.questionState ?? buildQuestionState(question);
-  const language = detectAnswerLanguage(question, hits);
+  const state = renderedEvidence.questionState ?? buildQuestionState(params.question);
+  const language = detectAnswerLanguage(params.question, params.hits);
   const plan = buildAnswerPlan({
-    question,
+    question: params.question,
     state,
     evidence: renderedEvidence,
   });
   return buildAgentPromptFromPlan({
-    question,
+    question: params.question,
     state,
     language,
     plan,
     evidence: renderedEvidence,
-    draftAnswer: groundedAnswer,
+    draftAnswer: params.groundedAnswer,
+    documentAccessHits: params.documentAccessHits,
+    expandedDocumentContexts: params.expandedDocumentContexts,
   });
 }
 
@@ -3220,6 +3229,7 @@ export async function buildDocAnswer(params: {
   mode: DocAssistantMode;
   hits: DocSearchHit[];
   evidence?: EvidencePack;
+  docsRoot?: string;
   dataDir?: string;
   backend?: "embedded" | "cli";
   provider?: string;
@@ -3235,16 +3245,30 @@ export async function buildDocAnswer(params: {
     emittedDelta = true;
     params.onDelta?.(data);
   };
+  const rawHitByKey = new Map(
+    params.hits.map((hit) => [`${hit.path}:${hit.startLine}:${hit.endLine}`, hit] as const),
+  );
+  const evidenceHitsFromGroups = params.evidence?.groups.flatMap((group) =>
+    group.citations.map((citation) => {
+      const key = `${citation.path}:${citation.startLine}:${citation.endLine}`;
+      const rawHit = rawHitByKey.get(key);
+      return (
+        rawHit ?? {
+          ...citation,
+          score: group.score,
+          text: citation.snippet,
+          retrievalBucket:
+            group.purpose === "definition" || group.purpose === "overview"
+              ? "concept"
+              : "procedural",
+        }
+      );
+    }),
+  );
   const evidenceHits: DocSearchHit[] =
-    params.evidence?.groups.flatMap((group) =>
-      group.citations.map((citation) => ({
-        ...citation,
-        score: group.score,
-        text: citation.snippet,
-        retrievalBucket:
-          group.purpose === "definition" || group.purpose === "overview" ? "concept" : "procedural",
-      })),
-    ) ?? params.hits;
+    evidenceHitsFromGroups && evidenceHitsFromGroups.length > 0
+      ? evidenceHitsFromGroups
+      : params.hits;
   const renderedEvidence =
     params.evidence ??
     buildEvidencePack({
@@ -3310,8 +3334,16 @@ export async function buildDocAnswer(params: {
         },
         question: params.question,
         hits: params.hits,
-        prompt: buildAgentPrompt(params.question, grounded.answer, evidenceHits, renderedEvidence),
+        prompt: buildAgentPrompt({
+          question: params.question,
+          groundedAnswer: grounded.answer,
+          hits: evidenceHits,
+          evidence: renderedEvidence,
+          documentAccessHits: params.hits,
+        }),
         citations: grounded.citations,
+        docsRoot: params.docsRoot,
+        documentHits: params.hits,
         onDelta: params.onDelta,
       });
       return {
@@ -3371,7 +3403,6 @@ export async function buildDocAnswer(params: {
     }
   }
 
-  const prompt = buildAgentPrompt(params.question, grounded.answer, evidenceHits, renderedEvidence);
   const eagerDelta = grounded.answer.slice(0, Math.min(80, grounded.answer.length));
   if (eagerDelta) {
     emitDelta({
@@ -3379,35 +3410,80 @@ export async function buildDocAnswer(params: {
       delta: eagerDelta,
     });
   }
+  const expandedDocumentContexts: ProviderExpandedDocumentContext[] = [];
   let lastVisible = "";
-  const agentRun = runLearningAgentCommand({
-    runId: `${params.runId}-agent`,
-    message: prompt,
-    sessionKey: `scratch/${params.runId}`,
-    dataDir: resolveDocAssistantAgentScratchDataDir(params.dataDir),
-    backend: params.backend,
-    provider: params.provider,
-    model: params.model,
-    onEvent: (event) => {
-      if (event.type !== "delta") {
-        return;
-      }
-      if (isLikelyPromptEcho(event.text)) {
-        return;
-      }
-      const visible = sliceBetweenSentinels(event.text);
-      if (!visible || visible === lastVisible) {
-        return;
-      }
-      const delta = visible.slice(lastVisible.length);
-      lastVisible = visible;
-      emitDelta({
-        text: visible,
-        delta,
-      });
-    },
-  });
-  const terminal = await agentRun.completion;
+  let terminal: LearningAgentResult | undefined;
+  for (let round = 0; round < 3; round += 1) {
+    lastVisible = "";
+    const prompt = buildAgentPrompt({
+      question: params.question,
+      groundedAnswer: grounded.answer,
+      hits: evidenceHits,
+      evidence: renderedEvidence,
+      documentAccessHits: params.hits,
+      expandedDocumentContexts,
+    });
+    const agentRun = runLearningAgentCommand({
+      runId: `${params.runId}-agent-${round + 1}`,
+      message: prompt,
+      sessionKey: `scratch/${params.runId}`,
+      dataDir: resolveDocAssistantAgentScratchDataDir(params.dataDir),
+      backend: params.backend,
+      provider: params.provider,
+      model: params.model,
+      onEvent: (event) => {
+        if (event.type !== "delta") {
+          return;
+        }
+        if (isLikelyPromptEcho(event.text)) {
+          return;
+        }
+        const visible = sliceBetweenSentinels(event.text);
+        if (!visible || visible === lastVisible) {
+          return;
+        }
+        const delta = visible.slice(lastVisible.length);
+        lastVisible = visible;
+        emitDelta({
+          text: visible,
+          delta,
+        });
+      },
+    });
+    terminal = await agentRun.completion;
+    const request = parseProviderDocumentContextRequest(terminal.reply);
+    if (!request || round === 2) {
+      break;
+    }
+    const expandedContext = await fulfillProviderDocumentContextRequest({
+      request,
+      hits: params.hits,
+      docsRoot: params.docsRoot,
+    });
+    if (!expandedContext) {
+      terminal = {
+        ...terminal,
+        reply: "",
+      };
+      break;
+    }
+    const contextKey = `${expandedContext.path}:${expandedContext.startLine}:${expandedContext.endLine}`;
+    if (
+      expandedDocumentContexts.some(
+        (context) => `${context.path}:${context.startLine}:${context.endLine}` === contextKey,
+      )
+    ) {
+      terminal = {
+        ...terminal,
+        reply: "",
+      };
+      break;
+    }
+    expandedDocumentContexts.push(expandedContext);
+  }
+  if (!terminal) {
+    throw new Error("learning agent did not produce a terminal result");
+  }
   const acceptedAnswer = extractAcceptedAgentAnswer(terminal.reply);
   const surfaceNote = acceptedAnswer ? undefined : "rejected_prompt_scaffolding_output";
   const terminalAnswer = normalizeProceduralStepSections(
@@ -3444,6 +3520,11 @@ export async function buildDocAnswer(params: {
               groupCount: renderedEvidence.groups.length,
               warnings: renderedEvidence.warnings,
               trimEvents: renderedEvidence.trimEvents,
+              expandedDocumentContexts: expandedDocumentContexts.map((context) => ({
+                path: context.path,
+                startLine: context.startLine,
+                endLine: context.endLine,
+              })),
             },
           }
         : undefined,

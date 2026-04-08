@@ -1,6 +1,11 @@
 import type { AnswerLanguage } from "./answer-language.js";
 import type { AnswerPlan } from "./answer-plan.js";
+import {
+  renderProviderDocumentAccessGuidance,
+  type ProviderExpandedDocumentContext,
+} from "./document-context.js";
 import type { EvidencePack } from "./evidence-pack.js";
+import type { DocSearchHit } from "./protocol/index.js";
 import type { QuestionState } from "./question-state.js";
 
 function sectionLines(title: string, groupIds: string[], evidence: EvidencePack): string[] {
@@ -39,6 +44,8 @@ export function buildAgentPromptFromPlan(params: {
   plan: AnswerPlan;
   evidence: EvidencePack;
   draftAnswer: string;
+  documentAccessHits?: DocSearchHit[];
+  expandedDocumentContexts?: ProviderExpandedDocumentContext[];
 }): string {
   const sections = params.plan.sections
     .map((section) => {
@@ -79,6 +86,12 @@ export function buildAgentPromptFromPlan(params: {
     "Formatting rules:",
     "Use numbered lists for executable Steps.",
     "Use bullets only for summaries, notes, or key points.",
+    params.documentAccessHits && params.documentAccessHits.length > 0
+      ? renderProviderDocumentAccessGuidance({
+          hits: params.documentAccessHits,
+          expandedContexts: params.expandedDocumentContexts,
+        })
+      : "",
     "",
     "Draft answer:",
     params.draftAnswer,
