@@ -5,6 +5,7 @@ import {
   type StoredConversationSummaryLike,
 } from "./context-compressor.js";
 import type { DocAnswerResult } from "./doc-answer.js";
+import { detectGreetingIntent } from "./greeting-intent.js";
 import { readJsonSafe, writeJsonAtomic } from "./persistence.js";
 import type { ConversationPromptContext, DocFollowUpSource } from "./protocol/index.js";
 import { summarizeAnchorFocus } from "./question-anchors.js";
@@ -454,6 +455,9 @@ function buildConversationRewrite(params: {
   const explicitConflict = hasExplicitConflict(params.currentState, params.stored);
   if (explicitConflict) {
     return { usedStableState: false, blockedReason: explicitConflict };
+  }
+  if (detectGreetingIntent(params.question)) {
+    return { usedStableState: false, blockedReason: "greeting_or_small_talk" };
   }
 
   const hasReference = containsReferenceLanguage(params.question);

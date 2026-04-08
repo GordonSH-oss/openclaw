@@ -606,6 +606,28 @@ export async function executeDocQuestion(params: {
     runId: params.runId,
     question: params.question,
   });
+  const rawGreetingIntent = detectGreetingIntent(params.question);
+  if (rawGreetingIntent) {
+    return {
+      route: "greeting",
+      hits: [],
+      answer: {
+        ...(await buildGreetingAnswer({
+          question: params.question,
+          mode: params.mode,
+          docsRoot: params.docsRoot,
+          dataDir: params.dataDir,
+          match: rawGreetingIntent,
+        })),
+        trace: {
+          ...baseTrace,
+          route: "greeting",
+          state: buildQuestionState(params.question),
+          transitions: [],
+        },
+      },
+    };
+  }
   const initialState = buildQuestionState(params.question);
   const followUpMatch = detectClarificationFollowUpQuestion(params.question);
   const contextualFollowUp = detectContextualFollowUpQuestion(params.question);

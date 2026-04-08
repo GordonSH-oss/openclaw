@@ -153,3 +153,44 @@ void test("resolveConversationContext blocks unrelated standalone topic shifts",
   assert.equal(resolved?.traceContext.blockedReason, "new_topic_detected");
   assert.equal(resolved?.traceContext.source, "blocked");
 });
+
+void test("resolveConversationContext does not rewrite greetings onto prior task history", async () => {
+  const dataDir = await makeTempDir("doc-assistant-conversation-greeting-");
+  const sessionId = "conversation-greeting-session";
+
+  await updateConversationStateAfterAnswer({
+    sessionId,
+    runId: "conversation-greeting-1",
+    question: "How to send a message on Android?",
+    route: "search",
+    dataDir,
+    answer: {
+      mode: "extractive",
+      answer: "Use sendMessage on Android.",
+      summary: "grounded answer",
+      citations: [],
+      rewrittenQuestion: "How to send a message on Android?",
+      trace: {
+        taskFrame: {
+          anchors: {
+            focus: ["message"],
+            verbs: ["send"],
+            constraints: [],
+            apiSymbols: [],
+          },
+        },
+      },
+    },
+  });
+
+  const resolved = await resolveConversationContext({
+    question: "hello",
+    sessionId,
+    dataDir,
+  });
+
+  assert.equal(resolved?.followUpSource, undefined);
+  assert.equal(resolved?.effectiveQuestion, "hello");
+  assert.equal(resolved?.traceContext.blockedReason, "greeting_or_small_talk");
+  assert.equal(resolved?.traceContext.source, "blocked");
+});

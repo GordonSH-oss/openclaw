@@ -1867,6 +1867,52 @@ void test("conversation history does not leak message-management anchors into ne
   assert.equal(second.answer.answer.includes("deleteMessagesForMe"), false);
 });
 
+void test("raw greetings bypass conversation history rewrites and return the greeting route", async () => {
+  const docsRoot = await createAndroidMessageHistoryDocs();
+  const dataDir = await makeTempDir("doc-assistant-conversation-greeting-route");
+  const sessionId = "conversation-greeting-route-session";
+
+  await updateConversationStateAfterAnswer({
+    sessionId,
+    runId: "conversation-greeting-route-1",
+    question: "How to send a message on Android?",
+    answer: {
+      mode: "extractive",
+      answer: "Use sendMessage on Android.",
+      summary: "grounded answer",
+      citations: [],
+      rewrittenQuestion: "How to send a message on Android?",
+      trace: {
+        taskFrame: {
+          anchors: {
+            focus: ["message"],
+            verbs: ["send"],
+            constraints: [],
+            apiSymbols: [],
+          },
+        },
+      },
+    },
+    route: "search",
+    dataDir,
+  });
+
+  const result = await executeDocQuestion({
+    runId: "conversation-greeting-route-2",
+    question: "hello",
+    sessionId,
+    mode: "extractive",
+    docsRoot,
+    dataDir,
+    maxResults: 5,
+  });
+
+  assert.equal(result.route, "greeting");
+  assert.equal(result.answer.summary, "guided greeting");
+  assert.equal(result.answer.followUpSource, undefined);
+  assert.equal(result.answer.rewrittenQuestion, undefined);
+});
+
 void test("answer memory lookup uses the conversation-resolved question", async () => {
   const docsRoot = await createAndroidMessageHistoryDocs();
   const dataDir = await makeTempDir("doc-assistant-conversation-answer-memory");
