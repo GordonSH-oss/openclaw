@@ -198,6 +198,7 @@ export function planDocQuestion(question: string): DocQuestionPlan {
 
 export function detectProceduralTaskKind(question: string): DocProceduralTaskKind {
   const normalized = normalizeSearchText(question);
+  const mentionsStartVerb = /\b(start|begin|open)\b/.test(normalized);
   const mentionsCallFlow =
     normalized.includes("call sdk") ||
     normalized.includes("callsdk") ||
@@ -239,12 +240,7 @@ export function detectProceduralTaskKind(question: string): DocProceduralTaskKin
   if (mentionsCallFlow) {
     return "generic";
   }
-  if (
-    normalized.includes("start") ||
-    normalized.includes("begin") ||
-    normalized.includes("open") ||
-    (normalized.includes("chat") && !normalized.includes("wechat"))
-  ) {
+  if (mentionsStartVerb && mentionsChannel) {
     // Chat-start questions are broader than a pure send-message request and
     // usually benefit from quickstart or onboarding-shaped docs.
     return "start_chat";

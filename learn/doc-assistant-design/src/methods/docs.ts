@@ -8,6 +8,7 @@ import {
   rejectAnswerMemoryEntry,
   updateAnswerMemoryEntry,
 } from "../answer-memory.js";
+import { updateConversationStateAfterAnswer } from "../conversation-context.js";
 import { buildTerminalResult } from "../doc-answer.js";
 import { searchDocs, toCitation } from "../doc-search.js";
 import { updateClarificationStateAfterAnswer } from "../follow-up-context.js";
@@ -191,6 +192,15 @@ async function launchDocAssistantRun(params: {
             outputTokens: estimateTokens(answer.answer),
           },
         },
+      });
+
+      await updateConversationStateAfterAnswer({
+        sessionId: params.sessionEntry.sessionId,
+        runId: params.runId,
+        question: params.question,
+        answer,
+        route: execution.route,
+        dataDir: params.state.config.dataDir,
       });
 
       const terminal = buildTerminalResult({

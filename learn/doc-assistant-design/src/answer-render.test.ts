@@ -68,11 +68,44 @@ void test("buildAgentPromptFromPlan includes plan and evidence", () => {
     plan,
     evidence,
     draftAnswer: "Draft answer",
+    conversationContext: {
+      summary: "Platform: web\nLast resolved question: How to send a targeted message on Web?",
+      recentTurns: [
+        { role: "user", content: "How to send a targeted message on Web?" },
+        { role: "assistant", content: "Use directedUserIds before sendMessage." },
+      ],
+      compressionTier: "trim_irrelevant",
+      promptChars: 120,
+      selectedTurnCount: 2,
+      summaryUsed: true,
+    },
     documentAccessHits,
   });
+  assert.equal(prompt.includes("Conversation context:"), true);
+  assert.equal(prompt.includes("Last resolved question"), true);
+  assert.equal(prompt.includes("User: How to send a targeted message on Web?"), true);
   assert.equal(prompt.includes("Plan kind"), true);
   assert.equal(prompt.includes("directedUserIds"), true);
   assert.equal(prompt.includes("Bounded source-document access"), true);
   assert.equal(prompt.includes(DOCUMENT_CONTEXT_REQUEST_START), true);
   assert.equal(prompt.includes("FINAL_ANSWER_START"), true);
+});
+
+void test("buildAgentPromptFromPlan omits conversation context when none is provided", () => {
+  const plan = buildAnswerPlan({
+    question: state.rawQuestion,
+    state,
+    evidence,
+  });
+  const prompt = buildAgentPromptFromPlan({
+    question: state.rawQuestion,
+    state,
+    language: "en",
+    plan,
+    evidence,
+    draftAnswer: "Draft answer",
+  });
+
+  assert.equal(prompt.includes("Conversation context:"), false);
+  assert.equal(prompt.includes("Answer plan and evidence:"), true);
 });

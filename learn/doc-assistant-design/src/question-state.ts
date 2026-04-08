@@ -1,5 +1,9 @@
 import { extractQuestionAnchors, type QuestionAnchors } from "./question-anchors.js";
-import { detectProceduralTaskKind, planDocQuestion } from "./question-planning.js";
+import {
+  detectPreferredDocShape,
+  detectProceduralTaskKind,
+  planDocQuestion,
+} from "./question-planning.js";
 import { normalizeSearchText } from "./search-text.js";
 
 // `QuestionState` is the normalized snapshot that follow-up rewriting, answerability checks,
@@ -384,6 +388,7 @@ function computeQuestionAmbiguity(
 ): QuestionState["ambiguity"] {
   const normalized = draft.normalizedQuestion;
   const proceduralish = draft.intent !== "concept";
+  const preferredDocShape = detectPreferredDocShape(draft.rawQuestion);
   const mentionsPlatformDependentTopic =
     normalized.includes("sdk") ||
     normalized.includes("chat") ||
@@ -415,7 +420,8 @@ function computeQuestionAmbiguity(
     normalized.includes("set up") ||
     normalized.includes("setup") ||
     normalized.includes("initialize") ||
-    normalized.includes("init");
+    normalized.includes("init") ||
+    (preferredDocShape === "quickstart_step" && !draft.product);
 
   return {
     missingPlatform:
@@ -446,7 +452,9 @@ function normalizeDraftByProduct(
     heuristicHints: {
       ...draft.heuristicHints,
       taskKind:
-        draft.heuristicHints.taskKind === "start_chat" ? "generic" : draft.heuristicHints.taskKind,
+        draft.heuristicHints?.taskKind === "start_chat"
+          ? "generic"
+          : draft.heuristicHints?.taskKind,
     },
     referent: draft.referent === "direct channel" ? undefined : draft.referent,
   };

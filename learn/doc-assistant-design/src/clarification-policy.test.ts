@@ -79,6 +79,16 @@ void test("decideClarification asks for product on generic integration questions
   assert.equal(decision.kind, "product");
 });
 
+void test("decideClarification asks for product on generic get-started questions", () => {
+  const decision = decideClarification({
+    state: buildQuestionState("How can I get started?"),
+    hits: [],
+  });
+
+  assert.equal(decision.shouldClarify, true);
+  assert.equal(decision.kind, "product");
+});
+
 void test("decideClarification asks for task focus on broad server integration questions", () => {
   const decision = decideClarification({
     state: buildQuestionState("How to integrate using Server API?"),

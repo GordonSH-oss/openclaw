@@ -3,10 +3,13 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { replaceAnswerMemoryEntries } from "./answer-memory.js";
+import { updateConversationStateAfterAnswer } from "./conversation-context.js";
 import { renderClarificationAnswer } from "./doc-answer.js";
 import { searchDocs } from "./doc-search.js";
 import { updateClarificationStateAfterAnswer } from "./follow-up-context.js";
 import { executeDocQuestion } from "./question-execution.js";
+import { saveRetrievalMemoryEntries } from "./retrieval-memory.js";
 
 async function makeTempDir(name: string): Promise<string> {
   return await fs.mkdtemp(path.join(os.tmpdir(), `${name}-`));
@@ -67,6 +70,37 @@ async function createProductClarificationDocs(): Promise<string> {
       "# Integrate Call SDK with Chat",
       "",
       "Integrate Call into an app that already uses the Chat SDK so users can move between messaging and calling.",
+      "",
+    ].join("\n"),
+    "utf-8",
+  );
+  return docsRoot;
+}
+
+async function createGetStartedClarificationDocs(): Promise<string> {
+  const docsRoot = await makeTempDir("doc-assistant-get-started-clarify");
+  await fs.mkdir(path.join(docsRoot, "docs", "chatsdk-web"), {
+    recursive: true,
+  });
+  await fs.mkdir(path.join(docsRoot, "docs", "callsdk-web"), {
+    recursive: true,
+  });
+  await fs.writeFile(
+    path.join(docsRoot, "docs", "chatsdk-web", "getting-started.md"),
+    [
+      "# Getting started with Chat SDK",
+      "",
+      "Import the Web Chat SDK package, initialize the client, and connect the user.",
+      "",
+    ].join("\n"),
+    "utf-8",
+  );
+  await fs.writeFile(
+    path.join(docsRoot, "docs", "callsdk-web", "getting-started.md"),
+    [
+      "# Getting started with Call SDK",
+      "",
+      "Integrate the Web Call SDK and prepare the calling workflow for the current user.",
       "",
     ].join("\n"),
     "utf-8",
@@ -642,6 +676,70 @@ async function createSparseWebOnboardingDocs(): Promise<string> {
   return docsRoot;
 }
 
+async function createAndroidMessageHistoryDocs(): Promise<string> {
+  const docsRoot = await makeTempDir("doc-assistant-android-message-history");
+  await fs.mkdir(path.join(docsRoot, "docs", "chatsdk-android", "message"), {
+    recursive: true,
+  });
+  await fs.mkdir(path.join(docsRoot, "docs", "chatsdk-ios", "message"), {
+    recursive: true,
+  });
+  await fs.mkdir(path.join(docsRoot, "docs", "chatsdk-android", "channels"), {
+    recursive: true,
+  });
+  await fs.writeFile(
+    path.join(docsRoot, "docs", "chatsdk-android", "message", "send.md"),
+    [
+      "# Send a message on Android",
+      "",
+      "Create `SendTextMessageParams`, then call `channel.sendMessage(...)` in the Android Chat SDK.",
+      "",
+    ].join("\n"),
+    "utf-8",
+  );
+  await fs.writeFile(
+    path.join(docsRoot, "docs", "chatsdk-android", "message", "recall.md"),
+    [
+      "# Recall a message on Android",
+      "",
+      "Load the target Android message and call `deleteMessageForAll(...)` to recall it for everyone.",
+      "",
+    ].join("\n"),
+    "utf-8",
+  );
+  await fs.writeFile(
+    path.join(docsRoot, "docs", "chatsdk-ios", "message", "recall.md"),
+    [
+      "# Recall a message on iOS",
+      "",
+      "Use the iOS SDK delete-for-all API to recall a message.",
+      "",
+    ].join("\n"),
+    "utf-8",
+  );
+  await fs.writeFile(
+    path.join(docsRoot, "docs", "chatsdk-android", "message", "delete-for-me.md"),
+    [
+      "# Delete a message for yourself on Android",
+      "",
+      "Use `deleteMessagesForMe(...)` to remove the message for the current user only on Android.",
+      "",
+    ].join("\n"),
+    "utf-8",
+  );
+  await fs.writeFile(
+    path.join(docsRoot, "docs", "chatsdk-android", "channels", "create.md"),
+    [
+      "# Create a channel on Android",
+      "",
+      "Use the Android channel creation flow to create a group channel.",
+      "",
+    ].join("\n"),
+    "utf-8",
+  );
+  return docsRoot;
+}
+
 void test("executeDocQuestion asks for product clarification before answering generic connect questions", async () => {
   const docsRoot = await createConnectClarificationDocs();
   const result = await executeDocQuestion({
@@ -656,6 +754,22 @@ void test("executeDocQuestion asks for product clarification before answering ge
   assert.equal(result.answer.summary, "product clarification required");
   assert.equal(result.answer.answer.includes("Chat SDK"), true);
   assert.equal(result.answer.answer.includes("Server API"), true);
+});
+
+void test("executeDocQuestion asks for product clarification before answering generic get-started questions", async () => {
+  const docsRoot = await createGetStartedClarificationDocs();
+  const result = await executeDocQuestion({
+    runId: "get-started-clarify-1",
+    question: "How can I get started?",
+    mode: "agent",
+    docsRoot,
+    maxResults: 4,
+  });
+
+  assert.equal(result.route, "search");
+  assert.equal(result.answer.summary, "product clarification required");
+  assert.equal(result.answer.answer.includes("Chat SDK"), true);
+  assert.equal(result.answer.answer.includes("Call SDK"), true);
 });
 
 void test("product clarification follow-up rewrites the generic connect question and continues", async () => {
@@ -1475,4 +1589,299 @@ void test("executeDocQuestion expands retrieval dynamically when the first pass 
   assert.equal(trace.retrievalBudget?.retryUsed, true);
   assert.equal(trace.retrievalBudget?.retryReasons?.includes("low_hit_count"), true);
   assert.equal((trace.retrievalBudget?.finalHitLimit ?? 0) > trace.retrievalBudget.hitLimit, true);
+});
+
+void test("conversation history rewrites Android send-message follow-ups onto recall", async () => {
+  const docsRoot = await createAndroidMessageHistoryDocs();
+  const dataDir = await makeTempDir("doc-assistant-conversation-recall");
+  const sessionId = "conversation-recall-session";
+
+  const first = await executeDocQuestion({
+    runId: "conversation-recall-1",
+    question: "How to send a message on Android?",
+    sessionId,
+    mode: "extractive",
+    docsRoot,
+    dataDir,
+    maxResults: 5,
+  });
+
+  await updateConversationStateAfterAnswer({
+    sessionId,
+    runId: "conversation-recall-1",
+    question: "How to send a message on Android?",
+    answer: first.answer,
+    route: first.route,
+    dataDir,
+  });
+
+  const second = await executeDocQuestion({
+    runId: "conversation-recall-2",
+    question: "How to recall?",
+    sessionId,
+    mode: "extractive",
+    docsRoot,
+    dataDir,
+    maxResults: 5,
+  });
+
+  assert.equal(second.answer.followUpSource, "conversation_rewrite");
+  assert.equal(second.answer.rewrittenQuestion, "How to recall a message on Android?");
+  assert.equal(second.answer.answer.toLowerCase().includes("recall"), true);
+  assert.equal(second.hits[0]?.path.includes("docs/chatsdk-android/message/recall.md"), true);
+});
+
+void test("conversation history preserves message-management focus for delete-for-self follow-ups", async () => {
+  const docsRoot = await createAndroidMessageHistoryDocs();
+  const dataDir = await makeTempDir("doc-assistant-conversation-delete");
+  const sessionId = "conversation-delete-session";
+
+  const first = await executeDocQuestion({
+    runId: "conversation-delete-1",
+    question: "How to send a message on Android?",
+    sessionId,
+    mode: "extractive",
+    docsRoot,
+    dataDir,
+    maxResults: 5,
+  });
+
+  await updateConversationStateAfterAnswer({
+    sessionId,
+    runId: "conversation-delete-1",
+    question: "How to send a message on Android?",
+    answer: first.answer,
+    route: first.route,
+    dataDir,
+  });
+
+  const second = await executeDocQuestion({
+    runId: "conversation-delete-2",
+    question: "How to delete for myself?",
+    sessionId,
+    mode: "extractive",
+    docsRoot,
+    dataDir,
+    maxResults: 5,
+  });
+
+  assert.equal(second.answer.followUpSource, "conversation_rewrite");
+  assert.equal(second.answer.rewrittenQuestion, "How to delete a message for myself on Android?");
+  assert.equal(
+    second.hits.some((hit) => hit.path.includes("docs/chatsdk-android/message/delete-for-me.md")),
+    true,
+  );
+});
+
+void test("conversation history does not override explicit platform changes", async () => {
+  const docsRoot = await createAndroidMessageHistoryDocs();
+  const dataDir = await makeTempDir("doc-assistant-conversation-platform-conflict");
+  const sessionId = "conversation-platform-conflict-session";
+
+  const first = await executeDocQuestion({
+    runId: "conversation-platform-conflict-1",
+    question: "How to send a message on Android?",
+    sessionId,
+    mode: "extractive",
+    docsRoot,
+    dataDir,
+    maxResults: 5,
+  });
+
+  await updateConversationStateAfterAnswer({
+    sessionId,
+    runId: "conversation-platform-conflict-1",
+    question: "How to send a message on Android?",
+    answer: first.answer,
+    route: first.route,
+    dataDir,
+  });
+
+  const second = await executeDocQuestion({
+    runId: "conversation-platform-conflict-2",
+    question: "How to connect on iOS?",
+    sessionId,
+    mode: "extractive",
+    docsRoot,
+    dataDir,
+    maxResults: 5,
+  });
+
+  const trace = (second.answer.trace ?? {}) as {
+    history?: {
+      blockedReason?: string;
+    };
+  };
+
+  assert.equal(second.answer.followUpSource, undefined);
+  assert.equal(second.answer.rewrittenQuestion, undefined);
+  assert.equal(trace.history?.blockedReason, "explicit_platform_conflict");
+});
+
+void test("conversation history does not leak message-management anchors into new channel tasks", async () => {
+  const docsRoot = await createAndroidMessageHistoryDocs();
+  const dataDir = await makeTempDir("doc-assistant-conversation-topic-shift");
+  const sessionId = "conversation-topic-shift-session";
+
+  const first = await executeDocQuestion({
+    runId: "conversation-topic-shift-1",
+    question: "How to send a message on Android?",
+    sessionId,
+    mode: "extractive",
+    docsRoot,
+    dataDir,
+    maxResults: 5,
+  });
+
+  await updateConversationStateAfterAnswer({
+    sessionId,
+    runId: "conversation-topic-shift-1",
+    question: "How to send a message on Android?",
+    answer: first.answer,
+    route: first.route,
+    dataDir,
+  });
+
+  const second = await executeDocQuestion({
+    runId: "conversation-topic-shift-2",
+    question: "How to create a channel?",
+    sessionId,
+    mode: "extractive",
+    docsRoot,
+    dataDir,
+    maxResults: 5,
+  });
+
+  assert.equal(second.answer.followUpSource, "conversation_rewrite");
+  assert.equal(String(second.answer.rewrittenQuestion).includes("message"), false);
+  assert.equal(second.answer.answer.toLowerCase().includes("create a group channel"), true);
+  assert.equal(second.answer.answer.includes("deleteMessagesForMe"), false);
+});
+
+void test("answer memory lookup uses the conversation-resolved question", async () => {
+  const docsRoot = await createAndroidMessageHistoryDocs();
+  const dataDir = await makeTempDir("doc-assistant-conversation-answer-memory");
+  const sessionId = "conversation-answer-memory-session";
+
+  await replaceAnswerMemoryEntries(
+    [
+      {
+        entryId: "conversation-answer-memory-entry",
+        question: "How to recall a message on Android?",
+        normalizedQuestion: "how to recall a message on android",
+        questionVariants: ["How to recall a message on Android?"],
+        normalizedQuestionVariants: ["how to recall a message on android"],
+        answer: "Use the approved Android recall answer.",
+        summary: "memory summary",
+        citations: [],
+        mode: "extractive",
+        reviewStatus: "approved_standard",
+        createdAt: 1,
+        updatedAt: 1,
+        lastSeenAt: 1,
+        hitCount: 1,
+        provenance: "admin_approved",
+      },
+    ],
+    dataDir,
+  );
+
+  const first = await executeDocQuestion({
+    runId: "conversation-answer-memory-1",
+    question: "How to send a message on Android?",
+    sessionId,
+    mode: "extractive",
+    docsRoot,
+    dataDir,
+    maxResults: 5,
+  });
+
+  await updateConversationStateAfterAnswer({
+    sessionId,
+    runId: "conversation-answer-memory-1",
+    question: "How to send a message on Android?",
+    answer: first.answer,
+    route: first.route,
+    dataDir,
+  });
+
+  const second = await executeDocQuestion({
+    runId: "conversation-answer-memory-2",
+    question: "How to recall?",
+    sessionId,
+    mode: "extractive",
+    docsRoot,
+    dataDir,
+    maxResults: 5,
+  });
+
+  assert.equal(second.route, "memory");
+  assert.equal(second.answer.followUpSource, "conversation_rewrite");
+  assert.equal(second.answer.rewrittenQuestion, "How to recall a message on Android?");
+  assert.equal(second.answer.answer, "Use the approved Android recall answer.");
+});
+
+void test("retrieval memory lookup uses the conversation-resolved question", async () => {
+  const docsRoot = await createAndroidMessageHistoryDocs();
+  const dataDir = await makeTempDir("doc-assistant-conversation-retrieval-memory");
+  const sessionId = "conversation-retrieval-memory-session";
+
+  await saveRetrievalMemoryEntries(
+    [
+      {
+        entryId: "conversation-retrieval-memory-entry",
+        questionPattern: "How to recall a message on Android?",
+        normalizedQuestionPattern: "how to recall a message on android",
+        preferredPaths: ["docs/chatsdk-android/message/recall.md"],
+        discouragedPaths: ["docs/chatsdk-android/message/send.md"],
+        createdAt: 1,
+        updatedAt: 1,
+        source: "manual",
+      },
+    ],
+    dataDir,
+  );
+
+  const first = await executeDocQuestion({
+    runId: "conversation-retrieval-memory-1",
+    question: "How to send a message on Android?",
+    sessionId,
+    mode: "extractive",
+    docsRoot,
+    dataDir,
+    maxResults: 5,
+  });
+
+  await updateConversationStateAfterAnswer({
+    sessionId,
+    runId: "conversation-retrieval-memory-1",
+    question: "How to send a message on Android?",
+    answer: first.answer,
+    route: first.route,
+    dataDir,
+  });
+
+  const second = await executeDocQuestion({
+    runId: "conversation-retrieval-memory-2",
+    question: "How to recall?",
+    sessionId,
+    mode: "extractive",
+    docsRoot,
+    dataDir,
+    maxResults: 5,
+  });
+
+  const trace = (second.answer.trace ?? {}) as {
+    memory?: {
+      kind?: string;
+    };
+    history?: {
+      blockedReason?: string;
+    };
+  };
+
+  assert.equal(second.answer.followUpSource, "conversation_rewrite");
+  assert.equal(second.answer.rewrittenQuestion, "How to recall a message on Android?");
+  assert.equal(trace.memory?.kind, "retrieval_memory");
+  assert.equal(trace.history?.blockedReason, undefined);
 });

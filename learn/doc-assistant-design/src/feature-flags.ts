@@ -2,6 +2,8 @@ export type DocAssistantFeatureFlags = {
   questionState: boolean;
   clarificationPolicy: boolean;
   llmFollowUp: boolean;
+  conversationHistory: boolean;
+  conversationHistoryPrompt: boolean;
   stagedRetrieval: boolean;
   evidencePack: boolean;
   validator: boolean;
@@ -21,6 +23,8 @@ export function getDocAssistantFeatureFlags(): DocAssistantFeatureFlags {
     questionState: parseFlag("DOC_ASSISTANT_FLAG_QUESTION_STATE", true),
     clarificationPolicy: parseFlag("DOC_ASSISTANT_FLAG_CLARIFICATION_POLICY", true),
     llmFollowUp: parseFlag("DOC_ASSISTANT_FLAG_LLM_FOLLOW_UP", true),
+    conversationHistory: parseFlag("DOC_ASSISTANT_FLAG_CONVERSATION_HISTORY", true),
+    conversationHistoryPrompt: parseFlag("DOC_ASSISTANT_FLAG_CONVERSATION_HISTORY_PROMPT", true),
     stagedRetrieval: parseFlag("DOC_ASSISTANT_FLAG_STAGED_RETRIEVAL", true),
     evidencePack: parseFlag("DOC_ASSISTANT_FLAG_EVIDENCE_PACK", true),
     validator: parseFlag("DOC_ASSISTANT_FLAG_VALIDATOR", true),

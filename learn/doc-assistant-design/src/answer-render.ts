@@ -5,7 +5,7 @@ import {
   type ProviderExpandedDocumentContext,
 } from "./document-context.js";
 import type { EvidencePack } from "./evidence-pack.js";
-import type { DocSearchHit } from "./protocol/index.js";
+import type { ConversationPromptContext, DocSearchHit } from "./protocol/index.js";
 import type { QuestionState } from "./question-state.js";
 
 function sectionLines(title: string, groupIds: string[], evidence: EvidencePack): string[] {
@@ -44,6 +44,7 @@ export function buildAgentPromptFromPlan(params: {
   plan: AnswerPlan;
   evidence: EvidencePack;
   draftAnswer: string;
+  conversationContext?: ConversationPromptContext;
   documentAccessHits?: DocSearchHit[];
   expandedDocumentContexts?: ProviderExpandedDocumentContext[];
 }): string {
@@ -79,6 +80,20 @@ export function buildAgentPromptFromPlan(params: {
     `Plan kind: ${params.plan.kind}`,
     params.plan.mustMention.length > 0 ? `Must mention: ${params.plan.mustMention.join(", ")}` : "",
     params.plan.mustAvoid.length > 0 ? `Must avoid: ${params.plan.mustAvoid.join(", ")}` : "",
+    params.conversationContext
+      ? [
+          "",
+          "Conversation context:",
+          params.conversationContext.summary
+            ? `Summary: ${params.conversationContext.summary}`
+            : "",
+          ...params.conversationContext.recentTurns.map(
+            (turn) => `${turn.role === "user" ? "User" : "Assistant"}: ${turn.content}`,
+          ),
+        ]
+          .filter(Boolean)
+          .join("\n")
+      : "",
     "",
     "Answer plan and evidence:",
     sections,

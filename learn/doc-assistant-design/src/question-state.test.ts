@@ -54,6 +54,14 @@ void test("buildQuestionState marks generic integration questions as missing pro
   assert.equal(state.anchors.verbPhrases.includes("integrate"), true);
 });
 
+void test("buildQuestionState marks generic get-started questions as missing product", () => {
+  const state = buildQuestionState("How can I get started?");
+  assert.equal(state.intent, "procedural");
+  assert.equal(state.product, undefined);
+  assert.equal(state.ambiguity.missingProduct, true);
+  assert.equal(state.heuristicHints?.taskKind, "generic");
+});
+
 void test("buildQuestionState does not invent procedural referents from the full sentence", () => {
   const state = buildQuestionState("How do I check my Node version?");
   assert.equal(state.intent, "procedural");

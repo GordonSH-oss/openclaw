@@ -12,6 +12,7 @@ import {
 import { buildEvidencePack, type EvidencePack } from "./evidence-pack.js";
 import { answerWithOpenAICompatible, OpenAICompatibleAnswerError } from "./openai-compatible.js";
 import type {
+  ConversationPromptContext,
   DocAnswerDebugAnswers,
   DocAnswerValidationResult,
   DocAnswerReviewStatus,
@@ -3120,6 +3121,7 @@ function buildAgentPrompt(params: {
   groundedAnswer: string;
   hits: DocSearchHit[];
   evidence?: EvidencePack;
+  conversationContext?: ConversationPromptContext;
   documentAccessHits?: DocSearchHit[];
   expandedDocumentContexts?: ProviderExpandedDocumentContext[];
 }): string {
@@ -3143,6 +3145,7 @@ function buildAgentPrompt(params: {
     plan,
     evidence: renderedEvidence,
     draftAnswer: params.groundedAnswer,
+    conversationContext: params.conversationContext,
     documentAccessHits: params.documentAccessHits,
     expandedDocumentContexts: params.expandedDocumentContexts,
   });
@@ -3229,6 +3232,7 @@ export async function buildDocAnswer(params: {
   mode: DocAssistantMode;
   hits: DocSearchHit[];
   evidence?: EvidencePack;
+  conversationContext?: ConversationPromptContext;
   docsRoot?: string;
   dataDir?: string;
   backend?: "embedded" | "cli";
@@ -3245,11 +3249,11 @@ export async function buildDocAnswer(params: {
     emittedDelta = true;
     params.onDelta?.(data);
   };
-  const rawHitByKey = new Map(
+  const rawHitByKey = new Map<string, DocSearchHit>(
     params.hits.map((hit) => [`${hit.path}:${hit.startLine}:${hit.endLine}`, hit] as const),
   );
   const evidenceHitsFromGroups = params.evidence?.groups.flatMap((group) =>
-    group.citations.map((citation) => {
+    group.citations.map<DocSearchHit>((citation) => {
       const key = `${citation.path}:${citation.startLine}:${citation.endLine}`;
       const rawHit = rawHitByKey.get(key);
       return (
@@ -3259,8 +3263,8 @@ export async function buildDocAnswer(params: {
           text: citation.snippet,
           retrievalBucket:
             group.purpose === "definition" || group.purpose === "overview"
-              ? "concept"
-              : "procedural",
+              ? ("concept" as const)
+              : ("procedural" as const),
         }
       );
     }),
@@ -3339,6 +3343,7 @@ export async function buildDocAnswer(params: {
           groundedAnswer: grounded.answer,
           hits: evidenceHits,
           evidence: renderedEvidence,
+          conversationContext: params.conversationContext,
           documentAccessHits: params.hits,
         }),
         citations: grounded.citations,
@@ -3420,6 +3425,7 @@ export async function buildDocAnswer(params: {
       groundedAnswer: grounded.answer,
       hits: evidenceHits,
       evidence: renderedEvidence,
+      conversationContext: params.conversationContext,
       documentAccessHits: params.hits,
       expandedDocumentContexts,
     });

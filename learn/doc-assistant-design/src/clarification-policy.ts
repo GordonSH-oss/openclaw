@@ -1,6 +1,7 @@
 import { detectDocShape } from "./doc-shape.js";
 import type { DocSearchHit } from "./protocol/index.js";
 import { extractQuestionAnchors, isBroadIntegrationRequest } from "./question-anchors.js";
+import { detectPreferredDocShape } from "./question-planning.js";
 import {
   detectQuestionChannelKind,
   detectQuestionPlatform,
@@ -192,6 +193,23 @@ function needsTaskFocusClarification(state: QuestionState, hits: DocSearchHit[])
   return !hasQuickstart && !hasSpecializedTask;
 }
 
+function needsProductClarification(state: QuestionState, hits: DocSearchHit[]): boolean {
+  if (state.product) {
+    return false;
+  }
+
+  const hitProducts = collectHitProducts(hits);
+  if (hitProducts.length > 1) {
+    return true;
+  }
+
+  if (state.ambiguity.missingProduct) {
+    return true;
+  }
+
+  return detectPreferredDocShape(state.rawQuestion) === "quickstart_step";
+}
+
 export function decideClarification(params: {
   state: QuestionState;
   hits?: DocSearchHit[];
@@ -206,7 +224,12 @@ export function decideClarification(params: {
   const hitChannelKinds = collectHitChannelKinds(hits);
   const hitProducts = collectHitProducts(hits);
 
-  if (state.ambiguity.missingProduct && (hits.length > 0 || isBroadIntegrationRequest(state))) {
+  if (
+    needsProductClarification(state, hits) &&
+    (hits.length > 0 ||
+      isBroadIntegrationRequest(state) ||
+      detectPreferredDocShape(state.rawQuestion) === "quickstart_step")
+  ) {
     return {
       shouldClarify: true,
       kind: "product",

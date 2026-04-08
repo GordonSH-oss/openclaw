@@ -122,11 +122,32 @@ export type DocAnswerDebugAnswers = {
   providerKind?: "openai_compatible" | "learning";
 };
 
+export type ConversationCompressionTier =
+  | "none"
+  | "trim_irrelevant"
+  | "summary_plus_recent"
+  | "summary_only";
+
+export type ConversationPromptTurn = {
+  role: "user" | "assistant";
+  content: string;
+};
+
+export type ConversationPromptContext = {
+  summary?: string;
+  recentTurns: ConversationPromptTurn[];
+  compressionTier: ConversationCompressionTier;
+  promptChars: number;
+  selectedTurnCount: number;
+  summaryUsed: boolean;
+};
+
 export type DocFollowUpSource =
   | "none"
   | "clarification_reuse"
   | "clarification_rewrite"
-  | "contextual_rewrite";
+  | "contextual_rewrite"
+  | "conversation_rewrite";
 
 export type DocMemoryEntryStatus = "pending_review" | "approved_standard" | "rejected";
 

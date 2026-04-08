@@ -3,6 +3,7 @@ import { findAnswerMemoryMatch, noteAnswerMemoryHit } from "./answer-memory.js";
 import { validateAnswer } from "./answer-validator.js";
 import { decideAnswerability } from "./answerability.js";
 import { decideClarification } from "./clarification-policy.js";
+import { resolveConversationContext } from "./conversation-context.js";
 import {
   buildDocAnswer,
   buildInsufficientEvidenceAnswer,
@@ -224,7 +225,7 @@ function shouldRetryRetrieval(params: {
   });
   if (
     answerability.verdict !== "answerable" &&
-    answerability.reason.toLowerCase().includes("missing required anchors")
+    (answerability.reason ?? "").toLowerCase().includes("missing required anchors")
   ) {
     reasons.push("missing_required_anchors");
   }
@@ -684,7 +685,7 @@ export async function executeDocQuestion(params: {
   const effectiveLlmFollowUpState = llmFollowUpRewrite
     ? buildQuestionState(llmFollowUpRewrite)
     : undefined;
-  const effectiveState = effectiveTaskFocusState
+  const preliminaryState = effectiveTaskFocusState
     ? effectiveTaskFocusState
     : effectiveLlmFollowUpState
       ? effectiveLlmFollowUpState
@@ -693,36 +694,70 @@ export async function executeDocQuestion(params: {
         : flags.questionState && acceptedClarificationFollowUp && followUpPatch && followUpBaseState
           ? mergeStoredStateWithFollowUp(followUpBaseState, followUpPatch)
           : initialState;
-  const effectiveQuestion = effectiveTaskFocusQuestion
+  const preliminaryQuestion = effectiveTaskFocusQuestion
     ? effectiveTaskFocusQuestion
     : llmFollowUpRewrite
       ? llmFollowUpRewrite
       : effectiveContextualQuestion
         ? effectiveContextualQuestion
         : flags.questionState && acceptedClarificationFollowUp && followUpPatch && followUpBaseState
-          ? rewriteQuestionFromState(effectiveState)
+          ? rewriteQuestionFromState(preliminaryState)
           : params.question;
-  const effectiveQuestionState = buildQuestionState(effectiveQuestion);
-  const continuedFromRunId = clarificationFollowUp?.runId;
+  let effectiveState = preliminaryState;
+  let effectiveQuestion = preliminaryQuestion;
+  let continuedFromRunId =
+    acceptedClarificationFollowUp || acceptedContextualFollowUp || acceptedLlmFollowUp
+      ? clarificationFollowUp?.runId
+      : undefined;
   const selectedPlatform = acceptedClarificationFollowUp ? followUpPatch?.platform : undefined;
+  const preliminaryQuestionState = buildQuestionState(effectiveQuestion);
   const canReuseClarificationHits = Boolean(
     clarificationFollowUp &&
     selectedPlatform &&
-    !isBroadIntegrationRequest(effectiveQuestionState) &&
+    !isBroadIntegrationRequest(preliminaryQuestionState) &&
     shouldReuseClarificationHits(clarificationFollowUp, selectedPlatform),
   );
-  const resolvedFollowUpSource =
+  let resolvedFollowUpSource:
+    | "none"
+    | "clarification_reuse"
+    | "clarification_rewrite"
+    | "contextual_rewrite"
+    | "conversation_rewrite" =
     acceptedClarificationFollowUp && canReuseClarificationHits
       ? "clarification_reuse"
-      : acceptedLlmFollowUp || acceptedContextualFollowUp
-        ? "contextual_rewrite"
-        : acceptedClarificationFollowUp || clarificationFollowUp
-          ? "clarification_rewrite"
+      : acceptedClarificationFollowUp
+        ? "clarification_rewrite"
+        : acceptedLlmFollowUp || acceptedContextualFollowUp
+          ? "contextual_rewrite"
           : "none";
+  const conversationContext =
+    flags.conversationHistory && params.sessionId
+      ? await resolveConversationContext({
+          question: effectiveQuestion,
+          sessionId: params.sessionId,
+          dataDir: params.dataDir,
+          allowRewrite: resolvedFollowUpSource === "none",
+        })
+      : null;
+  if (conversationContext) {
+    effectiveQuestion = conversationContext.effectiveQuestion;
+    effectiveState = conversationContext.effectiveState;
+    if (resolvedFollowUpSource === "none" && conversationContext.followUpSource) {
+      resolvedFollowUpSource = conversationContext.followUpSource;
+      continuedFromRunId = conversationContext.continuedFromRunId;
+    }
+  }
+  const conversationPromptContext = flags.conversationHistoryPrompt
+    ? conversationContext?.promptContext
+    : undefined;
+  const conversationTrace = conversationContext?.traceContext;
+  const rewrittenQuestion = resolvedFollowUpSource !== "none" ? effectiveQuestion : undefined;
+  const retrievalBudgetFollowUpSource =
+    resolvedFollowUpSource === "conversation_rewrite" ? undefined : resolvedFollowUpSource;
   const retrievalBudget = resolveRetrievalBudget({
     state: effectiveState,
     overrideMaxResults: params.maxResults,
-    followUpSource: resolvedFollowUpSource,
+    followUpSource: retrievalBudgetFollowUpSource,
   });
 
   if (
@@ -761,6 +796,7 @@ export async function executeDocQuestion(params: {
               warnings: evidence.warnings,
               trimEvents: evidence.trimEvents,
             },
+            history: conversationTrace,
             transitions: ["invalid_clarification_followup", "clarification_required"],
           },
         },
@@ -798,15 +834,16 @@ export async function executeDocQuestion(params: {
               warnings: evidence.warnings,
               trimEvents: evidence.trimEvents,
             },
+            history: conversationTrace,
             retrievalBudget: {
               ...retrievalBudget,
               retryUsed: false,
             },
             transitions: ["clarification_reuse", "insufficient_evidence"],
           },
-          followUpSource: acceptedClarificationFollowUp ? "clarification_reuse" : undefined,
+          followUpSource: resolvedFollowUpSource === "none" ? undefined : resolvedFollowUpSource,
           continuedFromRunId,
-          rewrittenQuestion: effectiveQuestion,
+          rewrittenQuestion,
         },
       };
     }
@@ -836,15 +873,16 @@ export async function executeDocQuestion(params: {
               warnings: evidence.warnings,
               trimEvents: evidence.trimEvents,
             },
+            history: conversationTrace,
             retrievalBudget: {
               ...retrievalBudget,
               retryUsed: false,
             },
             transitions: ["clarification_reuse", "clarification_required"],
           },
-          followUpSource: acceptedClarificationFollowUp ? "clarification_reuse" : undefined,
+          followUpSource: resolvedFollowUpSource === "none" ? undefined : resolvedFollowUpSource,
           continuedFromRunId,
-          rewrittenQuestion: effectiveQuestion,
+          rewrittenQuestion,
         },
       };
     }
@@ -861,6 +899,7 @@ export async function executeDocQuestion(params: {
       provider: params.provider,
       model: params.model,
       openAICompatible: params.openAICompatible,
+      conversationContext: conversationPromptContext,
       onDelta: params.onDelta,
     });
     const validated = finalizeValidatedAnswer({
@@ -882,6 +921,7 @@ export async function executeDocQuestion(params: {
           ...validated.trace,
           route: "search",
           state: effectiveState,
+          history: conversationTrace,
           answerSurface: validated.answerSurface,
           transitions: [
             "clarification_reuse",
@@ -892,9 +932,9 @@ export async function executeDocQuestion(params: {
             retryUsed: false,
           },
         },
-        followUpSource: acceptedClarificationFollowUp ? "clarification_reuse" : undefined,
+        followUpSource: resolvedFollowUpSource === "none" ? undefined : resolvedFollowUpSource,
         continuedFromRunId,
-        rewrittenQuestion: effectiveQuestion,
+        rewrittenQuestion,
       },
     };
   }
@@ -916,6 +956,7 @@ export async function executeDocQuestion(params: {
           ...baseTrace,
           route: "greeting",
           state: effectiveState,
+          history: conversationTrace,
           transitions: [],
         },
       },
@@ -944,22 +985,14 @@ export async function executeDocQuestion(params: {
         answerSource: memoryMatch.answerSource,
         memoryEntryId: memoryMatch.entry.entryId,
         reviewStatus: memoryMatch.reviewStatus,
-        followUpSource: acceptedLlmFollowUp
-          ? "contextual_rewrite"
-          : acceptedContextualFollowUp
-            ? "contextual_rewrite"
-            : clarificationFollowUp
-              ? "clarification_rewrite"
-              : undefined,
+        followUpSource: resolvedFollowUpSource === "none" ? undefined : resolvedFollowUpSource,
         continuedFromRunId,
-        rewrittenQuestion:
-          acceptedLlmFollowUp || acceptedContextualFollowUp || clarificationFollowUp
-            ? effectiveQuestion
-            : undefined,
+        rewrittenQuestion,
         trace: {
           ...baseTrace,
           route: "memory",
           state: effectiveState,
+          history: conversationTrace,
           memory: {
             kind: "answer_memory",
             entryId: memoryMatch.entry.entryId,
@@ -1063,6 +1096,7 @@ export async function executeDocQuestion(params: {
             warnings: evidence.warnings,
             trimEvents: evidence.trimEvents,
           },
+          history: conversationTrace,
           retrievalBudget: {
             ...retrievalBudget,
             retryUsed,
@@ -1084,10 +1118,7 @@ export async function executeDocQuestion(params: {
         },
         followUpSource: resolvedFollowUpSource === "none" ? undefined : resolvedFollowUpSource,
         continuedFromRunId,
-        rewrittenQuestion:
-          acceptedLlmFollowUp || acceptedContextualFollowUp || clarificationFollowUp
-            ? effectiveQuestion
-            : undefined,
+        rewrittenQuestion,
       },
     };
   }
@@ -1118,6 +1149,7 @@ export async function executeDocQuestion(params: {
             warnings: evidence.warnings,
             trimEvents: evidence.trimEvents,
           },
+          history: conversationTrace,
           retrievalBudget: {
             ...retrievalBudget,
             retryUsed,
@@ -1139,10 +1171,7 @@ export async function executeDocQuestion(params: {
         },
         followUpSource: resolvedFollowUpSource === "none" ? undefined : resolvedFollowUpSource,
         continuedFromRunId,
-        rewrittenQuestion:
-          acceptedLlmFollowUp || acceptedContextualFollowUp || clarificationFollowUp
-            ? effectiveQuestion
-            : undefined,
+        rewrittenQuestion,
       },
     };
   }
@@ -1159,6 +1188,7 @@ export async function executeDocQuestion(params: {
     provider: params.provider,
     model: params.model,
     openAICompatible: params.openAICompatible,
+    conversationContext: conversationPromptContext,
     onDelta: params.onDelta,
   });
   const validated = finalizeValidatedAnswer({
@@ -1181,6 +1211,7 @@ export async function executeDocQuestion(params: {
         ...validated.trace,
         route: "search",
         state: effectiveState,
+        history: conversationTrace,
         memory: retrievalMemoryMatch
           ? {
               kind: "retrieval_memory",
@@ -1205,10 +1236,7 @@ export async function executeDocQuestion(params: {
       },
       followUpSource: resolvedFollowUpSource === "none" ? undefined : resolvedFollowUpSource,
       continuedFromRunId,
-      rewrittenQuestion:
-        acceptedLlmFollowUp || acceptedContextualFollowUp || clarificationFollowUp
-          ? effectiveQuestion
-          : undefined,
+      rewrittenQuestion,
     },
   };
 }

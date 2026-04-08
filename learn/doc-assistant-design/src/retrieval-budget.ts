@@ -82,7 +82,12 @@ function buildBudgetFromHitLimit(params: {
 export function resolveRetrievalBudget(params: {
   state: QuestionState;
   overrideMaxResults?: number;
-  followUpSource?: "none" | "clarification_reuse" | "clarification_rewrite" | "contextual_rewrite";
+  followUpSource?:
+    | "none"
+    | "clarification_reuse"
+    | "clarification_rewrite"
+    | "contextual_rewrite"
+    | "conversation_rewrite";
 }): RetrievalBudget {
   if (params.overrideMaxResults && Number.isFinite(params.overrideMaxResults)) {
     return buildBudgetFromHitLimit({
@@ -135,7 +140,8 @@ export function resolveRetrievalBudget(params: {
   }
   if (
     params.followUpSource === "clarification_rewrite" ||
-    params.followUpSource === "clarification_reuse"
+    params.followUpSource === "clarification_reuse" ||
+    params.followUpSource === "conversation_rewrite"
   ) {
     complexityScore = Math.max(0, complexityScore - 1);
     reasons.push("followup_scope_narrowed");
