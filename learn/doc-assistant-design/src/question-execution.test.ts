@@ -108,6 +108,37 @@ async function createGetStartedClarificationDocs(): Promise<string> {
   return docsRoot;
 }
 
+async function createBroadOnboardingPlatformClarificationDocs(): Promise<string> {
+  const docsRoot = await makeTempDir("doc-assistant-broad-onboarding-platform-clarify");
+  await fs.mkdir(path.join(docsRoot, "docs", "chatsdk-web"), {
+    recursive: true,
+  });
+  await fs.mkdir(path.join(docsRoot, "docs", "chatsdk-ios"), {
+    recursive: true,
+  });
+  await fs.writeFile(
+    path.join(docsRoot, "docs", "chatsdk-web", "getting-started.md"),
+    [
+      "# Getting started with Chat SDK on Web",
+      "",
+      "Install the Web Chat SDK package, initialize the client, connect the user, and send the first message.",
+      "",
+    ].join("\n"),
+    "utf-8",
+  );
+  await fs.writeFile(
+    path.join(docsRoot, "docs", "chatsdk-ios", "getting-started.md"),
+    [
+      "# Getting started with Chat SDK on iOS",
+      "",
+      "Install the iOS Chat SDK package, initialize the client, connect the user, and send the first message.",
+      "",
+    ].join("\n"),
+    "utf-8",
+  );
+  return docsRoot;
+}
+
 async function createCallOneToOneDocs(): Promise<string> {
   const docsRoot = await makeTempDir("doc-assistant-call-one-to-one");
   await fs.mkdir(path.join(docsRoot, "docs", "callsdk-ios"), {
@@ -830,6 +861,50 @@ void test("executeDocQuestion asks for referent clarification before blocking on
   assert.equal(result.answer.pendingClarificationKind, "referent");
   assert.equal(result.answer.answer.includes("system message"), true);
   assert.equal(result.answer.answer.includes("push notification"), true);
+});
+
+void test("broad onboarding wording remains answerable after platform clarification", async () => {
+  const docsRoot = await createBroadOnboardingPlatformClarificationDocs();
+  const dataDir = await makeTempDir("doc-assistant-broad-onboarding-followup");
+  const sessionId = "broad-onboarding-followup-session";
+  const clarificationHits = await searchDocs({
+    query: "How to start a chat app?",
+    docsRoot,
+    dataDir,
+    maxResults: 5,
+  });
+
+  await updateClarificationStateAfterAnswer({
+    sessionId,
+    runId: "broad-onboarding-1",
+    question: "I want to build a social chat app. How to start?",
+    hits: clarificationHits,
+    summary: "platform clarification required",
+    pendingQuestion: "I want to build a social chat app. How to start?",
+    clarificationKind: "platform",
+    clarificationHits,
+    route: "search",
+    dataDir,
+  });
+
+  const second = await executeDocQuestion({
+    runId: "broad-onboarding-2",
+    question: "Web",
+    sessionId,
+    mode: "extractive",
+    docsRoot,
+    dataDir,
+    maxResults: 5,
+  });
+
+  assert.equal(second.answer.followUpSource, "clarification_rewrite");
+  assert.equal(
+    second.answer.rewrittenQuestion,
+    "I want to build a social chat app. How to start on Web?",
+  );
+  assert.notEqual(second.answer.summary, "insufficient documentation evidence");
+  assert.equal(second.answer.answer.toLowerCase().includes("web"), true);
+  assert.equal(second.hits[0]?.path.includes("docs/chatsdk-web/getting-started.md"), true);
 });
 
 void test("product clarification follow-up rewrites the generic connect question and continues", async () => {

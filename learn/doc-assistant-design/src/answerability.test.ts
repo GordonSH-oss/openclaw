@@ -164,3 +164,41 @@ void test("decideAnswerability accepts self-only delete wording when docs use eq
 
   assert.equal(decision.verdict, "answerable");
 });
+
+void test("decideAnswerability treats broad onboarding goal wording as soft context when setup evidence exists", () => {
+  const question = "I want to build a social chat app. How to start on Web?";
+  const decision = decideAnswerability({
+    question,
+    state: buildQuestionState(question),
+    hits: [
+      makeHit({
+        path: "docs/chatsdk-web/getting-started.md",
+        heading: "Getting started with Chat SDK on Web",
+        text: "Install the Web Chat SDK package, initialize the client, connect the user, and send the first message.",
+      }),
+    ],
+  });
+
+  assert.equal(decision.verdict, "answerable");
+  assert.equal(decision.requiredAnchors?.includes("build"), false);
+  assert.equal(decision.requiredAnchors?.includes("social"), false);
+});
+
+void test("decideAnswerability still requires concrete unknown technical focus terms", () => {
+  const question = "How to use custom moderation pipeline?";
+  const decision = decideAnswerability({
+    question,
+    state: buildQuestionState(question),
+    hits: [
+      makeHit({
+        path: "docs/chatsdk-web/getting-started.md",
+        heading: "Getting started with Chat SDK on Web",
+        text: "Install the Web Chat SDK package, initialize the client, connect the user, and send the first message.",
+      }),
+    ],
+  });
+
+  assert.equal(decision.verdict, "insufficient_evidence");
+  assert.equal(decision.requiredAnchors?.includes("moderation"), true);
+  assert.equal(decision.requiredAnchors?.includes("pipeline"), true);
+});

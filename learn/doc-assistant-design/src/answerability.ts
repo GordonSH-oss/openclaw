@@ -1,5 +1,9 @@
 import type { DocSearchHit } from "./protocol/index.js";
-import { isBroadIntegrationRequest, selectRequiredAnchors } from "./question-anchors.js";
+import {
+  isBroadIntegrationRequest,
+  isBroadOnboardingRequest,
+  selectRequiredAnchors,
+} from "./question-anchors.js";
 import { buildQuestionState, type QuestionState } from "./question-state.js";
 import { normalizeSearchText } from "./search-text.js";
 import { labelEvidenceHit } from "./task-frame.js";
@@ -146,7 +150,7 @@ export function decideAnswerability(params: {
   }
 
   if (
-    isBroadIntegrationRequest(state) &&
+    (isBroadIntegrationRequest(state) || isBroadOnboardingRequest(state)) &&
     !state.ambiguity.missingProduct &&
     !state.ambiguity.missingPlatform
   ) {

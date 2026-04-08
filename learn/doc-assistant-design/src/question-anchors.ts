@@ -175,6 +175,8 @@ const STOP_TERMS = new Set([
 const GENERIC_UNKNOWN_FOCUS_TERMS = new Set([
   "callsdk",
   "chatsdk",
+  "build",
+  "social",
   "auth",
   "constraint",
   "constraints",
@@ -190,9 +192,26 @@ const GENERIC_UNKNOWN_FOCUS_TERMS = new Set([
   "need",
   "operation",
   "operations",
+  "started",
   "specific",
   "task",
   "tasks",
+  "want",
+]);
+
+const SOFT_ONBOARDING_UNKNOWN_TERMS = new Set([
+  "app",
+  "application",
+  "applications",
+  "build",
+  "building",
+  "product",
+  "products",
+  "service",
+  "services",
+  "social",
+  "started",
+  "startup",
   "want",
 ]);
 
@@ -287,7 +306,28 @@ export function selectSpecificUnknownTerms(anchors: QuestionAnchors): string[] {
   );
 }
 
+function selectSoftFilteredUnknownTerms(anchors: QuestionAnchors): string[] {
+  return selectSpecificUnknownTerms(anchors).filter(
+    (term) => !SOFT_ONBOARDING_UNKNOWN_TERMS.has(term),
+  );
+}
+
+function mentionsBroadOnboarding(question: string): boolean {
+  const normalized = normalizeSearchText(question);
+  return (
+    normalized.includes("get started") ||
+    normalized.includes("getting started") ||
+    normalized.includes("how to start") ||
+    normalized.includes("how do i start") ||
+    normalized.includes("how can i get started") ||
+    normalized.includes("how should i start") ||
+    normalized.includes("build") ||
+    normalized.includes("开始")
+  );
+}
+
 export function selectRequiredAnchors(state: {
+  rawQuestion?: string;
   intent: "concept" | "procedural" | "mixed";
   anchors: QuestionAnchors;
 }): string[] {
@@ -307,9 +347,18 @@ export function selectRequiredAnchors(state: {
     ...state.anchors.apiSymbols,
     ...state.anchors.qualifiers.filter((qualifier) => qualifier !== "default"),
   ];
+  const broadOnboarding =
+    state.intent !== "concept" &&
+    Boolean(state.rawQuestion) &&
+    mentionsBroadOnboarding(state.rawQuestion ?? "") &&
+    required.length === 0;
   if (state.intent !== "concept") {
     required.push(...state.anchors.verbPhrases.filter((verb) => !genericVerbs.has(verb)));
-    required.push(...selectSpecificUnknownTerms(state.anchors));
+    required.push(
+      ...(broadOnboarding
+        ? selectSoftFilteredUnknownTerms(state.anchors)
+        : selectSpecificUnknownTerms(state.anchors)),
+    );
   } else if (required.length === 0) {
     required.push(...selectSpecificUnknownTerms(state.anchors));
   }
@@ -353,4 +402,26 @@ export function isBroadIntegrationRequest(state: {
     return false;
   }
   return !hasSpecificTaskFocus(state.anchors);
+}
+
+export function isBroadOnboardingRequest(state: {
+  rawQuestion: string;
+  normalizedQuestion?: string;
+  intent: "concept" | "procedural" | "mixed";
+  anchors: QuestionAnchors;
+}): boolean {
+  if (state.intent === "concept") {
+    return false;
+  }
+  const normalized = state.normalizedQuestion ?? normalizeSearchText(state.rawQuestion);
+  if (!mentionsBroadOnboarding(normalized)) {
+    return false;
+  }
+  return (
+    state.anchors.nounPhrases.length === 0 &&
+    state.anchors.constraints.length === 0 &&
+    state.anchors.apiSymbols.length === 0 &&
+    state.anchors.qualifiers.length === 0 &&
+    selectSoftFilteredUnknownTerms(state.anchors).length === 0
+  );
 }

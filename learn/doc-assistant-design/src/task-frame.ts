@@ -126,7 +126,12 @@ export function labelEvidenceHit(
     normalizedHeadingPath.includes("set up") ||
     normalizedHeadingPath.includes("setup") ||
     normalizedHeadingPath.includes("prerequisites") ||
-    normalizedHeadingPath.includes("requirements")
+    normalizedHeadingPath.includes("requirements") ||
+    normalizedBody.includes("install") ||
+    normalizedBody.includes("initialize") ||
+    normalizedBody.includes("set up") ||
+    normalizedBody.includes("setup") ||
+    normalizedBody.includes("getting started")
   ) {
     labels.add("setup");
   }
