@@ -134,3 +134,30 @@ void test("decideClarification derives token focus only when evidence mentions t
   assert.equal(decision.candidateOptions?.includes("access token"), true);
   assert.equal(decision.candidateOptions?.includes("webhook signature verification"), true);
 });
+
+void test("decideClarification asks for referent when server hits suggest system message vs push notification", () => {
+  const decision = decideClarification({
+    state: buildQuestionState("can I send system notification using server api?"),
+    hits: [
+      makeHit(
+        "docs/guides/realtime-chat/intro-chat/intro-chat.mdx",
+        "Server APIs",
+        "Some advanced features are only available through Chat Server APIs, including system notifications.",
+      ),
+      makeHit(
+        "docs/platform-chat-api/chat-server-api-list.md",
+        "System messages",
+        "Send a system message with /v4/system-channel/message/send.",
+      ),
+      makeHit(
+        "docs/platform-chat-api/system/send-push-by-tag.md",
+        "Push to tagged users",
+        "Push to tagged users with /v4/system-channel/push.",
+      ),
+    ],
+  });
+
+  assert.equal(decision.shouldClarify, true);
+  assert.equal(decision.kind, "referent");
+  assert.deepEqual(decision.candidateOptions, ["system message", "push notification"]);
+});

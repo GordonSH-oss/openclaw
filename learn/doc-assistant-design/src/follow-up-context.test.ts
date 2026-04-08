@@ -5,6 +5,7 @@ import {
   detectContextualFollowUpQuestion,
   extractQuestionStatePatchFromFollowUp,
   isStoredClarificationFollowUpAllowed,
+  rewriteReferentClarificationQuestion,
   rewriteContextualFollowUpQuestion,
   rewriteTaskFocusClarificationQuestion,
 } from "./follow-up-context.js";
@@ -120,6 +121,16 @@ void test("isStoredClarificationFollowUpAllowed accepts any recognized platform 
     ),
     true,
   );
+  assert.equal(
+    isStoredClarificationFollowUpAllowed(
+      {
+        clarificationKind: "referent",
+        candidatePlatforms: [],
+      },
+      { taskFocus: "system message" },
+    ),
+    true,
+  );
 });
 
 void test("rewriteTaskFocusClarificationQuestion appends the narrowed task focus", () => {
@@ -138,5 +149,15 @@ void test("rewriteContextualFollowUpQuestion appends the presentation request to
       responseStyle: "code_snippet",
     }),
     "How to pin a channel on iOS Show a code snippet.",
+  );
+});
+
+void test("rewriteReferentClarificationQuestion swaps the ambiguous term with the chosen referent", () => {
+  assert.equal(
+    rewriteReferentClarificationQuestion(
+      "can I send system notification using server api?",
+      "system message",
+    ),
+    "can I send system message using server api?",
   );
 });

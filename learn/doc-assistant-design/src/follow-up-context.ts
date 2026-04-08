@@ -449,6 +449,9 @@ export function isStoredClarificationFollowUpAllowed(
   if (context.clarificationKind === "task_focus") {
     return Boolean(followUp.taskFocus);
   }
+  if (context.clarificationKind === "referent") {
+    return Boolean(followUp.taskFocus);
+  }
   return false;
 }
 
@@ -465,6 +468,32 @@ export function rewriteTaskFocusClarificationQuestion(
     return `${trimmedQuestion} for ${trimmedFocus}?`;
   }
   return `${trimmedQuestion}，聚焦 ${trimmedFocus}？`;
+}
+
+export function rewriteReferentClarificationQuestion(
+  originalQuestion: string,
+  referent: string,
+): string {
+  const trimmedQuestion = originalQuestion.trim().replace(/[?!.。！？]+$/u, "");
+  const trimmedReferent = referent.trim().replace(/[?!.。！？]+$/u, "");
+  let rewritten = trimmedQuestion;
+
+  if (/\bsystem notifications?\b/i.test(rewritten)) {
+    rewritten = rewritten.replace(/\bsystem notifications?\b/i, trimmedReferent);
+  } else if (trimmedReferent.includes("message") && /\bnotification\b/i.test(rewritten)) {
+    rewritten = rewritten.replace(/\bnotification\b/i, trimmedReferent);
+  } else if (trimmedReferent.includes("notification") && /\bmessage\b/i.test(rewritten)) {
+    rewritten = rewritten.replace(/\bmessage\b/i, trimmedReferent);
+  } else {
+    const asciiCount = (trimmedQuestion.match(/[A-Za-z]/g) ?? []).length;
+    const cjkCount = (trimmedQuestion.match(/[\u4e00-\u9fff]/g) ?? []).length;
+    rewritten =
+      asciiCount >= cjkCount
+        ? `${trimmedQuestion} for ${trimmedReferent}`
+        : `${trimmedQuestion}，这里指 ${trimmedReferent}`;
+  }
+
+  return `${rewritten}?`;
 }
 
 export function detectPlatformFromHit(hit: DocSearchHit): DocFollowUpPlatform | undefined {

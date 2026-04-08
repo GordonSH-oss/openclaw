@@ -17,7 +17,8 @@ export type ClarificationKind =
   | "channel_kind"
   | "api_layer"
   | "product"
-  | "task_focus";
+  | "task_focus"
+  | "referent";
 
 export type ClarificationDecision = {
   shouldClarify: boolean;
@@ -172,9 +173,52 @@ function buildClarificationPrompt(kind: ClarificationKind, state: QuestionState)
       ? "你要看 Chat、Call，还是 Server 相关文档？"
       : "Do you want Chat, Call, or Server documentation?";
   }
+  if (kind === "referent") {
+    return state.language === "zh"
+      ? "这里的术语还不够确定。你说的 system notification，是指 system message，还是 push notification？"
+      : 'The terminology is still ambiguous. When you say "system notification", do you mean a system message or a push notification?';
+  }
   return state.language === "zh"
     ? "这是一个和平台相关的问题。请告诉我要看 Android、iOS、Web，还是 Flutter。"
     : "This question depends on the target platform. Tell me whether you need Android, iOS, Web, or Flutter.";
+}
+
+function collectReferentCandidates(state: QuestionState, hits: DocSearchHit[]): string[] {
+  const normalizedQuestion = state.rawQuestion.toLowerCase();
+  const mentionsSystemNotification =
+    normalizedQuestion.includes("system notification") ||
+    normalizedQuestion.includes("system notifications");
+  const alreadyExplicit =
+    normalizedQuestion.includes("system message") ||
+    normalizedQuestion.includes("push notification");
+  if (!mentionsSystemNotification || alreadyExplicit) {
+    return [];
+  }
+
+  const candidates = new Map<string, number>();
+  for (const hit of getAuthoritativeHits(hits).slice(0, 8)) {
+    const combinedText = [hit.path, hit.heading ?? "", hit.text].join("\n").toLowerCase();
+    if (
+      combinedText.includes("system message") ||
+      combinedText.includes("system messages") ||
+      combinedText.includes("/system-channel/message/")
+    ) {
+      candidates.set("system message", Math.max(candidates.get("system message") ?? 0, 10));
+    }
+    if (
+      combinedText.includes("push notification") ||
+      combinedText.includes("push notifications") ||
+      combinedText.includes("/system-channel/push") ||
+      combinedText.includes("push to tagged users")
+    ) {
+      candidates.set("push notification", Math.max(candidates.get("push notification") ?? 0, 9));
+    }
+  }
+
+  return Array.from(candidates.entries())
+    .toSorted((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
+    .map(([value]) => value)
+    .slice(0, 3);
 }
 
 function needsTaskFocusClarification(state: QuestionState, hits: DocSearchHit[]): boolean {
@@ -251,6 +295,18 @@ export function decideClarification(params: {
       reason: "retrieval spans both client SDK and server API material",
       pendingState: { apiLayer: undefined },
       candidateOptions: ["client", "server"],
+    };
+  }
+
+  const referentCandidates = collectReferentCandidates(state, hits);
+  if (referentCandidates.length > 0) {
+    return {
+      shouldClarify: true,
+      kind: "referent",
+      question: buildClarificationPrompt("referent", state),
+      reason:
+        "retrieval suggests nearby server-side referents for ambiguous system-notification wording",
+      candidateOptions: referentCandidates,
     };
   }
 

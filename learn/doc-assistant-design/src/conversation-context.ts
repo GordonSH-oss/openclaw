@@ -36,7 +36,7 @@ type ConversationTaskAnchors = {
 };
 
 type OpenClarificationState = {
-  kind?: "platform" | "channel_kind" | "api_layer" | "product" | "task_focus";
+  kind?: "platform" | "channel_kind" | "api_layer" | "product" | "task_focus" | "referent";
   pendingQuestion?: string;
 };
 

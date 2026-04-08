@@ -740,6 +740,49 @@ async function createAndroidMessageHistoryDocs(): Promise<string> {
   return docsRoot;
 }
 
+async function createSystemNotificationAmbiguityDocs(): Promise<string> {
+  const docsRoot = await makeTempDir("doc-assistant-system-notification-ambiguity");
+  await fs.mkdir(path.join(docsRoot, "docs", "guides", "realtime-chat", "intro-chat"), {
+    recursive: true,
+  });
+  await fs.mkdir(path.join(docsRoot, "docs", "platform-chat-api", "system"), {
+    recursive: true,
+  });
+  await fs.writeFile(
+    path.join(docsRoot, "docs", "guides", "realtime-chat", "intro-chat", "intro-chat.mdx"),
+    [
+      "# Intro to realtime chat",
+      "",
+      "## Server APIs",
+      "",
+      "Some advanced features are only available through Chat Server APIs, including system notifications, broadcast to online users, and user bans.",
+      "",
+    ].join("\n"),
+    "utf-8",
+  );
+  await fs.writeFile(
+    path.join(docsRoot, "docs", "platform-chat-api", "system", "send-private.md"),
+    [
+      "# Send a system message",
+      "",
+      "Use `/v4/system-channel/message/send` to send a system message from your app server.",
+      "",
+    ].join("\n"),
+    "utf-8",
+  );
+  await fs.writeFile(
+    path.join(docsRoot, "docs", "platform-chat-api", "system", "send-push-by-tag.md"),
+    [
+      "# Push to tagged users",
+      "",
+      "Use `/v4/system-channel/push` to deliver a push notification to tagged users from your app server.",
+      "",
+    ].join("\n"),
+    "utf-8",
+  );
+  return docsRoot;
+}
+
 void test("executeDocQuestion asks for product clarification before answering generic connect questions", async () => {
   const docsRoot = await createConnectClarificationDocs();
   const result = await executeDocQuestion({
@@ -770,6 +813,23 @@ void test("executeDocQuestion asks for product clarification before answering ge
   assert.equal(result.answer.summary, "product clarification required");
   assert.equal(result.answer.answer.includes("Chat SDK"), true);
   assert.equal(result.answer.answer.includes("Call SDK"), true);
+});
+
+void test("executeDocQuestion asks for referent clarification before blocking on ambiguous system notification wording", async () => {
+  const docsRoot = await createSystemNotificationAmbiguityDocs();
+  const result = await executeDocQuestion({
+    runId: "system-notification-clarify-1",
+    question: "can I send system notification using server api?",
+    mode: "extractive",
+    docsRoot,
+    maxResults: 5,
+  });
+
+  assert.equal(result.route, "search");
+  assert.equal(result.answer.summary, "task clarification required");
+  assert.equal(result.answer.pendingClarificationKind, "referent");
+  assert.equal(result.answer.answer.includes("system message"), true);
+  assert.equal(result.answer.answer.includes("push notification"), true);
 });
 
 void test("product clarification follow-up rewrites the generic connect question and continues", async () => {
@@ -1098,6 +1158,55 @@ void test("server integration task-focus follow-up accepts blocklist management 
   assert.notEqual(third.answer.summary, "insufficient documentation evidence");
   assert.equal(
     third.hits.some((hit) => hit.path.includes("platform-chat-api/chat-server-api-list.md")),
+    true,
+  );
+});
+
+void test("referent clarification follow-up rewrites ambiguous system notification wording and continues", async () => {
+  const docsRoot = await createSystemNotificationAmbiguityDocs();
+  const dataDir = await makeTempDir("doc-assistant-system-notification-followup");
+  const sessionId = "system-notification-followup-session";
+
+  const first = await executeDocQuestion({
+    runId: "system-notification-clarify-2",
+    question: "can I send system notification using server api?",
+    sessionId,
+    mode: "extractive",
+    docsRoot,
+    dataDir,
+    maxResults: 5,
+  });
+
+  assert.equal(first.answer.pendingClarificationKind, "referent");
+
+  await updateClarificationStateAfterAnswer({
+    sessionId,
+    runId: "system-notification-clarify-2",
+    question: "can I send system notification using server api?",
+    hits: first.hits,
+    summary: first.answer.summary,
+    pendingQuestion: first.answer.pendingClarificationQuestion,
+    clarificationKind: first.answer.pendingClarificationKind,
+    clarificationHits: first.answer.clarificationHits,
+    route: first.route,
+    dataDir,
+  });
+
+  const second = await executeDocQuestion({
+    runId: "system-notification-clarify-3",
+    question: "system message",
+    sessionId,
+    mode: "extractive",
+    docsRoot,
+    dataDir,
+    maxResults: 5,
+  });
+
+  assert.equal(second.answer.followUpSource, "clarification_rewrite");
+  assert.equal(second.answer.rewrittenQuestion, "can I send system message using server api?");
+  assert.notEqual(second.answer.summary, "insufficient documentation evidence");
+  assert.equal(
+    second.hits.some((hit) => hit.path.endsWith("docs/platform-chat-api/system/send-private.md")),
     true,
   );
 });

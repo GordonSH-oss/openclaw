@@ -59,7 +59,13 @@ export type DocAnswerResult = {
   continuedFromRunId?: string;
   rewrittenQuestion?: string;
   pendingClarificationQuestion?: string;
-  pendingClarificationKind?: "platform" | "channel_kind" | "api_layer" | "product" | "task_focus";
+  pendingClarificationKind?:
+    | "platform"
+    | "channel_kind"
+    | "api_layer"
+    | "product"
+    | "task_focus"
+    | "referent";
   clarificationHits?: DocSearchHit[];
   attempts?: Array<{
     provider: string;
@@ -1532,6 +1538,14 @@ function buildTaskFocusClarificationAnswer(
       .slice(0, 2),
   );
   const optionLines = (decision.candidateOptions ?? []).slice(0, 5).map((option) => `- ${option}`);
+  const optionHeading =
+    decision.kind === "referent"
+      ? language === "en"
+        ? "Possible meanings:"
+        : "可能指的是："
+      : language === "en"
+        ? "Examples of useful scopes:"
+        : "可以这样收窄：";
 
   return {
     mode: "extractive",
@@ -1540,12 +1554,7 @@ function buildTaskFocusClarificationAnswer(
         (language === "en"
           ? "This task is still too broad and needs one more clarification."
           : "这个任务范围还太宽，需要再补充一个更具体的目标。"),
-      optionLines.length > 0
-        ? [
-            language === "en" ? "Examples of useful scopes:" : "可以这样收窄：",
-            ...optionLines,
-          ].join("\n")
-        : "",
+      optionLines.length > 0 ? [optionHeading, ...optionLines].join("\n") : "",
       renderSourcesAppendix(citations),
     ]
       .filter(Boolean)
@@ -1557,7 +1566,7 @@ function buildTaskFocusClarificationAnswer(
     answerSource: "generated",
     reviewStatus: "not_applicable",
     pendingClarificationQuestion: question,
-    pendingClarificationKind: "task_focus",
+    pendingClarificationKind: decision.kind === "referent" ? "referent" : "task_focus",
     clarificationHits: hits,
   };
 }
@@ -1577,6 +1586,14 @@ export function renderClarificationAnswer(params: {
     return buildProductClarificationAnswer(params.question, params.hits, language);
   }
   if (params.decision.kind === "task_focus") {
+    return buildTaskFocusClarificationAnswer(
+      params.question,
+      params.hits,
+      language,
+      params.decision,
+    );
+  }
+  if (params.decision.kind === "referent") {
     return buildTaskFocusClarificationAnswer(
       params.question,
       params.hits,

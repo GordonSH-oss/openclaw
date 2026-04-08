@@ -25,6 +25,7 @@ import {
   getStoredClarificationContext,
   isStoredClarificationFollowUpAllowed,
   mergeStoredStateWithFollowUp,
+  rewriteReferentClarificationQuestion,
   rewriteContextualFollowUpQuestion,
   rewriteTaskFocusClarificationQuestion,
   selectPlatformHits,
@@ -95,6 +96,7 @@ function maybeReturnInsufficientEvidence(params: {
   if (
     clarification.shouldClarify &&
     (clarification.kind === "task_focus" ||
+      clarification.kind === "referent" ||
       clarification.kind === "platform" ||
       clarification.kind === "channel_kind" ||
       clarification.kind === "api_layer")
@@ -196,6 +198,7 @@ function shouldRetryRetrieval(params: {
   if (
     params.clarificationDecision.shouldClarify &&
     (params.clarificationDecision.kind === "task_focus" ||
+      params.clarificationDecision.kind === "referent" ||
       params.clarificationDecision.kind === "platform" ||
       params.clarificationDecision.kind === "channel_kind" ||
       params.clarificationDecision.kind === "api_layer" ||
@@ -661,6 +664,28 @@ export async function executeDocQuestion(params: {
     followUpBaseQuestion
       ? followUpMatch.taskFocus
       : undefined;
+  const referentFollowUp =
+    acceptedClarificationFollowUp &&
+    clarificationFollowUp?.clarificationKind === "referent" &&
+    followUpMatch?.taskFocus &&
+    followUpBaseState &&
+    followUpBaseQuestion
+      ? followUpMatch.taskFocus
+      : undefined;
+  const effectiveReferentQuestion =
+    referentFollowUp && followUpBaseQuestion
+      ? rewriteReferentClarificationQuestion(followUpBaseQuestion, referentFollowUp)
+      : undefined;
+  const effectiveReferentState =
+    effectiveReferentQuestion && followUpBaseState
+      ? mergeStoredStateWithFollowUp(buildQuestionState(effectiveReferentQuestion), {
+          platform: followUpBaseState.platform,
+          product: followUpBaseState.product,
+          apiLayer: followUpBaseState.apiLayer,
+          channelKind: followUpBaseState.channelKind,
+          referent: followUpBaseState.referent,
+        })
+      : undefined;
   const effectiveTaskFocusQuestion =
     taskFocusFollowUp && followUpBaseQuestion
       ? rewriteTaskFocusClarificationQuestion(followUpBaseQuestion, taskFocusFollowUp)
@@ -685,24 +710,34 @@ export async function executeDocQuestion(params: {
   const effectiveLlmFollowUpState = llmFollowUpRewrite
     ? buildQuestionState(llmFollowUpRewrite)
     : undefined;
-  const preliminaryState = effectiveTaskFocusState
-    ? effectiveTaskFocusState
-    : effectiveLlmFollowUpState
-      ? effectiveLlmFollowUpState
-      : effectiveContextualState
-        ? effectiveContextualState
-        : flags.questionState && acceptedClarificationFollowUp && followUpPatch && followUpBaseState
-          ? mergeStoredStateWithFollowUp(followUpBaseState, followUpPatch)
-          : initialState;
-  const preliminaryQuestion = effectiveTaskFocusQuestion
-    ? effectiveTaskFocusQuestion
-    : llmFollowUpRewrite
-      ? llmFollowUpRewrite
-      : effectiveContextualQuestion
-        ? effectiveContextualQuestion
-        : flags.questionState && acceptedClarificationFollowUp && followUpPatch && followUpBaseState
-          ? rewriteQuestionFromState(preliminaryState)
-          : params.question;
+  const preliminaryState = effectiveReferentState
+    ? effectiveReferentState
+    : effectiveTaskFocusState
+      ? effectiveTaskFocusState
+      : effectiveLlmFollowUpState
+        ? effectiveLlmFollowUpState
+        : effectiveContextualState
+          ? effectiveContextualState
+          : flags.questionState &&
+              acceptedClarificationFollowUp &&
+              followUpPatch &&
+              followUpBaseState
+            ? mergeStoredStateWithFollowUp(followUpBaseState, followUpPatch)
+            : initialState;
+  const preliminaryQuestion = effectiveReferentQuestion
+    ? effectiveReferentQuestion
+    : effectiveTaskFocusQuestion
+      ? effectiveTaskFocusQuestion
+      : llmFollowUpRewrite
+        ? llmFollowUpRewrite
+        : effectiveContextualQuestion
+          ? effectiveContextualQuestion
+          : flags.questionState &&
+              acceptedClarificationFollowUp &&
+              followUpPatch &&
+              followUpBaseState
+            ? rewriteQuestionFromState(preliminaryState)
+            : params.question;
   let effectiveState = preliminaryState;
   let effectiveQuestion = preliminaryQuestion;
   let continuedFromRunId =
