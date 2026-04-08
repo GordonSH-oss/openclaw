@@ -53,6 +53,10 @@ export type DetectedClarificationFollowUp = {
   taskFocus?: string;
 };
 
+export type DetectedContextualFollowUp = {
+  responseStyle: "code_snippet";
+};
+
 type FollowUpContextStore = Record<string, StoredClarificationContext>;
 
 const PLATFORM_PATTERNS: Record<DocFollowUpPlatform, RegExp[]> = {
@@ -159,6 +163,32 @@ const TECHNICAL_SIGNAL_PATTERNS = [
   /消息/,
   /通话/,
   /接入/,
+];
+
+const REFERENCE_FOLLOW_UP_PATTERNS = [
+  /\bit\b/i,
+  /\bthat\b/i,
+  /\bthis\b/i,
+  /\bthat feature\b/i,
+  /\bthis feature\b/i,
+  /\babove\b/i,
+  /它/u,
+  /这个/u,
+  /这个功能/u,
+  /该功能/u,
+  /上面/u,
+];
+
+const CODE_SNIPPET_REQUEST_PATTERNS = [
+  /\bcode\s+snippet\b/i,
+  /\bsample\s+code\b/i,
+  /\bcode\s+example\b/i,
+  /\bexample\s+code\b/i,
+  /\bshow\b.{0,20}\bcode\b/i,
+  /\bgive\b.{0,20}\bcode\b/i,
+  /\bsnippet\b/i,
+  /代码(?:片段|示例|样例|例子)/u,
+  /示例代码/u,
 ];
 
 function getFollowUpContextPath(dataDir?: string): string {
@@ -374,12 +404,38 @@ export function detectClarificationFollowUpQuestion(
   return null;
 }
 
+export function detectContextualFollowUpQuestion(
+  question: string,
+): DetectedContextualFollowUp | null {
+  const normalized = normalizeFollowUpText(question);
+  if (!normalized || normalized.length > 160) {
+    return null;
+  }
+
+  const asksForCodeSnippet = CODE_SNIPPET_REQUEST_PATTERNS.some((pattern) =>
+    new RegExp(pattern.source, pattern.flags).test(question),
+  );
+  if (!asksForCodeSnippet) {
+    return null;
+  }
+
+  const hasReference = REFERENCE_FOLLOW_UP_PATTERNS.some((pattern) =>
+    new RegExp(pattern.source, pattern.flags).test(question),
+  );
+  const hasStandaloneTopic = TECHNICAL_SIGNAL_PATTERNS.some((pattern) => pattern.test(normalized));
+  if (!hasReference && hasStandaloneTopic) {
+    return null;
+  }
+
+  return { responseStyle: "code_snippet" };
+}
+
 export function isStoredClarificationFollowUpAllowed(
   context: Pick<StoredClarificationContext, "clarificationKind" | "candidatePlatforms">,
   followUp: NonNullable<ReturnType<typeof detectClarificationFollowUpQuestion>>,
 ): boolean {
   if (context.clarificationKind === "platform") {
-    return Boolean(followUp.platform && context.candidatePlatforms.includes(followUp.platform));
+    return Boolean(followUp.platform);
   }
   if (context.clarificationKind === "channel_kind") {
     return Boolean(followUp.channelKind);
@@ -443,6 +499,24 @@ export function rewriteClarificationQuestion(
   }
 
   return `${platformLabel} ${trimmed}`;
+}
+
+export function rewriteContextualFollowUpQuestion(
+  originalQuestion: string,
+  followUp: DetectedContextualFollowUp,
+): string {
+  const trimmed = originalQuestion.trim().replace(/[?!.。！？]+$/u, "");
+  const asciiCount = (trimmed.match(/[A-Za-z]/g) ?? []).length;
+  const cjkCount = (trimmed.match(/[\u4e00-\u9fff]/g) ?? []).length;
+
+  if (followUp.responseStyle === "code_snippet") {
+    if (asciiCount >= cjkCount) {
+      return `${trimmed} Show a code snippet.`;
+    }
+    return `${trimmed} 请给我代码示例。`;
+  }
+
+  return trimmed;
 }
 
 export function selectPlatformHits(
@@ -573,6 +647,7 @@ export async function updateClarificationStateAfterAnswer(params: {
   question: string;
   hits: DocSearchHit[];
   summary: string;
+  rewrittenQuestion?: string;
   pendingQuestion?: string;
   clarificationKind?: ClarificationKind;
   pendingState?: Partial<QuestionState>;
@@ -645,6 +720,22 @@ export async function updateClarificationStateAfterAnswer(params: {
     return;
   }
   if (looksLikeFollowUp && (params.route === "memory" || isNonCacheableSummary(params.summary))) {
+    return;
+  }
+  if (
+    params.route === "search" &&
+    params.hits.length > 0 &&
+    !isNonCacheableSummary(params.summary)
+  ) {
+    const resolvedQuestion = params.rewrittenQuestion ?? params.question;
+    await persistClarificationContext({
+      sessionId: params.sessionId,
+      runId: params.runId,
+      originalQuestion: resolvedQuestion,
+      pendingQuestion: resolvedQuestion,
+      hits: params.hits,
+      dataDir: params.dataDir,
+    });
     return;
   }
   await clearStoredClarificationContext(params.sessionId, params.dataDir);

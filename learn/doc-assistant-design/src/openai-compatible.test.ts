@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { answerWithOpenAICompatible, OpenAICompatibleAnswerError } from "./openai-compatible.js";
+import {
+  answerWithOpenAICompatible,
+  detectFollowUpRewriteWithOpenAICompatible,
+  OpenAICompatibleAnswerError,
+} from "./openai-compatible.js";
 
 function resolveFetchInputUrl(input: RequestInfo | URL): string {
   if (typeof input === "string") {
@@ -270,6 +274,46 @@ void test("answerWithOpenAICompatible falls back to responses when chat completi
 
   assert.deepEqual(paths, ["/v1/chat/completions", "/v1/chat/completions", "/v1/responses"]);
   assert.equal(result.answer.includes("Use `sendMessage` after building the params."), true);
+});
+
+void test("detectFollowUpRewriteWithOpenAICompatible returns a rewritten standalone question", async (t) => {
+  const originalFetch = globalThis.fetch;
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+  globalThis.fetch = (async () => {
+    return new Response(
+      JSON.stringify({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                should_rewrite: true,
+                rewritten_question: "How to pin a channel on iOS? Show an example.",
+                reason: "The latest turn depends on the prior topic.",
+              }),
+            },
+          },
+        ],
+      }),
+      {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      },
+    );
+  }) as typeof fetch;
+
+  const rewritten = await detectFollowUpRewriteWithOpenAICompatible({
+    config: {
+      baseURL: "https://example.com/v1",
+      apiKey: "test-key",
+      model: "gpt-test",
+    },
+    previousQuestion: "How to pin a channel on iOS?",
+    currentQuestion: "Could you also show the example for that one?",
+  });
+
+  assert.equal(rewritten, "How to pin a channel on iOS? Show an example.");
 });
 
 void test("answerWithOpenAICompatible preserves empty-output payloads across chat and responses fallbacks", async (t) => {

@@ -2,8 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   detectClarificationFollowUpQuestion,
+  detectContextualFollowUpQuestion,
   extractQuestionStatePatchFromFollowUp,
   isStoredClarificationFollowUpAllowed,
+  rewriteContextualFollowUpQuestion,
   rewriteTaskFocusClarificationQuestion,
 } from "./follow-up-context.js";
 
@@ -39,6 +41,21 @@ void test("detectClarificationFollowUpQuestion accepts short task-focus replies"
   });
 });
 
+void test("detectContextualFollowUpQuestion accepts dependent code-snippet requests", () => {
+  assert.deepEqual(detectContextualFollowUpQuestion("Can you give me a code snippet about it?"), {
+    responseStyle: "code_snippet",
+  });
+  assert.deepEqual(detectContextualFollowUpQuestion("Can you give me a code snippet?"), {
+    responseStyle: "code_snippet",
+  });
+  assert.equal(
+    detectContextualFollowUpQuestion(
+      "Can you give me a code snippet for pinning a channel on iOS?",
+    ),
+    null,
+  );
+});
+
 void test("extractQuestionStatePatchFromFollowUp returns a mergeable state patch", () => {
   assert.deepEqual(extractQuestionStatePatchFromFollowUp("group channel"), {
     channelKind: "group",
@@ -52,7 +69,7 @@ void test("extractQuestionStatePatchFromFollowUp returns a mergeable state patch
   assert.equal(extractQuestionStatePatchFromFollowUp("Android 怎么初始化 Chat SDK？"), null);
 });
 
-void test("isStoredClarificationFollowUpAllowed enforces clarification kind and candidate platforms", () => {
+void test("isStoredClarificationFollowUpAllowed accepts any recognized platform follow-up", () => {
   assert.equal(
     isStoredClarificationFollowUpAllowed(
       {
@@ -71,7 +88,7 @@ void test("isStoredClarificationFollowUpAllowed enforces clarification kind and 
       },
       { platform: "web" },
     ),
-    false,
+    true,
   );
   assert.equal(
     isStoredClarificationFollowUpAllowed(
@@ -112,5 +129,14 @@ void test("rewriteTaskFocusClarificationQuestion appends the narrowed task focus
       "webhook signature verification",
     ),
     "How to integrate using Server API for webhook signature verification?",
+  );
+});
+
+void test("rewriteContextualFollowUpQuestion appends the presentation request to the resolved question", () => {
+  assert.equal(
+    rewriteContextualFollowUpQuestion("How to pin a channel on iOS?", {
+      responseStyle: "code_snippet",
+    }),
+    "How to pin a channel on iOS Show a code snippet.",
   );
 });

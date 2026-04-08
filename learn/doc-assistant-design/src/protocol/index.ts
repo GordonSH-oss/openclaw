@@ -122,7 +122,11 @@ export type DocAnswerDebugAnswers = {
   providerKind?: "openai_compatible" | "learning";
 };
 
-export type DocFollowUpSource = "none" | "clarification_reuse" | "clarification_rewrite";
+export type DocFollowUpSource =
+  | "none"
+  | "clarification_reuse"
+  | "clarification_rewrite"
+  | "contextual_rewrite";
 
 export type DocMemoryEntryStatus = "pending_review" | "approved_standard" | "rejected";
 

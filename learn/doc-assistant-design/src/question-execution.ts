@@ -19,15 +19,18 @@ import { buildEvidencePack } from "./evidence-pack.js";
 import { getDocAssistantFeatureFlags } from "./feature-flags.js";
 import {
   detectClarificationFollowUpQuestion,
+  detectContextualFollowUpQuestion,
   extractQuestionStatePatchFromFollowUp,
   getStoredClarificationContext,
   isStoredClarificationFollowUpAllowed,
   mergeStoredStateWithFollowUp,
+  rewriteContextualFollowUpQuestion,
   rewriteTaskFocusClarificationQuestion,
   selectPlatformHits,
   shouldReuseClarificationHits,
 } from "./follow-up-context.js";
 import { buildGreetingAnswer, detectGreetingIntent } from "./greeting-intent.js";
+import { detectFollowUpRewriteWithOpenAICompatible } from "./openai-compatible.js";
 import type { DocAssistantMode, DocSearchHit, OpenAICompatibleConfig } from "./protocol/index.js";
 import { isBroadIntegrationRequest } from "./question-anchors.js";
 import {
@@ -392,8 +395,9 @@ export async function executeDocQuestion(params: {
   });
   const initialState = buildQuestionState(params.question);
   const followUpMatch = detectClarificationFollowUpQuestion(params.question);
+  const contextualFollowUp = detectContextualFollowUpQuestion(params.question);
   const clarificationFollowUp =
-    params.sessionId && followUpMatch
+    params.sessionId && (followUpMatch || contextualFollowUp || flags.llmFollowUp)
       ? await getStoredClarificationContext(params.sessionId, params.dataDir)
       : null;
   const followUpPatch = followUpMatch
@@ -414,6 +418,30 @@ export async function executeDocQuestion(params: {
     clarificationFollowUp &&
     followUpMatch &&
     isStoredClarificationFollowUpAllowed(clarificationFollowUp, followUpMatch),
+  );
+  const llmFollowUpRewrite =
+    !followUpMatch &&
+    !contextualFollowUp &&
+    flags.llmFollowUp &&
+    params.openAICompatible &&
+    clarificationFollowUp &&
+    !clarificationFollowUp.clarificationKind &&
+    followUpBaseQuestion
+      ? await detectFollowUpRewriteWithOpenAICompatible({
+          config: {
+            ...params.openAICompatible,
+            model: params.model ?? params.openAICompatible.model,
+          },
+          previousQuestion: followUpBaseQuestion,
+          currentQuestion: params.question,
+        })
+      : undefined;
+  const acceptedLlmFollowUp = Boolean(llmFollowUpRewrite && followUpBaseQuestion);
+  const acceptedContextualFollowUp = Boolean(
+    clarificationFollowUp &&
+    contextualFollowUp &&
+    !clarificationFollowUp.clarificationKind &&
+    followUpBaseQuestion,
   );
   const taskFocusFollowUp =
     acceptedClarificationFollowUp &&
@@ -437,16 +465,34 @@ export async function executeDocQuestion(params: {
           referent: followUpBaseState.referent,
         })
       : undefined;
+  const effectiveContextualQuestion =
+    acceptedContextualFollowUp && followUpBaseQuestion && contextualFollowUp
+      ? rewriteContextualFollowUpQuestion(followUpBaseQuestion, contextualFollowUp)
+      : undefined;
+  const effectiveContextualState = effectiveContextualQuestion
+    ? buildQuestionState(effectiveContextualQuestion)
+    : undefined;
+  const effectiveLlmFollowUpState = llmFollowUpRewrite
+    ? buildQuestionState(llmFollowUpRewrite)
+    : undefined;
   const effectiveState = effectiveTaskFocusState
     ? effectiveTaskFocusState
-    : flags.questionState && acceptedClarificationFollowUp && followUpPatch && followUpBaseState
-      ? mergeStoredStateWithFollowUp(followUpBaseState, followUpPatch)
-      : initialState;
+    : effectiveLlmFollowUpState
+      ? effectiveLlmFollowUpState
+      : effectiveContextualState
+        ? effectiveContextualState
+        : flags.questionState && acceptedClarificationFollowUp && followUpPatch && followUpBaseState
+          ? mergeStoredStateWithFollowUp(followUpBaseState, followUpPatch)
+          : initialState;
   const effectiveQuestion = effectiveTaskFocusQuestion
     ? effectiveTaskFocusQuestion
-    : flags.questionState && acceptedClarificationFollowUp && followUpPatch && followUpBaseState
-      ? rewriteQuestionFromState(effectiveState)
-      : params.question;
+    : llmFollowUpRewrite
+      ? llmFollowUpRewrite
+      : effectiveContextualQuestion
+        ? effectiveContextualQuestion
+        : flags.questionState && acceptedClarificationFollowUp && followUpPatch && followUpBaseState
+          ? rewriteQuestionFromState(effectiveState)
+          : params.question;
   const effectiveQuestionState = buildQuestionState(effectiveQuestion);
   const continuedFromRunId = clarificationFollowUp?.runId;
   const selectedPlatform = acceptedClarificationFollowUp ? followUpPatch?.platform : undefined;
@@ -661,9 +707,18 @@ export async function executeDocQuestion(params: {
         answerSource: memoryMatch.answerSource,
         memoryEntryId: memoryMatch.entry.entryId,
         reviewStatus: memoryMatch.reviewStatus,
-        followUpSource: clarificationFollowUp ? "clarification_rewrite" : undefined,
+        followUpSource: acceptedLlmFollowUp
+          ? "contextual_rewrite"
+          : acceptedContextualFollowUp
+            ? "contextual_rewrite"
+            : clarificationFollowUp
+              ? "clarification_rewrite"
+              : undefined,
         continuedFromRunId,
-        rewrittenQuestion: clarificationFollowUp ? effectiveQuestion : undefined,
+        rewrittenQuestion:
+          acceptedLlmFollowUp || acceptedContextualFollowUp || clarificationFollowUp
+            ? effectiveQuestion
+            : undefined,
         trace: {
           ...baseTrace,
           route: "memory",
@@ -783,9 +838,18 @@ export async function executeDocQuestion(params: {
             : undefined,
           transitions: ["insufficient_evidence"],
         },
-        followUpSource: acceptedClarificationFollowUp ? "clarification_rewrite" : undefined,
+        followUpSource: acceptedClarificationFollowUp
+          ? "clarification_rewrite"
+          : acceptedLlmFollowUp
+            ? "contextual_rewrite"
+            : acceptedContextualFollowUp
+              ? "contextual_rewrite"
+              : undefined,
         continuedFromRunId,
-        rewrittenQuestion: clarificationFollowUp ? effectiveQuestion : undefined,
+        rewrittenQuestion:
+          acceptedLlmFollowUp || acceptedContextualFollowUp || clarificationFollowUp
+            ? effectiveQuestion
+            : undefined,
       },
     };
   }
@@ -826,9 +890,18 @@ export async function executeDocQuestion(params: {
             : undefined,
           transitions: ["clarification_required"],
         },
-        followUpSource: acceptedClarificationFollowUp ? "clarification_rewrite" : undefined,
+        followUpSource: acceptedClarificationFollowUp
+          ? "clarification_rewrite"
+          : acceptedLlmFollowUp
+            ? "contextual_rewrite"
+            : acceptedContextualFollowUp
+              ? "contextual_rewrite"
+              : undefined,
         continuedFromRunId,
-        rewrittenQuestion: clarificationFollowUp ? effectiveQuestion : undefined,
+        rewrittenQuestion:
+          acceptedLlmFollowUp || acceptedContextualFollowUp || clarificationFollowUp
+            ? effectiveQuestion
+            : undefined,
       },
     };
   }
@@ -881,9 +954,18 @@ export async function executeDocQuestion(params: {
           ...((validated.trace?.transitions as string[] | undefined) ?? []).filter(Boolean),
         ],
       },
-      followUpSource: acceptedClarificationFollowUp ? "clarification_rewrite" : undefined,
+      followUpSource: acceptedClarificationFollowUp
+        ? "clarification_rewrite"
+        : acceptedLlmFollowUp
+          ? "contextual_rewrite"
+          : acceptedContextualFollowUp
+            ? "contextual_rewrite"
+            : undefined,
       continuedFromRunId,
-      rewrittenQuestion: clarificationFollowUp ? effectiveQuestion : undefined,
+      rewrittenQuestion:
+        acceptedLlmFollowUp || acceptedContextualFollowUp || clarificationFollowUp
+          ? effectiveQuestion
+          : undefined,
     },
   };
 }

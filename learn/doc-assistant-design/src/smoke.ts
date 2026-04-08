@@ -52,6 +52,7 @@ export async function runDocAssistantSmoke(params: {
       question,
       hits: execution.hits,
       summary: execution.answer.summary,
+      rewrittenQuestion: execution.answer.rewrittenQuestion,
       pendingQuestion: execution.answer.pendingClarificationQuestion,
       clarificationKind: execution.answer.pendingClarificationKind,
       clarificationHits: execution.answer.clarificationHits,

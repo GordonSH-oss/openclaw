@@ -105,6 +105,19 @@ function buildResponsesBody(params: { model: string; prompt: string }): string {
   });
 }
 
+function extractJsonObject(text: string): string | undefined {
+  const fencedMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fencedMatch?.[1]) {
+    return fencedMatch[1].trim();
+  }
+  const firstBrace = text.indexOf("{");
+  const lastBrace = text.lastIndexOf("}");
+  if (firstBrace >= 0 && lastBrace > firstBrace) {
+    return text.slice(firstBrace, lastBrace + 1).trim();
+  }
+  return undefined;
+}
+
 function stringifyPayloadForDebug(payload: unknown): string | undefined {
   try {
     const serialized = JSON.stringify(payload);
@@ -345,6 +358,23 @@ function isLikelyPromptScaffoldingEcho(text: string): boolean {
   return matches >= 3;
 }
 
+function buildFollowUpRewritePrompt(params: {
+  previousQuestion: string;
+  currentQuestion: string;
+}): string {
+  return [
+    "Decide whether the latest user turn is a dependent follow-up to the previous resolved documentation question.",
+    "Return JSON only.",
+    'Schema: {"should_rewrite": boolean, "rewritten_question": string, "reason": string}.',
+    "Set should_rewrite=false when the latest turn is already a standalone question with its own topic.",
+    "Set should_rewrite=true when the latest turn depends on the previous question via pronouns, ellipsis, or sequential context.",
+    "When rewriting, preserve the previous topic and make the question standalone and concise.",
+    "",
+    `Previous resolved question: ${params.previousQuestion}`,
+    `Latest user turn: ${params.currentQuestion}`,
+  ].join("\n");
+}
+
 async function requestOpenAICompatibleCompletion(params: {
   config: OpenAICompatibleConfig;
   model: string;
@@ -499,4 +529,74 @@ export async function answerWithOpenAICompatible(params: {
     message: "OpenAI-compatible response did not contain answer text",
     rawAnswer: attemptPayloads.join("\n"),
   });
+}
+
+export async function detectFollowUpRewriteWithOpenAICompatible(params: {
+  config: OpenAICompatibleConfig;
+  previousQuestion: string;
+  currentQuestion: string;
+}): Promise<string | undefined> {
+  const prompt = buildFollowUpRewritePrompt({
+    previousQuestion: params.previousQuestion,
+    currentQuestion: params.currentQuestion,
+  });
+  const model = params.config.model ?? DEFAULT_DOC_ASSISTANT_AGENT_MODEL;
+
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    const payload = await requestOpenAICompatibleCompletion({
+      config: params.config,
+      model,
+      prompt,
+    });
+    const text =
+      extractTextContent(payload.choices?.[0]?.message?.content) ||
+      (typeof payload.choices?.[0]?.text === "string" ? payload.choices[0].text.trim() : "");
+    if (!text) {
+      continue;
+    }
+    const json = extractJsonObject(text);
+    if (!json) {
+      continue;
+    }
+    try {
+      const parsed = JSON.parse(json) as {
+        should_rewrite?: boolean;
+        rewritten_question?: string;
+      };
+      if (!parsed.should_rewrite) {
+        return undefined;
+      }
+      const rewrittenQuestion = parsed.rewritten_question?.trim();
+      return rewrittenQuestion ? rewrittenQuestion : undefined;
+    } catch {
+      continue;
+    }
+  }
+
+  const responsesPayload = await requestOpenAICompatibleResponse({
+    config: params.config,
+    model,
+    prompt,
+  });
+  const responsesText = extractResponsesTextContent(responsesPayload);
+  if (!responsesText) {
+    return undefined;
+  }
+  const json = extractJsonObject(responsesText);
+  if (!json) {
+    return undefined;
+  }
+  try {
+    const parsed = JSON.parse(json) as {
+      should_rewrite?: boolean;
+      rewritten_question?: string;
+    };
+    if (!parsed.should_rewrite) {
+      return undefined;
+    }
+    const rewrittenQuestion = parsed.rewritten_question?.trim();
+    return rewrittenQuestion ? rewrittenQuestion : undefined;
+  } catch {
+    return undefined;
+  }
 }

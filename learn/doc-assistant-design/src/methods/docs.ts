@@ -170,6 +170,7 @@ async function launchDocAssistantRun(params: {
         question: params.question,
         hits: execution.hits,
         summary: answer.summary,
+        rewrittenQuestion: answer.rewrittenQuestion,
         pendingQuestion: answer.pendingClarificationQuestion,
         clarificationKind: answer.pendingClarificationKind,
         clarificationHits: answer.clarificationHits,

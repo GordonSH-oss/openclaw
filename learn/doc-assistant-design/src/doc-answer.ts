@@ -19,6 +19,7 @@ import type {
   DocsTerminalResult,
   OpenAICompatibleConfig,
 } from "./protocol/index.js";
+import { selectRequiredAnchors } from "./question-anchors.js";
 import { planDocQuestion, type DocQuestionPlan } from "./question-planning.js";
 import {
   buildQuestionState,
@@ -1282,11 +1283,28 @@ function buildClarificationAnswer(
 ): GroundedAnswerResult {
   const platformHits = analysis.relevantHits.filter((hit) => hit.platform !== undefined);
   const normalizedQuestion = normalizeAnswerText(question);
+  const requiredAnchors = selectRequiredAnchors(buildQuestionState(question));
+  const countMatchedAnchors = (hit: AnalyzedHit): number => {
+    const normalized = normalizeAnswerText([hit.path, hit.heading ?? "", hit.text].join("\n"));
+    return requiredAnchors.filter((anchor) => normalized.includes(normalizeAnswerText(anchor)))
+      .length;
+  };
+  const anchorMatchedPlatformHits =
+    requiredAnchors.length === 0
+      ? platformHits
+      : platformHits.filter((hit) => countMatchedAnchors(hit) >= requiredAnchors.length);
   const bestByPlatform = new Map<DocPlatform, AnalyzedHit>();
-  const rankedPlatformHits = platformHits.toSorted((left, right) => {
+  const rankedPlatformHits = (
+    anchorMatchedPlatformHits.length > 0 ? anchorMatchedPlatformHits : platformHits
+  ).toSorted((left, right) => {
     const scoreHit = (hit: AnalyzedHit): number => {
       const normalized = normalizeAnswerText([hit.path, hit.heading ?? ""].join("\n"));
       let score = hit.score;
+      const matchedAnchors = countMatchedAnchors(hit);
+      score += matchedAnchors * 18;
+      if (requiredAnchors.length > 0 && matchedAnchors === 0) {
+        score -= 36;
+      }
       if (hit.docShape === "specialized_task") {
         score += 30;
       }
@@ -1313,9 +1331,9 @@ function buildClarificationAnswer(
     }
   }
   const citations = dedupeCitations(Array.from(bestByPlatform.values()));
-  const platformText = analysis.foundPlatforms
-    .map((platform) => formatPlatform(platform))
-    .join(" / ");
+  const displayPlatforms =
+    bestByPlatform.size > 0 ? Array.from(bestByPlatform.keys()) : analysis.foundPlatforms;
+  const platformText = displayPlatforms.map((platform) => formatPlatform(platform)).join(" / ");
   const examples = Array.from(bestByPlatform.entries()).map(
     ([platform, hit]) =>
       `- ${formatPlatform(platform)}: ${hit.heading ?? hit.path} ${inlineCitation(hit)}`,

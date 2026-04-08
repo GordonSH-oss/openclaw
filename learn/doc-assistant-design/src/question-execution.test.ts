@@ -506,6 +506,52 @@ async function createIOSDirectChannelCreationDocs(): Promise<string> {
   return docsRoot;
 }
 
+async function createPinChannelClarificationDocs(): Promise<string> {
+  const docsRoot = await makeTempDir("doc-assistant-pin-channel-clarify");
+  await fs.mkdir(path.join(docsRoot, "docs", "chatsdk-ios", "direct-system-channels"), {
+    recursive: true,
+  });
+  await fs.mkdir(path.join(docsRoot, "docs", "chatsdk-ios", "group-channels"), {
+    recursive: true,
+  });
+  await fs.mkdir(path.join(docsRoot, "docs", "chatsdk-android", "community-channels"), {
+    recursive: true,
+  });
+  await fs.writeFile(
+    path.join(docsRoot, "docs", "chatsdk-ios", "direct-system-channels", "pinning-channel.md"),
+    [
+      "# Pin a channel in the channel list",
+      "",
+      'Call `channel.pin()` on `DirectChannel(channelId: "userId")`.',
+      "",
+    ].join("\n"),
+    "utf-8",
+  );
+  await fs.writeFile(
+    path.join(docsRoot, "docs", "chatsdk-ios", "group-channels", "manage-group-channel.md"),
+    [
+      "# Manage group channel",
+      "",
+      "## Create a group",
+      "",
+      "Call `GroupChannel.createGroup(params:completion:)` to create a new group.",
+      "",
+    ].join("\n"),
+    "utf-8",
+  );
+  await fs.writeFile(
+    path.join(docsRoot, "docs", "chatsdk-android", "community-channels", "creating-channel.md"),
+    [
+      "# Creating community channels",
+      "",
+      "The Android Chat SDK does not provide client-side APIs for creating community channels or subchannels.",
+      "",
+    ].join("\n"),
+    "utf-8",
+  );
+  return docsRoot;
+}
+
 async function createIOSOpenChannelDestroyDocs(): Promise<string> {
   const docsRoot = await makeTempDir("doc-assistant-ios-open-channel-destroy");
   await fs.mkdir(path.join(docsRoot, "docs", "chatsdk-ios", "open-channels"), {
@@ -1009,6 +1055,151 @@ void test("platform clarification reuse accepts self-only delete wording after s
   );
 });
 
+void test("platform clarification examples prefer docs that match the asked action", async () => {
+  const docsRoot = await createPinChannelClarificationDocs();
+  const result = await executeDocQuestion({
+    runId: "pin-channel-clarify-1",
+    question: "How to pin a channel?",
+    mode: "extractive",
+    docsRoot,
+    maxResults: 5,
+  });
+
+  assert.equal(result.answer.summary, "platform clarification required");
+  assert.equal(result.answer.answer.includes("Pin a channel in the channel list"), true);
+  assert.equal(result.answer.answer.includes("Creating community channels"), false);
+});
+
+void test("resolved-answer follow-up rewrites dependent code-snippet requests onto the prior topic", async () => {
+  const docsRoot = await createIOSDirectChannelCreationDocs();
+  const dataDir = await makeTempDir("doc-assistant-pin-code-followup");
+  const sessionId = "pin-code-followup-session";
+
+  const first = await executeDocQuestion({
+    runId: "pin-code-followup-1",
+    question: "How to pin a channel on iOS?",
+    sessionId,
+    mode: "extractive",
+    docsRoot,
+    dataDir,
+    maxResults: 5,
+  });
+
+  assert.equal(first.answer.summary.startsWith("guided answer from "), true);
+
+  await updateClarificationStateAfterAnswer({
+    sessionId,
+    runId: "pin-code-followup-1",
+    question: "How to pin a channel on iOS?",
+    hits: first.hits,
+    summary: first.answer.summary,
+    rewrittenQuestion: first.answer.rewrittenQuestion,
+    route: first.route,
+    dataDir,
+  });
+
+  const second = await executeDocQuestion({
+    runId: "pin-code-followup-2",
+    question: "Can you give me a code snippet about it?",
+    sessionId,
+    mode: "extractive",
+    docsRoot,
+    dataDir,
+    maxResults: 5,
+  });
+
+  assert.equal(second.answer.followUpSource, "contextual_rewrite");
+  assert.equal(second.answer.continuedFromRunId, "pin-code-followup-1");
+  assert.equal(second.answer.rewrittenQuestion, "How to pin a channel on iOS Show a code snippet.");
+  assert.notEqual(second.answer.summary, "insufficient documentation evidence");
+  assert.equal(
+    second.hits.some((hit) =>
+      hit.path.includes("docs/chatsdk-ios/direct-system-channels/pinning-channel.md"),
+    ),
+    true,
+  );
+});
+
+void test("llm follow-up fallback can rewrite sequential example requests when heuristics do not match", async (t) => {
+  const docsRoot = await createIOSDirectChannelCreationDocs();
+  const dataDir = await makeTempDir("doc-assistant-llm-followup");
+  const sessionId = "llm-followup-session";
+  const originalFetch = globalThis.fetch;
+
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  const first = await executeDocQuestion({
+    runId: "llm-followup-1",
+    question: "How to pin a channel on iOS?",
+    sessionId,
+    mode: "extractive",
+    docsRoot,
+    dataDir,
+    maxResults: 5,
+  });
+
+  await updateClarificationStateAfterAnswer({
+    sessionId,
+    runId: "llm-followup-1",
+    question: "How to pin a channel on iOS?",
+    hits: first.hits,
+    summary: first.answer.summary,
+    rewrittenQuestion: first.answer.rewrittenQuestion,
+    route: first.route,
+    dataDir,
+  });
+
+  globalThis.fetch = (async () => {
+    return new Response(
+      JSON.stringify({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                should_rewrite: true,
+                rewritten_question: "How to pin a channel on iOS? Show an example.",
+                reason: "The latest turn depends on the previous question.",
+              }),
+            },
+          },
+        ],
+      }),
+      {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      },
+    );
+  }) as typeof fetch;
+
+  const second = await executeDocQuestion({
+    runId: "llm-followup-2",
+    question: "Could you also show the example for that one?",
+    sessionId,
+    mode: "extractive",
+    docsRoot,
+    dataDir,
+    maxResults: 5,
+    openAICompatible: {
+      baseURL: "https://example.com/v1",
+      apiKey: "test-key",
+      model: "gpt-test",
+    },
+  });
+
+  assert.equal(second.answer.followUpSource, "contextual_rewrite");
+  assert.equal(second.answer.continuedFromRunId, "llm-followup-1");
+  assert.equal(second.answer.rewrittenQuestion, "How to pin a channel on iOS? Show an example.");
+  assert.notEqual(second.answer.summary, "insufficient documentation evidence");
+  assert.equal(
+    second.hits.some((hit) =>
+      hit.path.includes("docs/chatsdk-ios/direct-system-channels/pinning-channel.md"),
+    ),
+    true,
+  );
+});
+
 void test("executeDocQuestion treats partial-only push language matches as insufficient evidence", async () => {
   const docsRoot = await createPushLanguagePartialOnlyDocs();
   const dataDir = await makeTempDir("doc-assistant-push-language-partial-data");
@@ -1082,7 +1273,7 @@ void test("community chat follow-up does not drift into direct-chat steps", asyn
   assert.equal(second.answer.answer.toLowerCase().includes("community channel"), true);
 });
 
-void test("invalid platform follow-up re-asks for a supported platform and keeps the clarification context usable", async () => {
+void test("unseen platform follow-up reruns retrieval instead of replaying the prior clarification", async () => {
   const docsRoot = await createDirectChannelPlatformClarificationDocs();
   const dataDir = await makeTempDir("doc-assistant-invalid-platform-followup");
   const sessionId = "invalid-platform-followup-session";
@@ -1123,10 +1314,10 @@ void test("invalid platform follow-up re-asks for a supported platform and keeps
     maxResults: 5,
   });
 
-  assert.equal(invalid.answer.summary, "platform clarification required");
-  assert.equal(invalid.answer.answer.includes("Android / Flutter"), true);
-  assert.equal(Boolean(invalid.answer.followUpSource), false);
-  assert.equal(Boolean(invalid.answer.rewrittenQuestion), false);
+  assert.equal(invalid.answer.summary, "no relevant documentation found");
+  assert.equal(invalid.answer.followUpSource, "clarification_rewrite");
+  assert.equal(invalid.answer.rewrittenQuestion, "How to create a direct channel on Web?");
+  assert.equal(invalid.answer.answer.includes("Android / Flutter"), false);
 
   await updateClarificationStateAfterAnswer({
     sessionId,
